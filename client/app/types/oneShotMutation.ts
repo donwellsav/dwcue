@@ -19,7 +19,7 @@ export type OneShotMutableFields = {
   retrigger?: 'restart' | 'ignore';
   hotkey?: CartSlotKeyBinding | null;
   playbackMode?: 'overlay' | 'duck' | 'replace';
-  endMode?: 'stop' | 'loop';
+  endMode?: 'stop' | 'loop' | 'next';
 };
 
 interface MutationBase {

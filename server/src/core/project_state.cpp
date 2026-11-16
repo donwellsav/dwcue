@@ -3760,6 +3760,7 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
 
     // Register with the sequencer so it can handle end-behaviour, crossfade,
     // and stop-fade autonomously — even when the client is disconnected.
+    bool replaced_follow_override = false;
     {
         const bool looping = (end_behavior_action == "loop");
         // A looping cue plays forever (the audio thread seeks back to the
@@ -3795,6 +3796,7 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
         si.ducked        = std::move(ducks_made);
         si.duck_release_sec = duck_release_sec;
         si.custom_actions = std::move(custom_actions_snapshot);
+        si.one_shot = one_shot;
         if (recovering) {
             for (auto& action : si.custom_actions)
                 action.triggered = action.time_point <= play_start;
@@ -3809,10 +3811,16 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
         // Remove any prior sequencer entry for this item (re-play case).
         sequenced_items_.erase(
             std::remove_if(sequenced_items_.begin(), sequenced_items_.end(),
-                           [&](const SequencedItem& x){ return x.uuid == uuid; }),
+                           [&](const SequencedItem& x){
+                               if (x.uuid != uuid) return false;
+                               replaced_follow_override |= x.continue_armed || x.follow_suppressed;
+                               return true;
+                           }),
             sequenced_items_.end());
         sequenced_items_.push_back(std::move(si));
     }
+    // Cue to Continue belongs to one pass; a replay starts from the saved ending.
+    if (replaced_follow_override) broadcast_cue_follow(uuid, "");
 
     // Playback just moved somewhere the server's own guess didn't predict, so
     // drop a stale auto-arming — the clients then fall back to the "Up Next"
@@ -3984,6 +3992,11 @@ bool ProjectState::cue_to_continue(const std::string& uuid,
         it->continue_target_uuid = target_uuid;
         it->continue_armed = true;
         it->continue_to_play_next = quick_play;
+        it->follow_suppressed = false;
+        // Kept so un-arming can hand the pass back its own timing.
+        it->follow_saved_crossfade_sec = it->crossfade_sec;
+        it->follow_saved_start_next_time = it->start_next_time;
+        it->follow_saved_start_next_fade_sec = it->start_next_fade_sec;
         it->crossfade_sec = 0.0;
         it->start_next_time = 0.0;
         it->start_next_fade_sec = 0.0;
@@ -3998,6 +4011,135 @@ bool ProjectState::cue_to_continue(const std::string& uuid,
     Logger::playback("CUE TO CONTINUE: item '{}' target='{}'", uuid,
                      target_uuid);
     return true;
+}
+
+void ProjectState::broadcast_cue_follow(const std::string& uuid, const char* follow) {
+    std::function<void(const json&)> cb;
+    {
+        std::lock_guard lock{mutex_};
+        cb = ui_state_broadcaster_;
+    }
+    if (cb) cb(json{{"type", "doc_patch"}, {"op", "cue_follow_set"},
+                    {"itemUuid", uuid}, {"follow", follow}});
+}
+
+std::string ProjectState::cue_follow_state(const std::string& uuid) {
+    std::lock_guard slock{sequencer_mutex_};
+    for (const auto& item : sequenced_items_) {
+        if (item.uuid != uuid) continue;
+        if (item.continue_armed) return "armed";
+        if (item.follow_suppressed) return "suppressed";
+    }
+    return {};
+}
+
+bool ProjectState::set_cue_follow(const std::string& uuid, bool follow,
+                                  std::optional<std::uint64_t> expected_stop_revision) {
+    if (uuid.empty()) return false;
+
+    // A QuickPlay saved with Play Next already follows without being armed.
+    bool authored_follow = false;
+    double in_point = 0.0;
+    {
+        std::lock_guard lock{mutex_};
+        for_each_item(document_, [&](json& item, const std::string&) {
+            if (item.value("uuid", std::string{}) != uuid) return;
+            authored_follow = is_one_shot_cue(item) && item.contains("endBehavior") &&
+                item["endBehavior"].is_object() &&
+                item["endBehavior"].value("action", std::string{}) == "next";
+            in_point = json_get_or(item, "inPoint", 0.0);
+        });
+    }
+
+    enum class Change { None, Arm, Unarmed, Suppressed, Unsuppressed };
+    auto change = Change::None;
+    std::shared_ptr<audio::PlaybackItem> restore_loop;
+    {
+        std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
+        if (expected_stop_revision && *expected_stop_revision != stop_revision()) return false;
+        std::lock_guard slock{sequencer_mutex_};
+        const auto it = std::find_if(
+            sequenced_items_.begin(), sequenced_items_.end(),
+            [&](const SequencedItem& item) { return item.uuid == uuid; });
+        if (it == sequenced_items_.end()) return false;
+        const auto restore_timing = [&] {
+            it->crossfade_sec = it->follow_saved_crossfade_sec;
+            it->start_next_time = it->follow_saved_start_next_time;
+            it->start_next_fade_sec = it->follow_saved_start_next_fade_sec;
+        };
+        if (follow) {
+            if (it->follow_suppressed) {
+                it->follow_suppressed = false;
+                restore_timing();
+                change = Change::Unsuppressed;
+            } else if (!it->continue_armed && !authored_follow) {
+                change = Change::Arm;
+            }
+        } else if (it->continue_armed) {
+            it->continue_armed = false;
+            it->continue_to_play_next = false;
+            it->continue_target_uuid.clear();
+            restore_timing();
+            // Arming switched the decoder loop off; give a saved Loop back.
+            if (it->end_action == "loop") restore_loop = engine_.find_cue(it->cue_id);
+            change = Change::Unarmed;
+        } else if (authored_follow && !it->follow_suppressed) {
+            it->follow_suppressed = true;
+            it->follow_saved_crossfade_sec = it->crossfade_sec;
+            it->follow_saved_start_next_time = it->start_next_time;
+            it->follow_saved_start_next_fade_sec = it->start_next_fade_sec;
+            it->crossfade_sec = 0.0;
+            it->start_next_time = 0.0;
+            it->start_next_fade_sec = 0.0;
+            change = Change::Suppressed;
+        }
+    }
+
+    switch (change) {
+    case Change::None:
+        return true;
+    case Change::Arm:
+        if (!cue_to_continue(uuid, expected_stop_revision)) return false;
+        broadcast_cue_follow(uuid, "armed");
+        return true;
+    case Change::Unarmed:
+        // Like arming, this reseeks the decoder on the control thread with no
+        // project or sequencer lock held.
+        if (restore_loop) restore_loop->set_loop(true, in_point);
+        Logger::playback("CUE TO CONTINUE cancelled: item '{}'", uuid);
+        broadcast_cue_follow(uuid, "");
+        return true;
+    case Change::Suppressed:
+        Logger::playback("PLAY NEXT cancelled for this pass: item '{}'", uuid);
+        broadcast_cue_follow(uuid, "suppressed");
+        return true;
+    case Change::Unsuppressed:
+        Logger::playback("PLAY NEXT restored for this pass: item '{}'", uuid);
+        broadcast_cue_follow(uuid, "");
+        return true;
+    }
+    return false;
+}
+
+std::optional<std::string> ProjectState::one_shot_advance_target(const std::string& source_uuid) {
+    {
+        bool one_shot = false;
+        std::string action;
+        std::lock_guard lock{mutex_};
+        for_each_item(document_, [&](json& item, const std::string&) {
+            if (item.value("uuid", std::string{}) != source_uuid) return;
+            one_shot = is_one_shot_cue(item);
+            if (item.contains("endBehavior") && item["endBehavior"].is_object())
+                action = item["endBehavior"].value("action", std::string{});
+        });
+        if (!one_shot) return std::nullopt;
+        // Go to Item / Go to Index keep their authored target. Loop, Nothing
+        // and anything unrecognised resolve to no follow at all.
+        if (action != "next") return resolve_next_item_locked(source_uuid);
+    }
+    // Play Next: whatever GO would start right now. state_summary() takes
+    // mutex_ itself, so it runs after the lock above is released.
+    return play_next_playlist_target(source_uuid);
 }
 
 std::string ProjectState::play_next_playlist_target(const std::string& source_uuid) {
@@ -5943,7 +6085,10 @@ void ProjectState::sequencer_loop() {
                     si.stop_fade_sec <= 0.0 && si.start_next_time <= 0.0;
                 const double until_next = si.start_next_time > 0.0 ? si.start_next_time - pos
                                                                   : remaining - si.crossfade_sec;
-                if (!si.continue_armed && !si.advance_triggered && !si.start_next_triggered && remaining > 0.0 &&
+                // A QuickPlay never pre-arms the playlist cue it will follow into:
+                // GO and Up Next stay entirely the operator's until it ends.
+                if (!si.one_shot && !si.follow_suppressed &&
+                    !si.continue_armed && !si.advance_triggered && !si.start_next_triggered && remaining > 0.0 &&
                     until_next <= kPrepareFollowSec &&
                     (si.end_action == "next" ||
                      (plain_follow && (si.end_action == "goto-item" || si.end_action == "goto-index")))) {
@@ -5993,16 +6138,18 @@ void ProjectState::sequencer_loop() {
                 if (terminal) {
                     if (!playback_generations_.claim_terminal(
                             p.item.uuid, p.item.playback_generation)) continue;
-                    // A continuation may have been armed after collecting EOF.
+                    // Cue to Continue may have been armed, un-armed or cancelled
+                    // after collecting EOF; the live entry is the operator's last word.
                     const auto current = std::find_if(sequenced_items_.begin(), sequenced_items_.end(),
                         [&](const SequencedItem& item) {
                             return item.uuid == p.item.uuid &&
                                    item.playback_generation == p.item.playback_generation;
                         });
-                    if (current != sequenced_items_.end() && current->continue_armed) {
-                        p.item.continue_armed = true;
+                    if (current != sequenced_items_.end()) {
+                        p.item.continue_armed = current->continue_armed;
                         p.item.continue_to_play_next = current->continue_to_play_next;
                         p.item.continue_target_uuid = current->continue_target_uuid;
+                        p.item.follow_suppressed = current->follow_suppressed;
                     }
                     std::erase_if(sequenced_items_, [&](const SequencedItem& item) {
                         return item.uuid == p.item.uuid &&
@@ -6010,6 +6157,13 @@ void ProjectState::sequencer_loop() {
                     });
                 }
             }
+            const auto follow_cancelled = [&] {
+                std::lock_guard slock{sequencer_mutex_};
+                return std::any_of(sequenced_items_.begin(), sequenced_items_.end(), [&](const SequencedItem& item) {
+                    return item.uuid == p.item.uuid && item.playback_generation == p.item.playback_generation &&
+                           item.follow_suppressed;
+                });
+            };
           try {
             switch (p.kind) {
             case PendingAction::Kind::PlaybackError: {
@@ -6052,6 +6206,8 @@ void ProjectState::sequencer_loop() {
                 break;
 
             case PendingAction::Kind::Crossfade: {
+                // Collected before the operator cancelled this pass's follow.
+                if (follow_cancelled()) break;
                 const bool buffered = p.item.end_action == "next" && !music_backup_for(p.item.uuid).empty();
                 const auto next_uuid = resolve_advance_target(p.item.uuid, buffered);
                 // Start the incoming cue before committing the outgoing fade:
@@ -6086,6 +6242,7 @@ void ProjectState::sequencer_loop() {
             }
 
             case PendingAction::Kind::StartNext: {
+                if (follow_cancelled()) break;
                 const bool buffered = p.item.end_action == "next" && !music_backup_for(p.item.uuid).empty();
                 const auto next_uuid = resolve_advance_target(p.item.uuid, buffered);
                 const bool started = !next_uuid.empty() &&
@@ -6493,6 +6650,7 @@ void ProjectState::release_duck_owners(const SequencedItem& item) {
 }
 
 std::string ProjectState::resolve_advance_target(const std::string& source_uuid, bool manual_override_only) {
+    if (auto quick_play_target = one_shot_advance_target(source_uuid)) return *quick_play_target;
     std::lock_guard lock{mutex_};
     return !next_item_for_go_only_ && !next_item_override_.empty() &&
         (!manual_override_only || next_item_override_manual_)
@@ -6611,8 +6769,19 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
             auto it = item_uuid_to_cue_.find(stopped_uuid);
             if (it != item_uuid_to_cue_.end()) stopped_cue = it->second;
         }
+        // A QuickPlay is an anytime trigger outside the playlist. One playing
+        // over the tail of this cue must not stop the playlist from queueing
+        // its next cue: the operator would be left with nothing on GO, and a
+        // QuickPlay ending on Play Next would have nowhere to hand over to.
+        std::vector<audio::CueId> quick_play_cues;
+        for_each_item(document_, [&](json& item, const std::string&) {
+            if (!is_one_shot_cue(item)) return;
+            const auto cue = item_uuid_to_cue_.find(item.value("uuid", std::string{}));
+            if (cue != item_uuid_to_cue_.end()) quick_play_cues.push_back(cue->second);
+        });
         for (auto& [_, c] : cues_) {
             if (c.id == stopped_cue) continue;
+            if (std::find(quick_play_cues.begin(), quick_play_cues.end(), c.id) != quick_play_cues.end()) continue;
             if (auto pi = engine_.find_cue(c.id)) {
                 const auto ts = pi->stats().transport;
                 if (ts == audio::TransportState::Playing  ||
@@ -6718,6 +6887,15 @@ void ProjectState::handle_item_ended(std::unique_lock<std::recursive_mutex>& lif
         Logger::playback("END BEHAVIOUR suppressed for '{}' "
                          "(Start Next marker already fired)", item.uuid);
         complete_group_runs_for_item(lifecycle_lock, item.uuid);
+        return;
+    }
+
+    // The operator switched Cue to Continue off for this pass: it ends the
+    // way a QuickPlay with no ending does, and Up Next is left alone.
+    if (item.follow_suppressed) {
+        Logger::playback("END BEHAVIOUR cancelled for '{}' (Cue to Continue off)", item.uuid);
+        arm_next_after_stop(item.uuid, /*was_manual=*/false);
+        if (current()) complete_group_runs_for_item(lifecycle_lock, item.uuid);
         return;
     }
 

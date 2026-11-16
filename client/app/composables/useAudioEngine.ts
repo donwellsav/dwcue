@@ -30,6 +30,7 @@
 // =====================================================================
 import type { AudioItem, GroupItem } from '~/types/project';
 import { runExclusivePendingAction, runPendingAction } from '~/utils/acknowledgedAction';
+import { oneShotFollowsUpNext, type CueFollowOverride } from '~/utils/oneShots';
 
 // ---------------------------------------------------------------------
 // Shapes consumed by Vue components.
@@ -87,6 +88,9 @@ export const useAudioEngine = () => {
   // ---- Reactive state ------------------------------------------------
   const activeCues   = useState<Map<string, ActiveCueView>>('activeCues',  () => new Map());
   const activeGroups = useState<Map<string, ActiveGroupView>>('activeGroups', () => new Map());
+  // Server-owned Cue to Continue state per playing item, mirrored from
+  // cue_follow_set patches so every window shows the same toggle.
+  const cueFollowOverrides = useState<Map<string, CueFollowOverride>>('cueFollowOverrides', () => new Map());
 
   // Master meter values read straight off the server's master_channels
   // broadcast (the engine's real master meter). Combines L+R so the
@@ -170,19 +174,25 @@ export const useAudioEngine = () => {
 
   const removeActiveCue = (uuid: string) => {
     activeCues.value.delete(uuid);
+    // The override belongs to the pass that just ended.
+    cueFollowOverrides.value.delete(uuid);
   };
 
   // Server-owned cue-to-continue affects only the currently playing instance.
   // The authored endBehavior remains untouched in the client and on disk.
+  // A looping playlist cue arms once. A QuickPlay toggles: the same control
+  // cancels the follow again for the pass that is playing.
   const queueLoopContinuation = (item: AudioItem): Promise<boolean> => {
     if (!item?.uuid) return Promise.resolve(false);
     return runPendingAction(
       'transport:continue:' + item.uuid,
       async () => {
-        if (item.oneShot && setNextItemPending.value) return false;
-        const accepted = await server.cueToContinue(item.uuid);
-        if (accepted && item.oneShot) {
-          showHeaderWarning(t('oneShots.followPlayNextArmed'));
+        if (!item.oneShot) return server.cueToContinue(item.uuid);
+        if (setNextItemPending.value) return false;
+        const follow = !oneShotFollowsUpNext(item, cueFollowOverrides.value.get(item.uuid));
+        const accepted = await server.cueToContinue(item.uuid, follow);
+        if (accepted) {
+          showHeaderWarning(t(follow ? 'oneShots.followPlayNextArmed' : 'oneShots.followPlayNextCancelled'));
         }
         return accepted;
       },
@@ -373,6 +383,15 @@ export const useAudioEngine = () => {
       masterGainDb.value = snap.master_gain_db;
     }
     nextItemOverrideUuid.value = snap?.next_item_uuid || null;
+    // The snapshot is authoritative for Cue to Continue too: a window opened
+    // or reconnected mid-pass must show the toggle the operator already set.
+    const overrides = new Map<string, CueFollowOverride>();
+    for (const cue of Array.isArray(snap?.cues) ? snap.cues : []) {
+      if (typeof cue?.item_uuid === 'string' && (cue.follow === 'armed' || cue.follow === 'suppressed')) {
+        overrides.set(cue.item_uuid, cue.follow);
+      }
+    }
+    cueFollowOverrides.value = overrides;
   });
 
   // Doc_patch: server-driven state changes other clients might trigger.
@@ -384,6 +403,14 @@ export const useAudioEngine = () => {
         break;
       case 'master_gain_changed':
         if (typeof patch.db === 'number') masterGainDb.value = patch.db;
+        break;
+      case 'cue_follow_set':
+        if (typeof patch.itemUuid !== 'string' || !patch.itemUuid) break;
+        if (patch.follow === 'armed' || patch.follow === 'suppressed') {
+          cueFollowOverrides.value.set(patch.itemUuid, patch.follow);
+        } else {
+          cueFollowOverrides.value.delete(patch.itemUuid);
+        }
         break;
       case 'custom_action_result':
         if (patch.ok === false) console.warn('[useAudioEngine] HTTP cue action failed:', patch.message);
@@ -556,6 +583,7 @@ export const useAudioEngine = () => {
   return {
     activeCues,
     activeGroups,
+    cueFollowOverrides,
     masterOutputLevel,
     masterPeakLevel,
     masterGainDb,

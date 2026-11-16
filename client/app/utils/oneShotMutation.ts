@@ -136,7 +136,7 @@ const validateFields = (value: unknown): value is OneShotMutableFields => {
       case 'retrigger': return field === 'restart' || field === 'ignore';
       case 'hotkey': return validHotkey(field);
       case 'playbackMode': return field === 'overlay' || field === 'duck' || field === 'replace';
-      case 'endMode': return field === 'stop' || field === 'loop';
+      case 'endMode': return field === 'stop' || field === 'loop' || field === 'next';
     }
   });
 };

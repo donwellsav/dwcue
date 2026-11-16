@@ -477,6 +477,97 @@ test('project session preconditions reject delayed edits after switching or reop
   } catch (error) { error.message += `\nNative server diagnostics:\n${diagnostics}`; throw error; }
 });
 
+test('Cue to Continue on a QuickPlay toggles over the socket and reaches joining clients', { timeout: 30000 }, async t => {
+  const folder = await mkdtemp(path.join(os.tmpdir(), 'dwcue-quickplay-follow-'));
+  const port = await unusedPort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
+    cwd: folder,
+    env: { ...process.env, LIVEPLAY_STATE_DIR: path.join(folder, 'state'),
+      LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let diagnostics = '';
+  child.stdout.on('data', chunk => { diagnostics += chunk; });
+  child.stderr.on('data', chunk => { diagnostics += chunk; });
+  t.after(async () => { await stopServer(child); await rm(folder, { recursive: true, force: true }); });
+  try {
+    await waitForServer(baseUrl, child);
+    const media = path.join(folder, 'silence.wav');
+    await writeFile(media, silentWav(20));
+    const cue = (uuid, extra = {}) => ({
+      uuid, type: 'audio', displayName: uuid, mediaServerPath: media, duration: 20,
+      endBehavior: { action: 'nothing' }, ...extra,
+    });
+    const quickPlay = (uuid, order, extra = {}) => cue(uuid, {
+      index: [-1, order], oneShot: { order, retrigger: 'restart' },
+      duckingBehavior: { mode: 'no-ducking' }, ...extra,
+    });
+    const show = path.join(folder, 'Follow.dwcue');
+    await writeFile(show, JSON.stringify({
+      name: 'Follow', version: '2.0.0', folderPath: folder,
+      items: [cue('first'), cue('second')],
+      cartOnlyItems: [quickPlay('sting', 0), quickPlay('bumper', 1, { endBehavior: { action: 'next' } })],
+      cartItems: [], settings: { autoSave: false }, theme: { accentColor: '#123456' },
+    }));
+    const loaded = await request(baseUrl, '/api/project/load', { method: 'POST', body: JSON.stringify({ path: show }) });
+    assert.equal(loaded.status, 200, await loaded.clone().text());
+    let readiness;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      readiness = await (await request(baseUrl, '/api/project/progress')).json();
+      if (!readiness.loading) break;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.equal(readiness?.ready, true, JSON.stringify(readiness));
+
+    const wsUrl = 'ws://127.0.0.1:' + port + '/ws?access_token=' + encodeURIComponent(accessToken);
+    const operator = openEventStream(wsUrl);
+    t.after(() => operator.socket.close());
+    await operator.opened;
+    const command = (payload, id) => {
+      const ack = operator.next(message => message.type === 'command_ack' && message.command_id === id);
+      operator.socket.send(JSON.stringify({ ...payload, command_id: id }));
+      return ack;
+    };
+    const followPatch = uuid => operator.next(message =>
+      message.type === 'doc_patch' && message.op === 'cue_follow_set' && message.itemUuid === uuid);
+    // What a window opened mid-pass is told about each playing cue.
+    const joinedFollowStates = async () => {
+      const joiner = openEventStream(wsUrl);
+      try {
+        await joiner.opened;
+        const snapshot = await joiner.next(message => message.type === 'playback_snapshot');
+        return Object.fromEntries(snapshot.cues.map(entry => [entry.item_uuid, entry.follow ?? null]));
+      } finally { joiner.socket.close(); }
+    };
+
+    assert.equal((await command({ type: 'cue_to_continue', item_uuid: 'sting', follow: true }, 'idle')).ok, false,
+      'an idle QuickPlay has no pass to arm');
+    assert.equal((await command({ type: 'play', item_uuid: 'sting' }, 'play-sting')).ok, true);
+    let patch = followPatch('sting');
+    assert.equal((await command({ type: 'cue_to_continue', item_uuid: 'sting', follow: true }, 'arm')).ok, true);
+    assert.equal((await patch).follow, 'armed');
+    assert.deepEqual(await joinedFollowStates(), { sting: 'armed' });
+
+    patch = followPatch('sting');
+    assert.equal((await command({ type: 'cue_to_continue', item_uuid: 'sting', follow: false }, 'disarm')).ok, true);
+    assert.equal((await patch).follow, '', 'un-arming returns the pass to its saved ending');
+    const invalid = await command({ type: 'cue_to_continue', item_uuid: 'sting', follow: 'yes' }, 'invalid');
+    assert.equal(invalid.ok, false);
+    assert.match(invalid.error, /follow must be true or false/);
+
+    assert.equal((await command({ type: 'play', item_uuid: 'bumper' }, 'play-bumper')).ok, true);
+    patch = followPatch('bumper');
+    assert.equal((await command({ type: 'cue_to_continue', item_uuid: 'bumper', follow: false }, 'cancel')).ok, true);
+    assert.equal((await patch).follow, 'suppressed', 'a saved Play Next can be cancelled for one pass');
+    assert.deepEqual(await joinedFollowStates(), { sting: null, bumper: 'suppressed' });
+
+    const document = await (await request(baseUrl, '/api/project')).json();
+    assert.deepEqual(document.cartOnlyItems.map(item => item.endBehavior.action), ['nothing', 'next'],
+      'the toggle never edits the saved endings');
+  } catch (error) { error.message += `\nNative server diagnostics:\n${diagnostics}`; throw error; }
+});
+
 async function unusedPort() {
   const socket = net.createServer();
   await new Promise((resolve, reject) => {

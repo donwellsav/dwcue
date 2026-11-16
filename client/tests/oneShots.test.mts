@@ -6,10 +6,13 @@ import {
   cloneAsIndependentOneShot,
   cloneAsPlaylistItem,
   flattenOneShots,
+  getOneShotEndMode,
   markAsOneShot,
   nextAvailableOneShotOrder,
   nextOneShotOrder,
+  oneShotFollowsUpNext,
   removeOneShotDesignation,
+  setOneShotEndMode,
 } from '../app/utils/oneShots.ts';
 import { computed, ref } from 'vue';
 import { useOneShotPlayback } from '../app/composables/useOneShotPlayback.ts';
@@ -260,4 +263,41 @@ test('One Shots use primary or detached show readiness, with no arm requirement'
   activeCues.value.clear();
   assert.equal(await bank.playOneShot(item), false);
   assert.deepEqual(starts, ['sting', 'sting', 'sting']);
+});
+
+test('a QuickPlay ending reports and sets Stop, Loop and Play Next without losing a Go to target', () => {
+  const item = audio('sting', 0) as AudioItem;
+  item.endBehavior = { action: 'nothing' };
+  assert.equal(getOneShotEndMode(item), 'stop');
+  setOneShotEndMode(item, 'next');
+  assert.deepEqual(item.endBehavior, { action: 'next' });
+  assert.equal(getOneShotEndMode(item), 'next', 'Play Next is never misreported as Stop');
+  setOneShotEndMode(item, 'loop');
+  assert.equal(getOneShotEndMode(item), 'loop');
+  setOneShotEndMode(item, 'stop');
+  assert.deepEqual(item.endBehavior, { action: 'nothing' });
+
+  item.endBehavior = { action: 'goto-item', targetUuid: 'finale' };
+  assert.equal(getOneShotEndMode(item), 'goto');
+  setOneShotEndMode(item, 'goto');
+  assert.deepEqual(item.endBehavior, { action: 'goto-item', targetUuid: 'finale' },
+    're-selecting the reported Go to ending keeps its target');
+  item.endBehavior = { action: 'goto-index', targetIndex: [2] };
+  assert.equal(getOneShotEndMode(item), 'goto');
+});
+
+test('the Cue to Continue toggle shows the playing pass first and the saved ending otherwise', () => {
+  const item = audio('sting', 0) as AudioItem;
+  item.endBehavior = { action: 'nothing' };
+  assert.equal(oneShotFollowsUpNext(item), false);
+  assert.equal(oneShotFollowsUpNext(item, 'armed'), true, 'armed for this pass');
+  item.endBehavior = { action: 'next' };
+  assert.equal(oneShotFollowsUpNext(item), true, 'a saved Play Next follows without arming');
+  assert.equal(oneShotFollowsUpNext(item, null), true);
+  assert.equal(oneShotFollowsUpNext(item, 'suppressed'), false, 'cancelled for this pass');
+  item.endBehavior = { action: 'loop' };
+  assert.equal(oneShotFollowsUpNext(item), false);
+  assert.equal(oneShotFollowsUpNext(item, 'armed'), true, 'an armed loop finishes into Up Next');
+  item.endBehavior = { action: 'goto-item', targetUuid: 'finale' };
+  assert.equal(oneShotFollowsUpNext(item), false, 'Go to Item is not Up Next');
 });

@@ -134,7 +134,7 @@ On narrow playlists, cue names appear above the row controls and the toolbar use
 
 Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The QuickPlay Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
-Rehearse at the actual display size and app zoom. Settings, Properties, QuickPlay Settings, and imports share the lower panel. It fits the content up to 60% of the window, with room reserved for the playlist. On a short window the panel may scroll sooner. Tabs stay along the bottom while the controls scroll. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its adjusted height while the app is open. GO and Stop All stay at the top and the shortcut bar shows a compact reference. **Customize Shortcuts…** opens the full editor. Settings choices for default transition, language, meter display and meter ballistics expand in the panel.
+Rehearse at the actual display size and app zoom. Settings, Properties, and imports share the lower panel. It fits the content up to 60% of the window, with room reserved for the playlist. On a short window the panel may scroll sooner. Tabs stay along the bottom while the controls scroll. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its adjusted height while the app is open. GO and Stop All stay at the top and the shortcut bar shows a compact reference. **Customize Shortcuts…** opens the full editor. Settings choices for default transition, language, meter display and meter ballistics expand in the panel.
 
 ![Show Mode at a small window size with the silence countdown, cue names, and one-line QuickPlays shortcut reference.](manual-assets/show-mode.png)
 
@@ -494,29 +494,40 @@ In Edit Mode, click **+** in an empty **QuickPlays** slot. In the lower panel, s
 
 Drop a file from the controller directly onto a slot, including for a remote engine. To make an independent copy of a playlist cue, drag it to a slot or use **Add to QuickPlays** in Basic Info.
 
-The tile gear opens **QuickPlay Settings** below the playlist or detached tiles in both modes. In Edit Mode, **Replace audio** uses the same file browser and the remove control is available.
+In Edit Mode, the tile gear opens the same **Properties** panel a playlist cue uses, with one extra **QuickPlay** column. **Basic Info** holds the name, color, file, **Ducking**, **Start Behavior**, and **End Behavior**. **Playback** has the waveform with trim points, gain, normalizing, fade handles, **Fade Settings**, and **Transitions**. **Output** has the device and timecode. The **QuickPlay** column holds what only a QuickPlay has: **When triggered again**, its **Keyboard Shortcut**, and, with Duck Others selected, **Duck Time** and **Release Time**. The remove control is on the tile.
 
-**Playback**, **When triggered again**, **Ending**, and **Output** expand inside the panel. The playlist and **GO** stay available in the main window. With a choice list open, **Escape** runs Stop All even if the shortcut was remapped. The detached settings header also has its own **Stop All** button. Both stop actions leave the choices open.
+Show Mode hides the gear and the remove control, so a tile shows only **Play/Stop** and the **Cue to Continue** toggle. Switch to Edit Mode to change a QuickPlay.
 
-![QuickPlay settings with playback, retrigger, ending, gain and fade controls.](manual-assets/one-shot-settings-current.png)
+The detached QuickPlays window has no Properties panel. There the gear opens a compact **QuickPlay Settings** panel below the tiles in Edit Mode, with **Playback**, **When triggered again**, **Ending**, gain, fades, **Output**, the shortcut, and **Replace audio**. Its **Ending** list offers Stop, Loop, and Play Next; a Go to ending is set in the main window.
+
+Choice lists expand inside the panel. The playlist and **GO** stay available in the main window. With a choice list open, **Escape** runs Stop All even if the shortcut was remapped. The detached settings header also has its own **Stop All** button. Both stop actions leave the choices open.
+
+![The compact QuickPlay Settings panel of the detached window, with playback, retrigger, ending, gain and fade controls.](manual-assets/one-shot-settings-current.png)
 
 | Setting | Operator decision |
 | --- | --- |
-| Playback: Overlay | Mix with the program without ducking it. |
-| Playback: Duck Program | Temporarily set other active cues to the absolute Program Level, then restore their prior gains. A quieter cue can be raised; rehearse the actual result. |
-| Playback: Replace Program | Stop the other program cues when firing this QuickPlay. |
+| Ducking: No Ducking (detached panel: Playback: Overlay) | Mix with the program without ducking it. |
+| Ducking: Duck Others (detached panel: Duck Program) | Temporarily set other active cues to the absolute Duck Level, then restore their prior gains. A quieter cue can be raised; rehearse the actual result. |
+| Ducking: Stop All Other Cues (detached panel: Replace Program) | Stop the other program cues when firing this QuickPlay. |
 | When triggered again: Restart | A later accepted trigger starts the QuickPlay again. |
 | When triggered again: Ignore | Ignore further triggers while it is already active. |
-| Ending: Stop / Loop | Finish once or repeat; prepare a stop plan for every loop. |
+| End Behavior: Nothing (detached panel: Ending: Stop) | Play once and stop. |
+| End Behavior: Play Next | When it finishes, play the playlist cue that is **Up Next** at that moment. With nothing queued it just stops. |
+| End Behavior: Go to Item / Go to Index | When it finishes, play that specific cue, whatever is Up Next. |
+| End Behavior: Loop | Repeat; prepare a stop plan for every loop. |
 | Output | Use the project default or a deliberately selected separate device. |
 
-New QuickPlays start with **Replace Program**, a **0.1-second fade-in**, a **0.5-second fade-out**, Ending Stop, and retrigger Restart. Saved cues retain their playback and fade settings. When you choose Duck Program, **Duck Time** and **Release Time** set the attack and recovery. Overlapping duck owners use the strongest absolute Program Level, and restoration follows the surviving owners before returning each cue to its recomputed base gain. Rehearse the actual envelope and the case where one overlapping QuickPlay ends before another.
+New QuickPlays start with **Stop All Other Cues**, a **0.1-second fade-in**, a **0.5-second fade-out**, End Behavior Nothing, and retrigger Restart. Saved cues retain their playback and fade settings. A QuickPlay is outside the playlist, so its **Cross-fade** and **Start Next at Marker** hand over to the playlist's Up Next cue; they apply when its End Behavior is Play Next or Go to. When you choose Duck Others, **Duck Time** and **Release Time** set the attack and recovery. Overlapping duck owners use the strongest absolute Program Level, and restoration follows the surviving owners before returning each cue to its recomputed base gain. Rehearse the actual envelope and the case where one overlapping QuickPlay ends before another.
 
 ### Fire and stop
 
 In either mode, press the tile's **Play** button, its shortcut, or its MIDI control to fire directly. The button changes to **Stop** when playback is active. Use the number row for slots **1–10** and hold **Shift** for slots **11–20**.
 
-To return from a playing QuickPlay to the playlist, set the playlist cue **Up Next** and choose **Cue to Continue** on the active QuickPlay. The default **C** shortcut does this for the active transport target. The QuickPlay finishes its current pass and plays whichever playlist cue is **Up Next** at that point. Use **Stop All** to cancel the handoff. The saved ending stays in the show file for the next play.
+To return from a playing QuickPlay to the playlist, set the playlist cue **Up Next** and press the **Cue to Continue** toggle on the QuickPlay's tile, the bent arrow beside Play/Stop. It lights in the Up Next color. The QuickPlay finishes its current pass and plays whichever playlist cue is **Up Next** at that point. Press the toggle again to switch it off for this play. The default **C** shortcut toggles it for the active transport target. **Stop All** also cancels the handoff.
+
+The toggle belongs to the play in progress and is never saved. While the QuickPlay is not playing, the toggle is unavailable and shows what the saved ending will do: lit for **Play Next**. To make a QuickPlay continue every time, set its **End Behavior** to **Play Next**; the toggle then starts lit on each play, and pressing it cancels the handoff for that play only. The toggle cannot be switched on while no playlist cue is queued.
+
+A playlist cue that ends while a QuickPlay is still playing over it queues the following cue as Up Next as usual, so the QuickPlay has a cue to hand over to.
 
 ![QuickPlay 11 in Show Mode with its Play button and Shift+1 shortcut.](manual-assets/one-shot-show-mode.png)
 
@@ -1005,7 +1016,7 @@ These are source defaults, not a promise about a project's customized assignment
 | G | Capture Video Output as a standby still |
 | Shift+G | Capture the display selected in Video Output settings |
 | F1 | Separate Play Selected audio action |
-| C | Cue to Continue at the end of the active loop or QuickPlay pass |
+| C | Cue to Continue at the end of the active loop pass; on an active QuickPlay it switches the handoff on or off |
 | J | Jump Cue immediately |
 | 1 through 9, then 0 | Fire QuickPlay slots 1 through 10 in either mode |
 | Shift+1 through Shift+9, then Shift+0 | Fire QuickPlay slots 11 through 20 in either mode |

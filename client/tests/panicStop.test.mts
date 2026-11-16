@@ -823,6 +823,7 @@ function loadNextItemFeedback(dependencies: Record<string, unknown>): {
   const factory = transpileFactory(`
     function buildNextItemFeedback(dependencies: Record<string, any>) {
       const { executeHttpRequest, masterGainDb, nextItemOverrideUuid } = dependencies;
+      const cueFollowOverrides = dependencies.cueFollowOverrides ?? { value: new Map() };
       let snapshot;
       let patch;
       const server = {
@@ -854,6 +855,33 @@ test('only server patch and reconnect snapshot change the displayed next target'
   assert.equal(masterGainDb.value, -4.5);
   feedback.patch({ op: 'next_item_set', itemUuid: '' });
   assert.equal(nextItemOverrideUuid.value, null);
+});
+
+test('the Cue to Continue toggle mirrors only server patches and reconnect snapshots', () => {
+  const cueFollowOverrides = { value: new Map<string, string>() };
+  const feedback = loadNextItemFeedback({
+    executeHttpRequest() {},
+    masterGainDb: { value: 0 },
+    nextItemOverrideUuid: { value: null },
+    cueFollowOverrides,
+  });
+
+  feedback.patch({ op: 'cue_follow_set', itemUuid: 'sting', follow: 'armed' });
+  assert.equal(cueFollowOverrides.value.get('sting'), 'armed');
+  feedback.patch({ op: 'cue_follow_set', itemUuid: 'sting', follow: 'suppressed' });
+  assert.equal(cueFollowOverrides.value.get('sting'), 'suppressed');
+  feedback.patch({ op: 'cue_follow_set', itemUuid: 'sting', follow: '' });
+  assert.equal(cueFollowOverrides.value.has('sting'), false, 'an empty state returns to the saved ending');
+  feedback.patch({ op: 'cue_follow_set', itemUuid: 'sting', follow: 'bogus' });
+  feedback.patch({ op: 'cue_follow_set', follow: 'armed' });
+  assert.equal(cueFollowOverrides.value.size, 0, 'unknown states and missing items are ignored');
+
+  feedback.patch({ op: 'cue_follow_set', itemUuid: 'ended-earlier', follow: 'armed' });
+  feedback.snapshot({ next_item_uuid: '', cues: [
+    { item_uuid: 'bed', follow: 'armed' }, { item_uuid: 'plain' }, { item_uuid: 'odd', follow: 'nope' },
+  ] });
+  assert.deepEqual([...cueFollowOverrides.value], [['bed', 'armed']],
+    'a reconnect snapshot replaces stale toggle state with what is playing now');
 });
 
 function loadMasterGainController(dependencies: Record<string, unknown>): {

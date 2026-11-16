@@ -583,8 +583,9 @@ function createClient() {
   function play(cue: CueId) { return wsSend({ type: 'play', cue_id: cue }, true); }
   function stop(cue: CueId) { return wsSend({ type: 'stop', cue_id: cue }, true); }
   function go(): Promise<boolean> { return wsSend({ type: 'go' }, true); }
-  function cueToContinue(itemUuid: string): Promise<boolean> {
-    return wsSend({ type: 'cue_to_continue', item_uuid: itemUuid }, true);
+  // follow=false cancels Cue to Continue for the pass that is playing now.
+  function cueToContinue(itemUuid: string, follow = true): Promise<boolean> {
+    return wsSend({ type: 'cue_to_continue', item_uuid: itemUuid, follow }, true);
   }
   // Omit fadeMs to let the server apply the project-wide Stop All fade
   // (settings.stopAllFadeMs, default 1000 ms). Pass a number (incl. 0 for an

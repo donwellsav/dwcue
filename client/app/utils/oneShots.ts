@@ -1,7 +1,15 @@
 import type { AudioItem, GroupItem } from '../types/project';
 
 export type OneShotPlaybackMode = 'overlay' | 'duck' | 'replace';
-export type OneShotEndMode = 'stop' | 'loop';
+// 'goto' reports a Go to Item / Go to Index ending authored in Properties. The
+// compact picker shows it but cannot create one, because it needs a target.
+export type OneShotEndMode = 'stop' | 'loop' | 'next' | 'goto';
+export type OneShotSelectableEndMode = Exclude<OneShotEndMode, 'goto'>;
+
+// Server-owned Cue to Continue state for the pass that is playing right now.
+// 'armed' forces Play Up Next for this pass; 'suppressed' cancels an authored
+// Play Next for this pass. Neither is ever written to the show file.
+export type CueFollowOverride = 'armed' | 'suppressed';
 
 // The layout editor supports up to 16 × 16 cells. Capping bad saved order
 // values here prevents a corrupt project from allocating an unbounded grid.
@@ -179,9 +187,29 @@ export const setOneShotPlaybackMode = (
     item.duckingBehavior.duckLevel = 0.1;
 };
 
-export const getOneShotEndMode = (item: AudioItem): OneShotEndMode =>
-  item.endBehavior?.action === 'loop' ? 'loop' : 'stop';
+export const getOneShotEndMode = (item: AudioItem): OneShotEndMode => {
+  const action = item.endBehavior?.action;
+  if (action === 'loop') return 'loop';
+  if (action === 'next') return 'next';
+  if (action === 'goto-item' || action === 'goto-index') return 'goto';
+  return 'stop';
+};
 
 export const setOneShotEndMode = (item: AudioItem, mode: OneShotEndMode): void => {
-  item.endBehavior = { action: mode === 'loop' ? 'loop' : 'nothing' };
+  // Re-selecting the reported Go to ending must not discard its target.
+  if (mode === 'goto') return;
+  item.endBehavior = {
+    action: mode === 'loop' ? 'loop' : mode === 'next' ? 'next' : 'nothing',
+  };
 };
+
+/**
+ * Whether this QuickPlay will start the playlist's Up Next cue when it
+ * finishes. While it plays, the server-owned override for the current pass
+ * wins over the authored Ending; when idle only the authored Ending applies.
+ */
+export const oneShotFollowsUpNext = (
+  item: AudioItem,
+  override?: CueFollowOverride | null,
+): boolean => override === 'armed'
+  || (override !== 'suppressed' && item.endBehavior?.action === 'next');

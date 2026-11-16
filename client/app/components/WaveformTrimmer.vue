@@ -204,8 +204,7 @@
           :style="{ left: outPointPosition + 'px' }"
         ></div>
         
-        <!-- Fade Handles (hidden for cart items) -->
-        <template v-if="!isCartItem">
+          <!-- Fade handles: the same for playlist cues and QuickPlays. -->
           <!-- Play Fade Handle (fade in end) -->
           <div 
             v-if="playFade > 0"
@@ -261,7 +260,6 @@
               <span class="material-symbols-rounded">skip_next</span>
             </div>
           </div>
-        </template>
         </template>
       </div>
 
@@ -370,7 +368,7 @@
       </div>
     </section>
 
-    <section v-if="!isCartItem" class="fade-controls-section">
+    <section class="fade-controls-section">
       <h4>{{ t('properties.fadeSettings') }}</h4>
       <div class="fade-control-group">
         <label for="cue-trim-playFade">{{ t('properties.playFade') }}</label>
@@ -434,8 +432,15 @@
       </div>
     </section>
 
-    <section v-if="!isCartItem" class="transition-controls-section">
-      <h4>{{ t('properties.transitions') }}</h4>
+    <section class="transition-controls-section">
+      <!-- A QuickPlay is outside the playlist, so its transitions hand over to Up Next. -->
+      <h4 :title="isCartItem ? t('oneShots.transitionsHelp') : undefined">
+        {{ t('properties.transitions') }}
+        <span v-if="isCartItem" class="transition-target">
+          <span class="material-symbols-rounded" aria-hidden="true">subdirectory_arrow_right</span>
+          {{ t('status.upNext') }}
+        </span>
+      </h4>
       <label class="start-next-toggle">
         <input
           type="checkbox"
@@ -1976,6 +1981,21 @@ onUnmounted(() => {
   align-items: center;
   padding: 0 var(--spacing-sm);
   font-size: var(--type-panel-title-size);
+}
+
+.transition-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: auto;
+  color: var(--state-up-next);
+  font-size: var(--type-metadata-size);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.transition-target .material-symbols-rounded {
+  font-size: 15px;
 }
 
 .time-field,

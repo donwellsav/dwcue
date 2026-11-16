@@ -1349,6 +1349,10 @@ static json build_playback_snapshot(audio::AudioEngine& engine,
             if (auto seq = state.item_trigger_seq(*uuid)) {
                 entry["trigger_seq"] = *seq;
             }
+            // Cue to Continue state of this pass, so a client joining mid-pass
+            // shows the toggle the operator already set. Omitted when default.
+            if (const auto follow = state.cue_follow_state(*uuid); !follow.empty())
+                entry["follow"] = follow;
         }
         cues_arr.push_back(std::move(entry));
     }
@@ -1635,9 +1639,17 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
             const std::string uuid = j.value("item_uuid", std::string{});
             if (uuid.empty())
                 return command_error("cue_to_continue: missing item_uuid");
-            if (!state.cue_to_continue(uuid, expected_stop_revision))
+            // "follow": false switches it back off for the pass that is playing.
+            bool follow = true;
+            if (const auto requested = j.find("follow"); requested != j.end()) {
+                if (!requested->is_boolean())
+                    return command_error("cue_to_continue: follow must be true or false");
+                follow = requested->get<bool>();
+            }
+            if (!state.set_cue_follow(uuid, follow, expected_stop_revision))
                 return command_error("cue_to_continue: item cannot be cued");
-            Logger::playback("CUE TO CONTINUE: {}", item_playback_info(uuid, state));
+            Logger::playback("CUE TO CONTINUE {}: {}", follow ? "on" : "off",
+                             item_playback_info(uuid, state));
         }
         else if (type == "gain") {
             auto cue = resolve_cue(j);

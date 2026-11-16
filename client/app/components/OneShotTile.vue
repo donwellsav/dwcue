@@ -46,11 +46,25 @@
         </button>
         <button
           type="button"
-          class="one-shot-control"
-          :class="{ 'is-active': menuOpen }"
+          class="one-shot-control one-shot-follow"
+          :class="{ 'is-on': followsUpNext }"
+          :aria-pressed="followsUpNext"
+          :aria-label="followLabel"
+          :title="followLabel"
+          :disabled="!followToggleReady"
+          @click.stop="toggleFollow"
+          @keydown.enter.space.stop
+        >
+          <span class="material-symbols-rounded" aria-hidden="true">subdirectory_arrow_right</span>
+        </button>
+        <button
+          v-if="!showMode"
+          type="button"
+          class="one-shot-control one-shot-settings"
+          :class="{ 'is-active': settingsOpen }"
           :aria-label="t('oneShots.settingsFor', { name: item.displayName })"
           :title="t('oneShots.settings')"
-          :aria-expanded="menuOpen"
+          :aria-expanded="settingsOpen"
           @click.stop="toggleMenu"
         >
           <span class="material-symbols-rounded" aria-hidden="true">settings</span>
@@ -154,7 +168,6 @@
 
         <div v-if="!showMode" class="quickplay-settings-actions">
           <Btn icon="upload_file" :text="t('oneShots.replaceAudio')" @click="requestImport" />
-          <Btn v-if="!isDetached" icon="tune" :text="t('oneShots.openProperties')" @click="openProperties" />
         </div>
       </section>
 
@@ -181,6 +194,7 @@ import type { OneShotMutableFields } from '~/types/oneShotMutation';
 import {
   getOneShotEndMode,
   getOneShotPlaybackMode,
+  oneShotFollowsUpNext,
   setOneShotEndMode,
   setOneShotPlaybackMode,
   type OneShotEndMode,
@@ -203,9 +217,15 @@ const { uiMode } = useUiMode();
 const { t } = useLocalization();
 const videoCheckIssues = useVideoPreflightIssues();
 const videoCheckIssue = computed(() => videoCheckIssues.value.get(props.item.uuid));
-const { saveProject, openItemProperties, workspaceImportPanel, quickPlayEditor } = useProject();
+const {
+  saveProject, openItemProperties, workspaceImportPanel, quickPlayEditor,
+  selectedItem, propertiesPanelOpen,
+} = useProject();
 const showProjectSettings = useState('showProjectSettings', () => false);
-const { activeCues, stopCue } = useAudioEngine();
+const {
+  activeCues, stopCue, cueFollowOverrides, queueLoopContinuation,
+  nextItemOverrideUuid, autoNextItemUuid, setNextItemPending,
+} = useAudioEngine();
 const { playOneShot } = useOneShotPlayback();
 const { updateBinding, playbackMappings } = useCartHotkeys();
 const server = useLiveplayServer();
@@ -229,10 +249,17 @@ const retriggerOptions = computed(() => [
   { value: 'restart', label: t('oneShots.restart') },
   { value: 'ignore', label: t('oneShots.ignore') },
 ] as const);
+// A Go to Item / Go to Index ending is authored in Properties (it needs a
+// target). It is shown here so this picker never misreports it as Stop.
 const endingOptions = computed(() => [
-  { value: 'stop', label: t('oneShots.stop') },
-  { value: 'loop', label: t('oneShots.loop') },
-] as const);
+  { value: 'stop' as OneShotEndMode, label: t('oneShots.stop') },
+  { value: 'loop' as OneShotEndMode, label: t('oneShots.loop') },
+  { value: 'next' as OneShotEndMode, label: t('endBehavior.next') },
+  ...(endMode.value === 'goto' ? [{
+    value: 'goto' as OneShotEndMode,
+    label: t(props.item.endBehavior?.action === 'goto-index' ? 'endBehavior.gotoIndex' : 'endBehavior.gotoItem'),
+  }] : []),
+]);
 const outputOptions = computed(() => [
   { value: '', label: t('settings.useProjectDefault') },
   ...(server.devices ?? []).map(device => ({ value: device.id, label: device.display_name })),
@@ -245,6 +272,31 @@ const duckDb = computed(() => {
   return level > 0 ? Math.max(-60, 20 * Math.log10(level)) : -60;
 });
 const hotkeyLabel = computed(() => props.hotkey ? formatKeyLabel(props.hotkey) : '');
+// The main window edits a QuickPlay in the same Properties panel as any other
+// cue. The detached window has no Properties panel and keeps the compact one.
+const settingsOpen = computed(() => isDetached
+  ? menuOpen.value
+  : propertiesPanelOpen.value && selectedItem.value?.uuid === props.item.uuid);
+
+// Cue to Continue for this QuickPlay: when it finishes, play the playlist's
+// Up Next. While it plays the server-owned state of this pass is shown and
+// toggled; when idle the tile shows what the saved Ending will do.
+const followsUpNext = computed(() => oneShotFollowsUpNext(
+  props.item,
+  isPlaying.value ? cueFollowOverrides.value.get(props.item.uuid) : null,
+));
+const upNextReady = computed(() => {
+  const uuid = nextItemOverrideUuid.value ?? autoNextItemUuid.value;
+  return !!uuid && uuid !== props.item.uuid && !setNextItemPending.value;
+});
+// Switching it off always works; switching it on needs a cue to go to.
+const followToggleReady = computed(() => isPlaying.value && (followsUpNext.value || upNextReady.value));
+const followLabel = computed(() => t(
+  followsUpNext.value ? (isPlaying.value ? 'oneShots.followPlayNextOn' : 'oneShots.followPlayNextSaved')
+    : !isPlaying.value ? 'oneShots.followPlayNextIdle'
+      : upNextReady.value ? 'oneShots.followPlayNext' : 'oneShots.followPlayNextNeedsCue',
+));
+const toggleFollow = () => queueLoopContinuation(props.item);
 const transportLabel = computed(() => isPlaying.value
   ? t('oneShots.stopNamed', { name: props.item.displayName })
   : t('oneShots.playNamed', { name: props.item.displayName }));
@@ -313,6 +365,11 @@ const showEditor = (remove: boolean) => {
 };
 
 const toggleMenu = () => {
+  if (!isDetached) {
+    if (settingsOpen.value) propertiesPanelOpen.value = false;
+    else openProperties();
+    return;
+  }
   if (menuOpen.value) closeEditor();
   else showEditor(false);
 };
@@ -327,12 +384,18 @@ watch(menuOpen, () => {
   hotkeyError.value = '';
 });
 
+// Show Mode has no settings control, so nothing it opened may stay on screen.
+watch(showMode, (show) => {
+  if (show && menuOpen.value) closeEditor();
+});
+
 const onPlaybackModeChange = (mode: OneShotPlaybackMode) => {
   setOneShotPlaybackMode(props.item, mode);
   persist({ playbackMode: mode });
 };
 
 const onEndModeChange = (mode: OneShotEndMode) => {
+  if (mode === 'goto') return;
   setOneShotEndMode(props.item, mode);
   persist({ endMode: mode });
 };
@@ -699,6 +762,17 @@ onUnmounted(() => {
 .one-shot-actions .one-shot-transport.is-stop {
   background-color: var(--color-danger);
   color: var(--color-text-on-accent);
+}
+
+/* Lit in the Up Next colour: this QuickPlay hands over to Up Next when it ends. */
+.one-shot-actions .one-shot-follow.is-on {
+  background-color: color-mix(in srgb, var(--state-up-next) 24%, var(--color-control));
+  color: var(--state-up-next);
+}
+
+.one-shot-actions .one-shot-follow:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .one-shot-actions .material-symbols-rounded {

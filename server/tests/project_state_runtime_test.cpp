@@ -2459,6 +2459,193 @@ void test_quick_play_continuation(const std::filesystem::path& wav) {
     }
 }
 
+// A QuickPlay's saved ending, and the Cue to Continue toggle that overrides it
+// for one pass, both resolve against the playlist's Up Next rather than the
+// QuickPlay's own (meaningless) position.
+void test_quick_play_authored_follow(const std::filesystem::path& wav) {
+    const auto show = [&](json quick_play) {
+        auto doc = document(json::array({audio("first", wav), audio("late", wav)}));
+        json item{{"oneShot", {{"order", 0}}}, {"outPoint", 0.08}, {"stopFade", 0.01}};
+        item.update(quick_play);
+        doc["cartOnlyItems"] = json::array({audio("quick-play", wav, item)});
+        return doc;
+    };
+    const auto starts = [](liveplay::core::ProjectState& state, liveplay::audio::AudioEngine& engine,
+                           const std::string& uuid) {
+        for (int i = 0; i < 500 && !on_air(state, engine, uuid); ++i)
+            std::this_thread::sleep_for(2ms);
+        return on_air(state, engine, uuid);
+    };
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        std::vector<std::string> follow_events;
+        state.set_ui_state_broadcaster([&](const json& event) {
+            if (event.value("op", std::string{}) == "cue_follow_set" &&
+                event.value("itemUuid", std::string{}) == "quick-play")
+                follow_events.push_back(event.value("follow", std::string{"?"}));
+        });
+        check(state.load_from_json(show({{"endBehavior", {{"action", "next"}}}})) && wait_ready(state),
+              "QuickPlay Play Next: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("late") && state.trigger_item("quick-play") &&
+              state.cue_follow_state("quick-play").empty() &&
+              !on_air(state, engine, "first") && !on_air(state, engine, "late"),
+              "QuickPlay Play Next: plays without touching the playlist");
+        render_to_end(state, engine, "quick-play");
+        check(starts(state, engine, "late") && !on_air(state, engine, "first") &&
+              state.full_document()["cartOnlyItems"][0]["endBehavior"]["action"] == "next",
+              "QuickPlay Play Next: natural ending starts Up Next");
+        state.stop_all_cues(0);
+
+        check(state.set_next_item_override("late") && state.trigger_item("quick-play") &&
+              state.set_cue_follow("quick-play", false) &&
+              state.cue_follow_state("quick-play") == "suppressed",
+              "QuickPlay Play Next: the toggle cancels this pass");
+        render_to_end(state, engine, "quick-play");
+        std::this_thread::sleep_for(150ms);
+        check(!on_air(state, engine, "late") && !on_air(state, engine, "first") &&
+              state.next_item_override() == "late" &&
+              state.full_document()["cartOnlyItems"][0]["endBehavior"]["action"] == "next",
+              "QuickPlay Play Next: a cancelled pass leaves Up Next and the saved ending alone");
+
+        check(state.trigger_item("quick-play") && state.cue_follow_state("quick-play").empty() &&
+              state.set_cue_follow("quick-play", false) && state.set_cue_follow("quick-play", true) &&
+              state.cue_follow_state("quick-play").empty(),
+              "QuickPlay Play Next: a new pass starts on, and toggling back restores it");
+        render_to_end(state, engine, "quick-play");
+        check(starts(state, engine, "late"), "QuickPlay Play Next: restored pass starts Up Next");
+        state.stop_all_cues(0);
+        state.set_ui_state_broadcaster({});
+        check(follow_events == std::vector<std::string>{"suppressed", "suppressed", ""},
+              "QuickPlay Play Next: every toggle change is published to clients");
+    }
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(show({{"endBehavior", {{"action", "nothing"}}}})) && wait_ready(state),
+              "QuickPlay toggle: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("first") && state.trigger_item("quick-play") &&
+              state.set_cue_follow("quick-play", true) && state.cue_follow_state("quick-play") == "armed" &&
+              state.set_cue_follow("quick-play", false) && state.cue_follow_state("quick-play").empty(),
+              "QuickPlay toggle: arming can be switched off again");
+        render_to_end(state, engine, "quick-play");
+        std::this_thread::sleep_for(150ms);
+        check(!on_air(state, engine, "first") && !on_air(state, engine, "late") &&
+              state.next_item_override() == "first",
+              "QuickPlay toggle: an un-armed pass just stops");
+        state.stop_all_cues(0);
+    }
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(show({{"endBehavior", {{"action", "loop"}}}, {"outPoint", 0.02}})) &&
+              wait_ready(state), "QuickPlay loop toggle: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("first") && state.trigger_item("quick-play") &&
+              state.set_cue_follow("quick-play", true) && state.set_cue_follow("quick-play", false),
+              "QuickPlay loop toggle: arm then un-arm is accepted");
+        render_to_end(state, engine, "quick-play", 80);
+        check(wait_for_on_air(state, engine, "quick-play") && !on_air(state, engine, "first"),
+              "QuickPlay loop toggle: un-arming resumes the saved loop");
+        check(state.set_cue_follow("quick-play", true), "QuickPlay loop toggle: re-arms");
+        render_to_end(state, engine, "quick-play");
+        check(starts(state, engine, "first") &&
+              state.full_document()["cartOnlyItems"][0]["endBehavior"]["action"] == "loop",
+              "QuickPlay loop toggle: armed pass finishes into Up Next and stays a saved loop");
+        state.stop_all_cues(0);
+    }
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(show({{"endBehavior", {{"action", "goto-item"}, {"targetUuid", "late"}}}})) &&
+              wait_ready(state), "QuickPlay Go to Item: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("first") && state.trigger_item("quick-play"),
+              "QuickPlay Go to Item: starts");
+        render_to_end(state, engine, "quick-play");
+        check(starts(state, engine, "late") && !on_air(state, engine, "first"),
+              "QuickPlay Go to Item: follows its own target, not Up Next");
+        state.stop_all_cues(0);
+    }
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(show({{"endBehavior", {{"action", "next"}}}})) && wait_ready(state),
+              "QuickPlay Play Next without Up Next: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("") && state.trigger_item("quick-play"),
+              "QuickPlay Play Next without Up Next: starts");
+        render_to_end(state, engine, "quick-play");
+        std::this_thread::sleep_for(150ms);
+        check(!on_air(state, engine, "first") && !on_air(state, engine, "late"),
+              "QuickPlay Play Next without Up Next: just stops");
+        state.stop_all_cues(0);
+    }
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(show({{"endBehavior", {{"action", "next"}}}, {"crossFade", 0.03}})) &&
+              wait_ready(state), "QuickPlay crossfade: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("late") && state.trigger_item("quick-play"),
+              "QuickPlay crossfade: starts");
+        render_to_end(state, engine, "quick-play");
+        check(starts(state, engine, "late") && !on_air(state, engine, "first"),
+              "QuickPlay crossfade: crossfades into Up Next");
+        state.stop_all_cues(0);
+    }
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(show({{"endBehavior", {{"action", "next"}}}, {"outPoint", 0.3},
+                  {"startNextEnabled", true}, {"startNextTime", 0.05}})) &&
+              wait_ready(state), "QuickPlay Start Next: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("late") && state.trigger_item("quick-play"),
+              "QuickPlay Start Next: starts");
+        const auto quick_play = engine.find_cue(*state.item_to_cue_id("quick-play"));
+        std::array<float, 256> left{}, right{};
+        float* channels[]{left.data(), right.data()};
+        for (int block = 0; quick_play && block < 30; ++block) {
+            quick_play->service_read_ahead(1);
+            quick_play->render_block(channels, 2, 256);
+        }
+        check(starts(state, engine, "late") && on_air(state, engine, "quick-play"),
+              "QuickPlay Start Next: marker starts Up Next while the QuickPlay plays on");
+        state.stop_all_cues(0);
+    }
+    {
+        // The usual live case: a QuickPlay is fired over the tail of the
+        // playlist cue on air. That cue ending must still queue the next
+        // playlist cue, so the QuickPlay has somewhere to hand over to.
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        auto doc = document(json::array({audio("first", wav, {{"outPoint", 0.05}}), audio("late", wav)}));
+        doc["cartOnlyItems"] = json::array({audio("quick-play", wav, {
+            {"oneShot", {{"order", 0}}}, {"endBehavior", {{"action", "next"}}},
+            {"duckingBehavior", {{"mode", "no-ducking"}}}, {"outPoint", 0.3}, {"stopFade", 0.01},
+        })});
+        check(state.load_from_json(doc) && wait_ready(state), "QuickPlay over a playlist cue: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("first") && state.go() == "first" &&
+              state.trigger_item("quick-play") && on_air(state, engine, "first") &&
+              on_air(state, engine, "quick-play"),
+              "QuickPlay over a playlist cue: both play");
+        render_to_end(state, engine, "first");
+        for (int i = 0; i < 250 && state.next_item_override() != "late"; ++i)
+            std::this_thread::sleep_for(2ms);
+        check(on_air(state, engine, "quick-play") && !on_air(state, engine, "late") &&
+              state.next_item_override() == "late",
+              "QuickPlay over a playlist cue: the ending cue still queues Up Next");
+        render_to_end(state, engine, "quick-play");
+        check(starts(state, engine, "late"),
+              "QuickPlay over a playlist cue: Play Next hands over to the queued cue");
+        state.stop_all_cues(0);
+    }
+}
+
 void test_group_levels() {
     const auto wav = make_wav(8192);
     liveplay::audio::AudioEngine engine;
@@ -3467,6 +3654,7 @@ int main() try {
     test_failed_group_follow_requires_go(wav);
     test_shuffle_items(wav);
     test_quick_play_continuation(wav);
+    test_quick_play_authored_follow(wav);
     test_group_levels();
     test_music_backup(wav);
     test_manual_go_parity(wav);

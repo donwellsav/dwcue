@@ -69,6 +69,16 @@ test('applies every allowed detached field and rejects arbitrary patch keys', ()
   const patch = JSON.parse(JSON.stringify(state.standalone));
   assert.equal(patch.oneShot.hotkey, null);
   assert.equal(patch.deviceOverride, null, 'the serialized patch must explicitly clear the old route');
+  const playNext = applyOneShotMutation(state, request({
+    kind: 'set-fields', itemUuid: 'standalone', payload: { fields: { endMode: 'next' } },
+  }));
+  assert.equal(playNext.accepted, true, 'the detached window can set a Play Next ending');
+  assert.deepEqual(state.standalone.endBehavior, { action: 'next' });
+  const badEnding = applyOneShotMutation(state, request({
+    kind: 'set-fields', itemUuid: 'standalone', payload: { fields: { endMode: 'goto' } },
+  } as unknown as OneShotMutationDraft));
+  assert.equal(badEnding.accepted, false, 'a Go to ending needs a target and is not a detached field');
+  assert.deepEqual(state.standalone.endBehavior, { action: 'next' });
   const rejected = applyOneShotMutation(state, request({
     kind: 'set-fields', itemUuid: 'standalone',
     payload: { fields: { server: { projectFilePath: '/evil' } } },

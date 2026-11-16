@@ -343,6 +343,16 @@ public:
     // Returns false when uuid is not an active, sequenced loop or is already armed.
     bool cue_to_continue(const std::string& uuid,
                          std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
+    // Operator toggle for Cue to Continue on the pass that is playing now.
+    // follow=true arms it (or lifts an earlier cancel); follow=false un-arms it,
+    // or cancels a QuickPlay's authored Play Next for this pass only. The
+    // project document is never modified. Every accepted change is fanned out
+    // to clients as a cue_follow_set patch.
+    bool set_cue_follow(const std::string& uuid, bool follow,
+                        std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
+    // "armed", "suppressed", or empty when the playing pass follows its
+    // authored ending. Empty for items that are not playing.
+    std::string cue_follow_state(const std::string& uuid);
 
     // Stop every cue for the global "Stop All" command. When `fade_ms` is
     // provided it is used directly; when omitted the project-wide
@@ -733,6 +743,16 @@ private:
         bool                     continue_armed       = false;
         bool                     continue_to_play_next = false;
         std::string              continue_target_uuid;
+        // Arming or cancelling clears the timing-based follows; toggling back
+        // restores what the pass had before the operator touched it.
+        double                   follow_saved_crossfade_sec       = 0.0;
+        double                   follow_saved_start_next_time     = 0.0;
+        double                   follow_saved_start_next_fade_sec = 0.0;
+        // QuickPlay (cart-only) pass. Its follow always starts at the natural
+        // end on the control thread, like an armed Cue to Continue.
+        bool                     one_shot             = false;
+        // The operator cancelled this pass's authored follow. Runtime-only.
+        bool                     follow_suppressed    = false;
         std::vector<DuckedEntry> ducked;
         double                   duck_release_sec = 1.0;
         std::vector<ScheduledCustomAction> custom_actions;
@@ -788,6 +808,12 @@ private:
     // nothing / no target). An armed "Up Next" override takes precedence and
     // is consumed only by a successful trigger. Takes its own locks.
     std::string resolve_advance_target(const std::string& source_uuid, bool manual_override_only = false);
+    // A QuickPlay lives outside the playlist, so its authored ending cannot use
+    // the playlist's sibling order: Play Next means the cue GO would start, and
+    // Go to Item/Index means that authored target, whatever is armed Up Next.
+    // nullopt when source_uuid is not a QuickPlay. Takes its own locks.
+    std::optional<std::string> one_shot_advance_target(const std::string& source_uuid);
+    void broadcast_cue_follow(const std::string& uuid, const char* follow);
     std::string music_backup_for(const std::string& source_uuid);
     bool start_music_backup(std::unique_lock<std::recursive_mutex>& lifecycle_lock,
                             const std::string& source_uuid, const std::string& missed_target);
