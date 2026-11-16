@@ -831,6 +831,7 @@
     "remove": "削除",
     "setAsNext": "次に設定",
     "locateUpNext": "「次へ」の位置に移動",
+    "locateLive": "「再生中」の位置に移動",
     "setIn": "イン点を設定",
     "setOut": "アウト点を設定",
     "saveTrim": "トリムを保存",

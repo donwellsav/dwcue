@@ -195,6 +195,16 @@ const waveformTrimmer = read('client/app/components/WaveformTrimmer.vue');
 const waveformTypes = read('client/app/types/project.ts');
 const audioUtils = read('client/app/utils/audio.ts');
 const playlistView = read('client/app/components/PlaylistView.vue');
+assert.match(
+  playlistView,
+  /class="locate-btn locate-live"[\s\S]{0,260}:disabled="readOnly \|\| !locatableLiveUuid" @click="locateLive"[\s\S]{0,120}class="locate-btn locate-next"[\s\S]{0,260}@click="locateUpNext"[\s\S]{0,900}<PlaylistSearch/,
+  'the playlist header keeps both locators, live then Up Next, ahead of the search and outside the edit-only actions',
+);
+assert.match(
+  playlistView,
+  /\.locate-live:not\(:disabled\)\s*\{[^}]*var\(--state-playing\)[\s\S]{0,200}\.locate-next:not\(:disabled\)\s*\{[^}]*var\(--state-up-next\)/,
+  'the locators wear the colours of the rows they jump to: red for live, green for Up Next',
+);
 const propertiesPanel = read('client/app/components/PropertiesPanel.vue');
 const liveMeters = read('client/app/composables/useLiveMeters.ts');
 const uiMode = read('client/app/composables/useUiMode.ts');

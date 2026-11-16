@@ -831,6 +831,7 @@
     "remove": "Remove",
     "setAsNext": "Set As Next",
     "locateUpNext": "Locate Up Next",
+    "locateLive": "Locate Playing Cue",
     "setIn": "Set In",
     "setOut": "Set Out",
     "saveTrim": "Save Trim",

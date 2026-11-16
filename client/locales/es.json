@@ -831,6 +831,7 @@
     "remove": "Quitar",
     "setAsNext": "Establecer como siguiente",
     "locateUpNext": "Localizar siguiente",
+    "locateLive": "Localizar en reproducción",
     "setIn": "Fijar entrada",
     "setOut": "Fijar salida",
     "saveTrim": "Guardar recorte",

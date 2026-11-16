@@ -4,7 +4,13 @@
       <div class="workspace-panel-header__leading">
         <slot name="header-leading" />
         <h2 class="workspace-panel-header__title">{{ t('playlist.title') }}</h2>
-        <Btn type="button" class="locate-next" icon="my_location" text=""
+        <!-- Two locators, in the colours and shapes of the rows they jump to:
+             red with a play arrow for what is live, green with the double
+             arrow for Up Next. Each is lit only while there is such a row. -->
+        <Btn type="button" class="locate-btn locate-live" icon="my_location" text=""
+          :title="t('actions.locateLive')" :aria-label="t('actions.locateLive')"
+          :disabled="readOnly || !locatableLiveUuid" @click="locateLive" />
+        <Btn type="button" class="locate-btn locate-next" icon="my_location" text=""
           :title="t('actions.locateUpNext')" :aria-label="t('actions.locateUpNext')"
           :disabled="readOnly || !locatableNextUuid" @click="locateUpNext" />
         <!-- Shown in Edit Mode and Show Mode alike. It jumps to a row; it never
@@ -163,6 +169,16 @@ const toggleMusicContinuity = () => {
 const theme = useState('theme', () => 'dark');
 const isDark = computed(() => theme.value === 'dark');
 const { activeCues, nextItemOverrideUuid, effectiveNextUuid, setNextItemPending } = useAudioEngine();
+// The playlist cue that is on air, newest first when a crossfade has two. A
+// QuickPlay is not in the list, so it is never the one to locate.
+const locatableLiveUuid = computed(() => {
+  if (projectHydrationStatus.value !== 'ready') return null;
+  for (const uuid of [...activeCues.value.keys()].reverse()) {
+    const item = findItemByUuid(uuid);
+    if (item && (item.index?.[0] ?? -1) >= 0) return item.uuid;
+  }
+  return null;
+});
 const locatableNextUuid = computed(() => {
   if (projectHydrationStatus.value !== 'ready' || setNextItemPending.value || !effectiveNextUuid.value) return null;
   const item = findItemByUuid(effectiveNextUuid.value);
@@ -312,6 +328,15 @@ function locateUpNext() {
   revealItems(selectedItemUuid.value, searchHitUuid.value, uuid);
   nextTick(() => {
     if (locatableNextUuid.value === uuid) scrollItemIntoView(uuid, 'end');
+  });
+}
+
+function locateLive() {
+  const uuid = locatableLiveUuid.value;
+  if (!uuid) return;
+  revealItems(selectedItemUuid.value, searchHitUuid.value, uuid);
+  nextTick(() => {
+    if (locatableLiveUuid.value === uuid) scrollItemIntoView(uuid, 'center');
   });
 }
 
@@ -1394,13 +1419,45 @@ const handleDrop = async (e: DragEvent) => {
 }
 
 .music-toggle,
-.locate-next {
+.locate-btn {
   padding-inline: var(--spacing-xs);
 }
 
-.locate-next {
+.locate-btn {
   min-width: var(--panel-control-height);
   justify-content: center;
+  gap: 0;
+}
+
+.locate-btn :deep(.btn__text) {
+  display: none;
+}
+
+/* The shape of the row it jumps to, beside the locate target. */
+.locate-btn::after {
+  content: 'play_arrow' / '';
+  font-family: 'Material Symbols Rounded';
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  font-variation-settings: 'FILL' 1;
+  font-feature-settings: 'liga';
+}
+
+.locate-next::after {
+  content: 'fast_forward' / '';
+}
+
+.locate-live:not(:disabled) {
+  border-color: var(--state-playing);
+  color: var(--state-playing);
+}
+
+.locate-next:not(:disabled) {
+  border-color: var(--state-up-next);
+  color: var(--state-up-next);
 }
 
 .music-toggle[aria-pressed='true'] {

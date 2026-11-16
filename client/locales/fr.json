@@ -831,6 +831,7 @@
     "remove": "Retirer",
     "setAsNext": "Définir comme suivant",
     "locateUpNext": "Localiser le suivant",
+    "locateLive": "Localiser En lecture",
     "setIn": "Définir l’entrée",
     "setOut": "Définir la sortie",
     "saveTrim": "Enregistrer la coupe",

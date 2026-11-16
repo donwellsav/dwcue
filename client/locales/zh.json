@@ -831,6 +831,7 @@
     "remove": "移除",
     "setAsNext": "设为下一个",
     "locateUpNext": "定位到“下一个”",
+    "locateLive": "定位到“正在播放”",
     "setIn": "设置入点",
     "setOut": "设置出点",
     "saveTrim": "保存修剪",

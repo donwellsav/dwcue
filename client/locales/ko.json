@@ -831,6 +831,7 @@
     "remove": "제거",
     "setAsNext": "다음으로 설정",
     "locateUpNext": "다음 대기 위치로 이동",
+    "locateLive": "재생 중 위치로 이동",
     "setIn": "시작점 설정",
     "setOut": "끝점 설정",
     "saveTrim": "트림 저장",

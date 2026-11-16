@@ -322,6 +322,8 @@ The colors follow the tally lights of a vision mixer.
 
 ### Find a cue
 
+Two locate buttons sit beside **Playlist** in both modes. The red one with the play arrow scrolls to the cue that is playing, and the green one with the double arrow scrolls to **Up Next**; each opens the group that holds its cue. A button is lit only while there is such a cue.
+
 Type part of a cue's title, note or number in **Find cue** at the top of the playlist, or press **Ctrl+F** (**Cmd+F** on a Mac) to put the cursor there. The playlist jumps to the first match, opens the group that holds it, and outlines the row. **Enter** goes to the next match and **Shift+Enter** to the previous one, and the field shows which match you are on. The list is never filtered or reordered. In Edit Mode the match is also selected. The search works the same way in Show Mode.
 
 > **SAFETY — Escape is still Stop All.** While the cursor is in **Find cue**, **Space** types a space instead of starting the next cue, as in any text field. **Escape** still stops every cue. Use the **×** button in the field to clear the search.
