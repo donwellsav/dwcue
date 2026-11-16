@@ -1,13 +1,13 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.23 development
-**Source revision:** 30dd3c4c82bb5e07bf74fd907f5e7557187e68b1
-**Native engine baseline:** 7c233a9
+**Version:** 2.6.24
+**Source revision:** 655ec2a
+**Native engine baseline:** 5e259d0
 **Edition:** 15 November 2026 · English · Operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This development edition covers docked controls, live group shuffle, group levels, the QuickPlay handoff to Up Next, backup music, picture framing, and the pre-show video check.
+This edition covers docked controls, live playlist and group shuffle, group levels, the QuickPlay handoff to Up Next, same-cue picture recovery, and the expanded pre-show video check.
 
 The interface captures use practice media and software audio output. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
@@ -1030,9 +1030,9 @@ The default **Escape** Stop All shortcut works while editing, including in the l
 
 ### About this edition
 
-This development edition covers the current source after the **2.6.23** release. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
+This edition covers **2.6.24**, based on application source **655ec2a**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
 
-This edition passed 13 native suites, 74 API checks, client checks, type checking, and renderer generation. Held storage tests exercised late Open, Save ordering, and direct cue registration. Chromium exercised Stop All during field editing, deletion, and imports with a software output and simulated online providers.
+Earlier checkpoints passed 13 native suites, 74 API checks, client checks, type checking, and renderer generation. Held storage tests exercised late Open, Save ordering, and direct cue registration. Chromium exercised Stop All during field editing, deletion, and imports with a software output and simulated online providers.
 
 The playback checkpoint **2f372c2** passed native 13/13, isolated API 61/61, client 229/229, typecheck and RT/live safety checks. Audio-output and project-runtime suites also pass AddressSanitizer; leak detection is disabled. Native checks include six simulated ten-minute secondary-clock runs with continuous generated audio and no buffer faults or resyncs inside the tested envelope. Physical alignment and the earlier intermittency remain unproven; more extreme drift/jitter can trigger recovery.
 

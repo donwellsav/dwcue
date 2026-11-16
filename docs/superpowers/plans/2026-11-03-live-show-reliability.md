@@ -506,3 +506,9 @@ In-flight native calls own their resources for the life of the process. Managed 
 - [x] Sample video cues at In, midpoint, and near Out in the pre-show check. Reuse one hidden decoder and one eight-second budget per cue. Invalidate results when either trim point changes. Keep findings in the dock and cancel on transport activity.
 - [x] Restore the separate macOS File and app menus. Exit after a confirmed Quit completes cleanup once. Accept native window close when Electron reports the renderer is unresponsive.
 - [x] Scope Video Output’s Stop All boundary to the current show session. Restore the regular project lookup deadline for on-air picture recovery.
+
+### 2.6.24 local package preparation
+
+- Updated application and native version metadata to 2.6.24, regenerated the operator manual, and prepared the matching website version and PDF. Website captures retain their original 2.6.23 and 2.6.22 labels.
+- Built the Apple Silicon and Intel engines locally. Client type checking, renderer generation, and website generation passed. No GitHub Actions runs were started.
+- Both Mac DMG and ZIP packages passed archive integrity checks. App signatures, matching app/engine architectures, packaged 2.6.24 version, main-process source, and bundled manual were verified. Mac packaging uses the standard app identity and bundled engine. Local Developer ID signing uses no timestamp because the timestamp service failed. Apple notarization, Windows/Linux packages, and public publication remain pending.
