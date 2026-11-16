@@ -2399,14 +2399,16 @@ assert.match(read('client/app/components/ServerFileBrowser.vue'),
   /&--staging &__content \{\s*flex: 1 1 clamp\(128px, 24vh, 192px\);/,
   'the staged file list must grow with its panel instead of being capped at a few rows');
 assert.match(playlistItem,
-  /<div class="item-state">[\s\S]*<span class="row-level"[\s\S]*<button v-if="showMode" type="button" class="row-level__value row-level__value--readout"[\s\S]*<input v-else class="row-level__value" type="number"[\s\S]*nudgeRowLevel\(1, \$event\)[\s\S]*nudgeRowLevel\(-1, \$event\)[\s\S]*<\/span>\s*<\/div>\s*<span v-if="item\.type === 'audio'" class="item-duration"/,
+  /<div class="item-state">[\s\S]*<span class="row-level"[\s\S]*<output v-if="showMode" class="row-level__value row-level__value--readout"[\s\S]*<input v-else class="row-level__value" type="number"[\s\S]*nudgeRowLevel\(1, \$event\)[\s\S]*nudgeRowLevel\(-1, \$event\)[\s\S]*<\/span>\s*<\/div>\s*<span v-if="item\.type === 'audio'" class="item-duration"/,
   'every row must show its level at the right of the state lane, and must not offer a text field in Show Mode');
 assert.match(playlistItem,
-  /<span v-if="!showMode \|\| levelArrowsOpen" class="row-level__spin">[\s\S]*arrow_drop_up[\s\S]*arrow_drop_down[\s\S]*\.row-level__spin \{[\s\S]{0,120}width: 16px;[\s\S]*\.playlist-item\.show-mode \.row-level__spin \{[\s\S]{0,80}grid-template-columns: 44px 44px;/,
-  'the row level uses up and down arrows: slim on every row in Edit Mode, touch-size in Show Mode on the row whose level was tapped');
+  /<span class="row-level__spin">[\s\S]*arrow_drop_up[\s\S]*arrow_drop_down[\s\S]*\.row-level__spin \{[\s\S]{0,120}grid-template-rows: 1fr 1fr;\s*width: 16px;[\s\S]*\.playlist-item\.show-mode \.row-level__spin \{ width: 28px; \}/,
+  'the row level is one compact control in both modes: a number with stacked up and down arrows on every row');
+assert.doesNotMatch(playlistItem, /row-level__step|levelArrowsOpen|v-if="[^"]*" class="row-level__spin"/,
+  'the row level arrows must not depend on selection or a tap, and must not return to side-by-side buttons');
 assert.match(playlistItem,
-  /levelArrowsOpen = computed\(\(\) => showMode\.value && levelArrowsRow\.value === props\.item\.uuid\);[\s\S]*function toggleLevelArrows\(\) \{\s*if \(!showMode\.value \|\| !projectControlsReady\.value\) return;/,
-  'Show Mode rows cannot be selected, so the level arrows must open from a tap on the level itself, not from selection');
+  /const ROW_LEVEL_STEP_DB = 0\.5;[\s\S]{0,360}\* ROW_LEVEL_STEP_DB\);/,
+  'a press of a level arrow must move a cue or a group by half a dB');
 assert.doesNotMatch(playlistItem, /row-level__step/,
   'the row level must not return to separate minus and plus buttons');
 assert.match(playlistItem,
