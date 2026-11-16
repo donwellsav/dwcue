@@ -429,7 +429,7 @@
     "changed": "The list changed. Check the cue order and try Shuffle again.",
     "tooFew": "Shuffle needs at least two cues or groups.",
     "linked": "Fewer than two items can move without changing numbered cue targets.",
-    "upcoming": "Fewer than two upcoming items in this group can be shuffled right now.",
+    "upcoming": "Fewer than two upcoming items can be shuffled right now.",
     "failed": "Shuffle could not be confirmed. Check the playlist before trying again.",
     "saveFailed": "Cue order changed. Use Save Project to keep it."
   },

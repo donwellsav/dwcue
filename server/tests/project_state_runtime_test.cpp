@@ -1977,12 +1977,12 @@ void test_live_out_point_refreshes_prepared_endpoint() {
 void test_prepared_follow_runtime(const std::filesystem::path& wav) {
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
-    state.replace_full_document(document(json::array({audio("prepared-a", wav, {
+    state.replace_full_document(document(json::array({audio("prepared-bed", wav), audio("prepared-a", wav, {
         {"outPoint", 0.011}, {"endBehavior", {{"action", "next"}}},
         {"duckingBehavior", {{"mode", "no-ducking"}}}}), audio("prepared-b", wav, {
         {"startBehavior", {{"action", "play-item"}, {"targetUuid", "prepared-c"}}}}),
         audio("prepared-c", wav, {{"duckingBehavior", {{"mode", "no-ducking"}}}}),
-        audio("prepared-bed", wav)})));
+        audio("prepared-extra", wav)})));
     check(wait_ready(state), "prepared follow: audio ready"); close_devices(engine);
     // No render thread/device is started. The test drives the real renderer's
     // timeline explicitly while exercising production preparation/bookkeeping.
@@ -1994,6 +1994,13 @@ void test_prepared_follow_runtime(const std::filesystem::path& wav) {
     const auto source = engine.find_cue(*state.item_to_cue_id("prepared-a"));
     const auto follow = wait_prepared_follow(engine, target_id);
     check(static_cast<bool>(follow), "prepared follow: target is primed before source end");
+    const auto shuffled = state.shuffle_items(
+        {"prepared-bed", "prepared-a", "prepared-b", "prepared-c", "prepared-extra"}, "");
+    check(shuffled.value("status", "") == std::string{"ok"} &&
+              shuffled.at("uuids") == json::array({"prepared-bed", "prepared-a", "prepared-b",
+                                                   "prepared-extra", "prepared-c"}) &&
+              follow && follow->status.load() == liveplay::audio::PreparedFollow::State::Armed,
+          "shuffle: active playlist keeps an armed handoff and shuffles following entries");
     check(target->stats().transport == liveplay::audio::TransportState::Stopped &&
           on_air(state, engine, "prepared-bed") && !on_air(state, engine, "prepared-c") &&
           !state.item_trigger_seq("prepared-b"),
@@ -2412,8 +2419,13 @@ void test_shuffle_items(const std::filesystem::path& wav) {
           on_air(state, engine, order[1]) && state.item_trigger_seq(order[1]) == live_pass &&
           state.playback_intent_revision() == live_intent && state.next_item_override() == order[2],
           "shuffle: changes the upcoming group order while preserving the active pass and manual Up Next");
-    check(state.shuffle_items({"music", "closer", "opener"}, "").value("status", "") == std::string{"playing"},
-          "shuffle: whole playlist still requires stopped playback");
+    const auto live_root = state.shuffle_items({"music", "closer", "opener"}, "");
+    check(live_root.value("status", "") == std::string{"ok"} &&
+              live_root.at("uuids") == json::array({"music", "opener", "closer"}) &&
+              state.item_uuid_by_index({0, 0}) == "one" &&
+              on_air(state, engine, order[1]) && state.item_trigger_seq(order[1]) == live_pass &&
+              state.playback_intent_revision() == live_intent && state.next_item_override() == order[2],
+          "shuffle: live playlist preserves the active branch, numbered target, and manual Up Next");
     check(state.go() == order[2] &&
           state.shuffle_items(updated, "music").value("status", "") == std::string{"upcoming"},
           "shuffle: manual GO survives the new order and a group ending stays in place");

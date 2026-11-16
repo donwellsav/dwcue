@@ -2983,13 +2983,24 @@ json ProjectState::shuffle_items(const std::vector<std::string>& before,
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     const bool whole_playlist = parent_uuid.empty();
     std::unordered_set<std::string> in_use;
+    std::vector<json> live_index_paths;
     {
         std::lock_guard lock{sequencer_mutex_};
-        if (whole_playlist && (!sequenced_items_.empty() || !group_runs_.empty()))
-            return {{"status", "playing"}};
         for (const auto& item : sequenced_items_) {
             in_use.insert(item.uuid);
             if (item.prepared_follow) in_use.insert(item.prepared_target_uuid);
+            if (item.continue_armed && !item.continue_target_uuid.empty())
+                in_use.insert(item.continue_target_uuid);
+            for (const auto& entry : item.custom_actions) {
+                if (!entry.action.is_object() || json_get_or(entry.action, "type", std::string{}) != "play-index")
+                    continue;
+                if (const auto path = entry.action.find("index"); path != entry.action.end())
+                    live_index_paths.push_back(*path);
+            }
+        }
+        for (const auto& run : group_runs_) {
+            in_use.insert(run.group_uuid);
+            if (run.end_action == "goto-index") live_index_paths.emplace_back(run.target_index);
         }
     }
     std::optional<std::string> rearm;
@@ -2998,10 +3009,7 @@ json ProjectState::shuffle_items(const std::vector<std::string>& before,
         std::lock_guard lock{mutex_};
         for (const auto& [uuid, id] : item_uuid_to_cue_) {
             const auto cue = engine_.find_cue(id);
-            if (cue && cue->stats().transport != audio::TransportState::Stopped) {
-                if (whole_playlist) return {{"status", "playing"}};
-                in_use.insert(uuid);
-            }
+            if (cue && cue->stats().transport != audio::TransportState::Stopped) in_use.insert(uuid);
         }
         auto* target = playlist_siblings_locked(parent_uuid);
         if (!target || before.size() != target->size()) return {{"status", "changed"}};
@@ -3043,6 +3051,8 @@ json ProjectState::shuffle_items(const std::vector<std::string>& before,
                 ancestors.push_back(position);
             }
         };
+        // Live actions may still use the path captured before a Properties edit.
+        for (const auto& path : live_index_paths) hold_target(path);
         for_each_item(document_, [&](json& item, const std::string&) {
             for (const auto* key : {"startBehavior", "endBehavior"}) {
                 const auto behavior = item.find(key);
@@ -3087,8 +3097,8 @@ json ProjectState::shuffle_items(const std::vector<std::string>& before,
         for (std::size_t i = 0; i < positions.size(); ++i)
             (*target)[positions[i]] = std::move(moved[i]);
         if (was_initial) rearm = first_playable_item_uuid_locked(target);
-        // Only a whole-playlist reorder invalidates a pending start elsewhere.
-        if (whole_playlist) ++playback_intent_revision_;
+        // A new first cue supersedes the old automatic target on an idle list.
+        if (whole_playlist && was_initial) ++playback_intent_revision_;
     }
     if (rearm) (void)set_next_item_override(*rearm, /*manual=*/false);
     prepare_music_backups();

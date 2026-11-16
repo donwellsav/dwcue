@@ -1004,7 +1004,7 @@ function createClient() {
     });
   }
   function shuffleProjectItems(before: string[], parentUuid: string, expectedSessionId: string) {
-    return rest<{ status: 'ok'; uuids: string[] } | { status: 'playing' | 'changed' | 'tooFew' | 'linked' }>('/api/project/items/shuffle', {
+    return rest<{ status: 'ok'; uuids: string[] } | { status: 'playing' | 'changed' | 'tooFew' | 'linked' | 'upcoming' }>('/api/project/items/shuffle', {
       method: 'POST',
       headers: { 'X-DWCUE-Project-Session': expectedSessionId },
       body: JSON.stringify({ before, parentUuid }),

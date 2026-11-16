@@ -319,7 +319,7 @@ Manual stop or cancellation ends the owned group run without allowing stale chil
 
 ### Shuffle a playlist or group
 
-In Edit Mode, choose the shuffle icon on a group row or **Shuffle Group Order** in Group Properties. During playback this shuffles the upcoming children and keeps the current and earlier children and any prepared handoff in place. Nested groups move together. Cues addressed by saved numbered actions stay in place, and an explicit **Up Next** stays on the chosen cue. With playback stopped, **Shuffle Playlist** in the toolbar reorders the top-level cues and groups. External controllers that send cue numbers follow the new order. Save the show to keep the order when Autosave is off.
+In Edit Mode, choose **Shuffle Playlist** in the toolbar for top-level cues and groups. Use the shuffle icon on a group row or **Shuffle Group Order** in Group Properties for that group’s children. Both work during playback and shuffle upcoming entries while keeping the active and earlier entries and any prepared handoff in place. Groups move as units. Numbered targets used by saved or running actions stay in place, and an explicit **Up Next** stays on the chosen cue. External controllers that send cue numbers follow the new order. Save the show to keep the order when Autosave is off.
 
 ### Beds, stings, and ducking
 
