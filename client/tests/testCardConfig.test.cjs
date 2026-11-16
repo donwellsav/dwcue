@@ -227,7 +227,8 @@ test('Test Card image loading preserves existing previews and lets Clear win ove
   const props = { disabled: false, config: createTestCardConfig({ alteka: { logo: data('a'), showLogo: true } }) };
   const requests = { logo: 0, mask: 0 };
   const status = { logo: null, mask: null };
-  const held = Promise.withResolvers();
+  let resumeDecode;
+  const held = new Promise(resolve => { resumeDecode = resolve; });
   const emit = (_event, config) => { props.config = config; };
   const updateAlteka = patch => emit('change', { ...props.config, alteka: { ...props.config.alteka, ...patch } });
   const updateMask = patch => emit('change', { ...props.config, mask: { ...props.config.mask, ...patch } });
@@ -238,7 +239,7 @@ test('Test Card image loading preserves existing previews and lets Clear win ove
   class Image {
     async decode() {
       if (this.src === data('x')) throw new Error('corrupt raster');
-      if (this.src === data('b')) await held.promise;
+      if (this.src === data('b')) await held;
     }
   }
   const { pickImage, clearImage } = Function('props', 'imageRequest', 'imageStatus', 'emit',
@@ -254,7 +255,7 @@ test('Test Card image loading preserves existing previews and lets Clear win ove
   await pickImage(files('c'), 'mask');
   assert.deepEqual(props.config.mask, { image: data('c'), enabled: true, applyBounds: false });
   clearImage('logo');
-  held.resolve();
+  resumeDecode();
   await stale;
   assert.equal(props.config.alteka.logo, '');
   assert.equal(props.config.alteka.showLogo, true);
