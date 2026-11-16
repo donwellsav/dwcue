@@ -208,16 +208,13 @@
                the same values Properties edits. In Show Mode the number is
                display-only and the steppers stay, so no text field can take
                the keyboard from GO. -->
-          <span class="row-level" :class="{ 'row-level--touch': showMode && isSelected }" draggable="false"
-            @click.stop @dblclick.stop @pointerdown.stop @mousedown.stop>
-            <!-- Show Mode: every row shows its level; the selected row adds
-                 full-size steppers, so a stray tap elsewhere changes nothing. -->
-            <button v-if="showMode && isSelected" type="button" class="row-level__step" draggable="false"
-              :aria-label="t('playlist.groupLevelDown', { name: item.displayName })"
-              :disabled="!projectControlsReady || rowLevel <= rowLevelRange.min"
-              @click.stop="nudgeRowLevel(-1, $event)">−</button>
-            <output v-if="showMode" class="row-level__value row-level__value--readout"
-              :aria-label="t(rowLevelLabel, { name: item.displayName })">{{ rowLevel.toFixed(1) }}</output>
+          <span class="row-level" :class="{ 'row-level--touch': levelArrowsOpen, 'row-level--tappable': showMode }" draggable="false"
+            @click.stop="toggleLevelArrows" @dblclick.stop @pointerdown.stop @mousedown.stop>
+            <!-- Show Mode rows cannot be selected, so the level itself is the
+                 button: tap it to bring up this row's arrows. -->
+            <button v-if="showMode" type="button" class="row-level__value row-level__value--readout" draggable="false"
+              :aria-label="t(rowLevelLabel, { name: item.displayName })" :aria-expanded="levelArrowsOpen"
+              :disabled="!projectControlsReady">{{ rowLevel.toFixed(1) }}</button>
             <input v-else class="row-level__value" type="number" inputmode="decimal" draggable="false"
               :min="rowLevelRange.min" :max="rowLevelRange.max" :step="rowLevelRange.step" :value="rowLevel.toFixed(1)"
               :aria-label="t(rowLevelLabel, { name: item.displayName })"
@@ -226,8 +223,11 @@
               @keydown.stop @keyup.stop @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
               @change="setRowLevel(($event.target as HTMLInputElement).valueAsNumber, $event)" />
             <span class="row-level__unit" aria-hidden="true">dB</span>
-            <!-- Edit Mode: a slim pair of arrows, like any number field. -->
-            <span v-if="!showMode" class="row-level__spin">
+            <!-- Up and down arrows move to the next whole dB. Edit Mode has
+                 them on every row, slim. Show Mode shows them at touch size
+                 on the one row whose level was tapped; they put themselves
+                 away a few seconds after the last press. -->
+            <span v-if="!showMode || levelArrowsOpen" class="row-level__spin">
               <button type="button" class="row-level__nudge" draggable="false" tabindex="-1"
                 :aria-label="t('playlist.groupLevelUp', { name: item.displayName })"
                 :title="t('playlist.groupLevelUp', { name: item.displayName })"
@@ -239,10 +239,6 @@
                 :disabled="!projectControlsReady || rowLevel <= rowLevelRange.min"
                 @click.stop="nudgeRowLevel(-1, $event)"><span class="material-symbols-rounded" aria-hidden="true">arrow_drop_down</span></button>
             </span>
-            <button v-if="showMode && isSelected" type="button" class="row-level__step" draggable="false"
-              :aria-label="t('playlist.groupLevelUp', { name: item.displayName })"
-              :disabled="!projectControlsReady || rowLevel >= rowLevelRange.max"
-              @click.stop="nudgeRowLevel(1, $event)">+</button>
           </span>
         </div>
 
@@ -471,9 +467,26 @@ function setRowLevel(value: number, event?: Event) {
   clearTimeout(rowLevelSave);
   rowLevelSave = setTimeout(() => { void saveProject(); }, 400);
 }
+// Show Mode: which row has its level arrows out (one at a time, any window).
+const levelArrowsRow = useState<string | null>('playlistLevelArrowsRow', () => null);
+const levelArrowsOpen = computed(() => showMode.value && levelArrowsRow.value === props.item.uuid);
+let levelArrowsTimer: ReturnType<typeof setTimeout> | undefined;
+function keepLevelArrowsOpen() {
+  clearTimeout(levelArrowsTimer);
+  levelArrowsTimer = setTimeout(() => {
+    if (levelArrowsRow.value === props.item.uuid) levelArrowsRow.value = null;
+  }, 6000);
+}
+function toggleLevelArrows() {
+  if (!showMode.value || !projectControlsReady.value) return;
+  levelArrowsRow.value = levelArrowsOpen.value ? null : props.item.uuid;
+  if (levelArrowsRow.value) keepLevelArrowsOpen();
+}
+
 function nudgeRowLevel(step: number, event: Event) {
   // To the next whole dB in that direction.
   setRowLevel(step > 0 ? Math.floor(rowLevel.value + 1e-6) + 1 : Math.ceil(rowLevel.value - 1e-6) - 1);
+  if (showMode.value) keepLevelArrowsOpen();
   // Leave the keyboard with the transport: Space must stay GO, not this button.
   (event.currentTarget as HTMLElement | null)?.blur();
 }
@@ -671,6 +684,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  clearTimeout(levelArrowsTimer);
   if (resizeObserver) {
     resizeObserver.disconnect();
     resizeObserver = null;
@@ -1430,7 +1444,10 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   &:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; border-radius: 2px; }
 }
 
-.row-level__value--readout { display: inline-block; }
+.row-level__value--readout { display: inline-block; cursor: pointer; }
+.row-level--tappable { cursor: pointer; }
+.row-level--tappable:hover { border-color: var(--color-border-strong); }
+.row-level--touch { border-color: var(--color-accent); }
 
 .row-level__unit {
   align-self: center;
@@ -1463,32 +1480,35 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   &:disabled { color: var(--color-text-disabled); cursor: default; }
 }
 
-/* Show Mode: a readout on every row; the selected row gets touch steppers. */
-.row-level__step {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-text-primary);
-  font: inherit;
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-
-  &:hover:not(:disabled) { background: var(--color-surface-hover); }
-  &:disabled { color: var(--color-text-tertiary); cursor: default; }
-}
-
+/* Show Mode: a readout on every row; the selected row adds the same two
+   arrows at touch size, side by side. */
 .playlist-item.show-mode .row-level {
   height: 44px;
   padding-inline: 8px 5px;
 }
 
-.playlist-item.show-mode .row-level--touch { padding-inline: 0; }
+.playlist-item.show-mode .row-level--touch { padding-inline: 8px 0; }
 .playlist-item.show-mode .row-level__value { font-size: 16px; width: 4.6ch; }
-.playlist-item.show-mode .row-level__unit { font-size: 12px; }
+.playlist-item.show-mode .row-level__unit { font-size: 12px; margin-right: 6px; }
+
+.playlist-item.show-mode .row-level__spin {
+  grid-template-rows: none;
+  grid-template-columns: 44px 44px;
+  width: auto;
+}
+
+.playlist-item.show-mode .row-level__nudge {
+  color: var(--color-text-primary);
+}
+
+.playlist-item.show-mode .row-level__nudge + .row-level__nudge {
+  border-left: 1px solid var(--color-border);
+}
+
+.playlist-item.show-mode .row-level__nudge .material-symbols-rounded {
+  font-size: 34px;
+  line-height: 1;
+}
 
 .item-index {
   grid-column: 1;
