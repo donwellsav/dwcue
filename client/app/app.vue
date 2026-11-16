@@ -238,6 +238,7 @@ const server = useLiveplayServer();
 const { sessionLost } = useConnectionGuard();
 const hasWorkspace = computed(() => !!currentProject.value && projectHydrationStatus.value !== 'failed');
 const { showHeaderWarning } = useHeaderWarnings();
+const { exportCueSheet } = useCueSheetExport();
 let stopHeaderWarnings: (() => void) | undefined;
 onMounted(() => {
   if (isCartWindow || isVideoOutputWindow) return;
@@ -616,6 +617,7 @@ onMounted(() => {
     window.electronAPI.onMenuExportProject(() => {
       if (currentProject.value) openArchivePanel('archive-export');
     });
+    window.electronAPI.onMenuExportCueSheet?.(() => { void exportCueSheet(); });
 
     const api = window.electronAPI;
     void api.getUpdateInstallSupported?.().then(supported => { update.installSupported = supported; }).catch(() => {});

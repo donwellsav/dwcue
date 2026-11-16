@@ -33,7 +33,8 @@
     "videoOutputEnterFullscreen": "Gå til fullskjerm",
     "videoOutputExitFullscreen": "Avslutt fullskjerm",
     "videoOutputShowTestCard": "Vis testbilde",
-    "videoOutputExit": "Avslutt videoutgang"
+    "videoOutputExit": "Avslutt videoutgang",
+    "exportCueSheet": "Eksporter Cueliste (PDF)…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -758,6 +759,8 @@
     "cueImageHelp": "Vises på videoutgangen mens denne cuen spilles av, hvis den ikke har video."
   },
   "outputConsole": {
+    "hideMeters": "Skjul utgangsmålerne",
+    "showMeters": "Vis utgangsmålerne",
     "limiter": "TP-limiter",
     "enabled": "Aktivert",
     "bypassed": "Forbigått",
@@ -1336,5 +1339,30 @@
     "noItems": "Ingen elementer i dette prosjektet",
     "holdToStop": "Hold inne for å stoppe",
     "holdToStopAll": "Hold inne for å stoppe alt"
+  },
+  "cueSheet": {
+    "title": "Cueliste",
+    "generated": "Opprettet",
+    "cues": "Cuer",
+    "runningTime": "Total spilletid",
+    "playlist": "Spilleliste",
+    "quickPlays": "QuickPlays",
+    "columnNumber": "#",
+    "columnSlot": "Plass",
+    "columnTitle": "Tittel",
+    "columnNote": "Notat",
+    "columnDuration": "Varighet",
+    "columnLevel": "Nivå (dB)",
+    "columnEnd": "Ved slutt",
+    "endNothing": "Stopp",
+    "endNext": "Neste",
+    "endGoto": "Gå til",
+    "endLoop": "Gjenta",
+    "emptyPlaylist": "Ingen cuer i spillelisten.",
+    "truncated": "Denne listen er forkortet til de første {count} radene.",
+    "page": "Side {page} av {pages}",
+    "untitledShow": "Show uten navn",
+    "exported": "Cuelisten ble lagret som {name}",
+    "exportFailed": "Kunne ikke eksportere cuelisten: {error}"
   }
 }

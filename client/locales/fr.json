@@ -33,7 +33,8 @@
     "videoOutputEnterFullscreen": "Passer en plein écran",
     "videoOutputExitFullscreen": "Quitter le plein écran",
     "videoOutputShowTestCard": "Afficher la mire",
-    "videoOutputExit": "Quitter la sortie vidéo"
+    "videoOutputExit": "Quitter la sortie vidéo",
+    "exportCueSheet": "Exporter la Feuille de Signaux (PDF)…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -758,6 +759,8 @@
     "cueImageHelp": "Affichée sur la sortie vidéo pendant la lecture de ce signal s’il n’a pas de vidéo."
   },
   "outputConsole": {
+    "hideMeters": "Masquer les indicateurs de sortie",
+    "showMeters": "Afficher les indicateurs de sortie",
     "limiter": "Limiteur TP",
     "enabled": "Activé",
     "bypassed": "Contourné",
@@ -1336,5 +1339,30 @@
     "noItems": "Aucun élément dans ce projet",
     "holdToStop": "Maintenez appuyé pour arrêter",
     "holdToStopAll": "Maintenez appuyé pour tout arrêter"
+  },
+  "cueSheet": {
+    "title": "Feuille de signaux",
+    "generated": "Généré le",
+    "cues": "Signaux",
+    "runningTime": "Durée totale",
+    "playlist": "Liste de Lecture",
+    "quickPlays": "QuickPlays",
+    "columnNumber": "#",
+    "columnSlot": "Emplacement",
+    "columnTitle": "Titre",
+    "columnNote": "Note",
+    "columnDuration": "Durée",
+    "columnLevel": "Niveau (dB)",
+    "columnEnd": "À la fin",
+    "endNothing": "Arrêt",
+    "endNext": "Suivant",
+    "endGoto": "Aller à",
+    "endLoop": "Boucle",
+    "emptyPlaylist": "Aucun signal dans la liste de lecture.",
+    "truncated": "Cette liste a été réduite aux {count} premières lignes.",
+    "page": "Page {page} sur {pages}",
+    "untitledShow": "Spectacle sans titre",
+    "exported": "Feuille de signaux enregistrée sous {name}",
+    "exportFailed": "Impossible d’exporter la feuille de signaux : {error}"
   }
 }

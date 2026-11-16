@@ -33,7 +33,8 @@
     "videoOutputEnterFullscreen": "Intră în ecran complet",
     "videoOutputExitFullscreen": "Ieși din ecran complet",
     "videoOutputShowTestCard": "Afișează mira de test",
-    "videoOutputExit": "Închide ieșirea video"
+    "videoOutputExit": "Închide ieșirea video",
+    "exportCueSheet": "Exportă Fișa de Cue-uri (PDF)…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -758,6 +759,8 @@
     "cueImageHelp": "Se afișează pe ieșirea video cât timp acest cue se redă, dacă nu are video."
   },
   "outputConsole": {
+    "hideMeters": "Ascunde indicatoarele de ieșire",
+    "showMeters": "Afișează indicatoarele de ieșire",
     "limiter": "Limitator TP",
     "enabled": "Activat",
     "bypassed": "Ocolit",
@@ -1336,5 +1339,30 @@
     "noItems": "Niciun element în acest proiect",
     "holdToStop": "Țineți apăsat pentru a opri",
     "holdToStopAll": "Țineți apăsat pentru a opri tot"
+  },
+  "cueSheet": {
+    "title": "Fișă de cue-uri",
+    "generated": "Generat",
+    "cues": "Cue-uri",
+    "runningTime": "Durată totală",
+    "playlist": "Lista de redare",
+    "quickPlays": "QuickPlay",
+    "columnNumber": "#",
+    "columnSlot": "Slot",
+    "columnTitle": "Titlu",
+    "columnNote": "Notă",
+    "columnDuration": "Durata",
+    "columnLevel": "Nivel (dB)",
+    "columnEnd": "La final",
+    "endNothing": "Oprire",
+    "endNext": "Următorul",
+    "endGoto": "Salt la",
+    "endLoop": "Buclă",
+    "emptyPlaylist": "Niciun cue în lista de redare.",
+    "truncated": "Această listă a fost scurtată la primele {count} rânduri.",
+    "page": "Pagina {page} din {pages}",
+    "untitledShow": "Spectacol fără titlu",
+    "exported": "Fișa de cue-uri a fost salvată ca {name}",
+    "exportFailed": "Fișa de cue-uri nu a putut fi exportată: {error}"
   }
 }

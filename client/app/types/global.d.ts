@@ -8,6 +8,7 @@ import type {
   OneShotProjectEnvelope,
 } from './oneShotMutation';
 import type { ProjectFileKind } from '../utils/projectFileFormats';
+import type { CueSheetExportResult, CueSheetPayload } from './cueSheet';
 
 declare global {
   interface Window {
@@ -83,6 +84,8 @@ declare global {
       }) => Promise<boolean>;
       clearSpotifyImportRecovery: (activeProjectFolderPath: string) => Promise<boolean>;
       setCurrentProject: (projectPath: string) => Promise<{ success: boolean }>;
+      // File > Export Cue Sheet (PDF): main asks where to save and writes the file.
+      exportCueSheet: (sheet: CueSheetPayload) => Promise<CueSheetExportResult>;
       getFilePath: (file: File) => string | null;
       searchYouTube: (query: string) => Promise<Array<{
         id: string;
@@ -165,6 +168,7 @@ declare global {
       onMenuOpenProject: (callback: () => void) => void;
       onMenuSaveProject: (callback: () => void) => void;
       onMenuExportProject: (callback: () => void) => void;
+      onMenuExportCueSheet: (callback: () => void) => void;
       onMenuImportProject: (callback: () => void) => void;
       onMenuCloseProject: (callback: () => void) => void;
       onMenuOpenRecentProject: (callback: (event: any, projectPath: string) => void) => void;

@@ -65,6 +65,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Project management
   setCurrentProject: (projectPath) => ipcRenderer.invoke('set-current-project', projectPath),
+  // Printable summary of the open show; main picks the file and writes the PDF.
+  exportCueSheet: (sheet) => ipcRenderer.invoke('export-cue-sheet', sheet),
 
   // Waveform generation
 
@@ -123,6 +125,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onMenuOpenProject: (callback) => replaceIpcListener('menu-open-project', callback),
   onMenuSaveProject: (callback) => replaceIpcListener('menu-save-project', callback),
   onMenuExportProject: (callback) => replaceIpcListener('menu-export-project', callback),
+  onMenuExportCueSheet: (callback) => replaceIpcListener('menu-export-cue-sheet', callback),
   onMenuImportProject: (callback) => replaceIpcListener('menu-import-project', callback),
   onMenuCloseProject: (callback) => replaceIpcListener('menu-close-project', callback),
   onMenuOpenRecentProject: (callback) => replaceIpcListener('menu-open-recent-project', callback),

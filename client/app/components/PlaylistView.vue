@@ -177,7 +177,19 @@ const server = useLiveplayServer();
 // the item object being rebuilt by a server-pushed document.
 const selectedItemUuid = useState<string | null>('selectedItemUuid', () => null);
 const showMode = computed(() => uiMode.value === 'playback');
+// The time lane is as wide as this show's longest cue needs: 96px fits an
+// hour-long countdown, but a show of short cues gives the difference to titles.
+const longestCueSeconds = computed(() => {
+  let longest = 0;
+  for (const item of getAllItemsFlat()) {
+    const seconds = item.type === 'audio' ? (item as AudioItem).duration : 0;
+    if (Number.isFinite(seconds)) longest = Math.max(longest, seconds);
+  }
+  return longest;
+});
+const cueTimeLaneWidth = computed(() => longestCueSeconds.value < 600 ? 76 : longestCueSeconds.value < 3600 ? 88 : 96);
 const playlistRowStyle = computed(() => ({
+  '--cue-time-width': `${cueTimeLaneWidth.value}px`,
   '--playlist-row-height': `${regularPlaylistRowHeight.value}px`,
   '--show-playlist-row-height': `${showPlaylistRowHeight.value}px`,
   '--folder-playlist-row-height': `${folderPlaylistRowHeight.value}px`,

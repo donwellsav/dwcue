@@ -299,7 +299,15 @@ Do not use a loop as a substitute for rehearsing the loop boundary. Check for cl
 
 Open the group's **Edit** control to see **Start Behavior**, **End Behavior**, and the **Continue with** backup selector together under **Cueing**. **Play First** follows the first-child path and honors each nested group’s Start Behavior. It requires the first child to be ready. A nested **Play All** on that path can start several cues. **Play All** owns the selected descendant subtree and starts each selected playable descendant exactly once, including nested groups. For **Play All**, set each child's ducking for simultaneous playback.
 
-Use the **Group Level** fader in group Properties to lower all audio inside the group, including the soundtrack of video cues. The fader runs from −60 to 0 dB and shows the exact setting beside it. The same level appears at the right of the group's row in the playlist, beside **Shuffle**. Every audio cue has the same control on its row for its own **Volume** (−60 to +10 dB). The control is kept small so the title has the row. It is the same in Edit Mode and Show Mode: the level with two stacked arrows, each press moving it half a dB. In Edit Mode you can also type a value; in Show Mode the number is display-only. The row and Properties set one value, and the change is heard at once.
+Use the **Group Level** fader in group Properties to lower all audio inside the group, including the soundtrack of video cues. The fader runs from −60 to 0 dB and shows the exact setting beside it. The same level appears at the right of the group's row in the playlist, beside **Shuffle**. Every audio cue has the same control on its row for its own **Volume** (−60 to +10 dB). The control is kept small so the title has the row. It is the same in Edit Mode and Show Mode: the level with two stacked arrows, each press moving it half a dB. QuickPlay tiles carry the same control for the QuickPlay's own level (the **Gain** in its settings, up to +12 dB). In Edit Mode you can also type a value; in Show Mode the number is display-only. The row and Properties set one value, and the change is heard at once.
+
+### Cue sheet
+
+Choose **File → Export Cue Sheet (PDF)…** to save a printable summary of the open show: every cue and group in playlist order with its number, title, note, duration, level and what happens at its end, followed by the QuickPlays. The app asks where to save the file; it can then be printed or attached to an email. Exporting only reads the show: it does not save, change or interrupt anything.
+
+### More room for titles
+
+The headphones (preview) button appears on cue rows only when a **Preview Device** is chosen in **Settings → Audio Routing**; without one, the title uses that space. The output meters on the right can be folded to a slim rail with the arrow beside **TP Limiter** and brought back with the arrow on the rail; the limiter keeps working while they are folded, and the choice is remembered.
 
 ### Finding what is on air
 

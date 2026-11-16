@@ -43,6 +43,15 @@ const { checkVideoFrame } = require('./video-frame-check');
 const { createAppLifecycleActions, createWillQuitHandler } = require('./terminal-action');
 const { createOperatorManual } = require('./operator-manual');
 const {
+  CUE_SHEET_LIMITS,
+  buildCueSheetHtml,
+  cueSheetFileName,
+  cueSheetPdfOptions,
+  cueSheetWindowOptions,
+  normalizeCueSheet,
+  normalizeCueSheetLabels,
+} = require('./cue-sheet');
+const {
   SPOTIFY_AUDIO_PROVIDERS,
   normalizeSpotifyBitrate,
   normalizeSpotifyRecovery,
@@ -4276,6 +4285,7 @@ const menuTranslations = Object.entries(localeFiles).reduce((acc, [code, data]) 
     noRecentProjects: data.menu.noRecentProjects || 'No Recent Projects',
     saveProject: data.menu.saveProject,
     exportProject: data.menu.exportProject,
+    exportCueSheet: data.menu.exportCueSheet || 'Export Cue Sheet (PDF)…',
     importProject: data.menu.importProject,
     closeProject: data.menu.closeProject,
     openProjectFolder: data.menu.openProjectFolder,
@@ -4382,6 +4392,13 @@ function createMenu(locale = 'en', isDev = false) {
           label: t.importProject,
           click: () => {
             mainWindow.webContents.send('menu-import-project');
+          }
+        },
+        {
+          label: t.exportCueSheet,
+          enabled: currentProject !== null,
+          click: () => {
+            mainWindow.webContents.send('menu-export-cue-sheet');
           }
         },
         { type: 'separator' },
@@ -4540,6 +4557,78 @@ ipcMain.handle('select-project-file', async (event) => {
   if (fileKindFor(selectedPath) !== ProjectFileKind.NativeProject) return null;
   rememberNativePickerFolder('project-open', path.dirname(selectedPath));
   return authorizeOpenableFilePath(selectedPath);
+});
+
+// File > Export Cue Sheet (PDF). Read-only: the renderer sends a plain summary
+// of the open show and nothing here touches the transport or the show file.
+// The sheet is printed by a hidden, sandboxed window with JavaScript off. It
+// loads a private temporary file because Chromium rejects data: URLs over
+// 2 MB, which a long playlist exceeds.
+const CUE_SHEET_RENDER_TIMEOUT_MS = 120000;
+let cueSheetExportActive = false;
+
+async function renderCueSheetPdf(html, pdfOptions) {
+  const folder = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'dwcue-cue-sheet-'));
+  let printWindow = null;
+  let timer = null;
+  try {
+    const htmlPath = path.join(folder, 'cue-sheet.html');
+    await fs.promises.writeFile(htmlPath, html, 'utf8');
+    printWindow = new BrowserWindow(cueSheetWindowOptions());
+    const printed = printWindow.loadFile(htmlPath)
+      .then(() => printWindow.webContents.printToPDF(pdfOptions));
+    // If the timeout wins, the abandoned print rejects when its window closes.
+    printed.catch(() => {});
+    return await Promise.race([
+      printed,
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Timed out while rendering the cue sheet')),
+          CUE_SHEET_RENDER_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    if (printWindow && !printWindow.isDestroyed()) printWindow.destroy();
+    await fs.promises.rm(folder, { recursive: true, force: true, maxRetries: 3 }).catch(() => {});
+  }
+}
+
+ipcMain.handle('export-cue-sheet', async (event, payload) => {
+  requireTrustedIpc(event);
+  if (payload === null) throw new TypeError('cue sheet must be an object');
+  requireBoundedIpcObject(payload, 'cue sheet', CUE_SHEET_LIMITS.maxPayloadBytes);
+  if (cueSheetExportActive) return { status: 'busy' };
+  cueSheetExportActive = true;
+  try {
+    const sheet = normalizeCueSheet(payload);
+    const labels = normalizeCueSheetLabels(payload.labels);
+    // The destination comes only from this dialog, never from the renderer.
+    const folder = nativePickerFolder('cue-sheet');
+    const fileName = cueSheetFileName(sheet.showName);
+    const result = await showNativeFilePicker(() => dialog.showSaveDialog({
+      defaultPath: folder ? path.join(folder, fileName) : fileName,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+    }));
+    if (result.canceled || !result.filePath) return { status: 'cancelled' };
+
+    const language = { locale: currentLocale, direction: localeFiles[currentLocale]?._metadata?.direction };
+    const pdf = await renderCueSheetPdf(
+      buildCueSheetHtml(sheet, labels, { ...language, generatedAt: new Date() }),
+      cueSheetPdfOptions(sheet.showName, labels, language),
+    );
+    await fs.promises.writeFile(result.filePath, pdf);
+    rememberNativePickerFolder('cue-sheet', path.dirname(result.filePath));
+    return { status: 'saved', fileName: path.basename(result.filePath) };
+  } catch (error) {
+    const message = String(error?.message || error).split('\n')[0].slice(0, 200);
+    console.warn('[cue-sheet] export failed:', message);
+    return { status: 'failed', error: message };
+  } finally {
+    cueSheetExportActive = false;
+  }
 });
 
 const mediaPickerExtensions = [

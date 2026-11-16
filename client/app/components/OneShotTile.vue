@@ -31,6 +31,13 @@
       </span>
     </div>
 
+    <!-- The QuickPlay's level: the same control as a playlist row, on the
+         same value as Gain in its settings. -->
+    <div class="one-shot-levelline">
+      <ItemLevel :item="item" :read-only="showMode" :large="showMode" :max-db="12"
+        :persist="() => persist({ volume: item.volume })" />
+    </div>
+
     <div class="one-shot-bottomline">
       <div class="one-shot-actions">
         <button
@@ -189,6 +196,7 @@
 
 <script setup lang="ts">
 import { useDetachedOneShotMutation } from '~/composables/useDetachedOneShotMutation';
+import ItemLevel from './ItemLevel.vue';
 import type { AudioItem, CartSlotKeyBinding } from '~/types/project';
 import type { OneShotMutableFields } from '~/types/oneShotMutation';
 import {
@@ -539,7 +547,7 @@ onUnmounted(() => {
   min-width: 0;
   isolation: isolate;
   display: grid;
-  grid-template-rows: 22px minmax(0, 1fr) 31px;
+  grid-template-rows: 22px minmax(0, 1fr) auto 31px;
   gap: var(--spacing-xs);
   padding: var(--spacing-xs) var(--spacing-sm);
   overflow: hidden;
@@ -560,7 +568,7 @@ onUnmounted(() => {
 }
 
 .one-shot-tile.show-mode {
-  grid-template-rows: 22px minmax(0, 1fr) 36px;
+  grid-template-rows: 22px minmax(0, 1fr) auto 44px;
   cursor: default;
 }
 
@@ -635,6 +643,15 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.one-shot-levelline {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  z-index: 1;
+}
+
+.one-shot-levelline :deep(.item-level:not(.item-level--large)) { height: 24px; }
 
 .one-shot-bottomline {
   min-width: 0;

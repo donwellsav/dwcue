@@ -105,8 +105,22 @@
         </div>
       </div>
 
-      <aside class="output-console" :aria-label="t('properties.output')" :inert="recoveryOpen">
-        <div class="output-console__header workspace-panel-header">
+      <aside class="output-console" :class="{ 'output-console--collapsed': metersCollapsed }"
+        :aria-label="t('properties.output')" :inert="recoveryOpen">
+        <!-- Folded away, the strip is a slim rail: the playlist gets the width
+             back on a small screen. The limiter keeps working either way. -->
+        <button v-if="metersCollapsed" type="button" class="output-console__fold output-console__fold--rail"
+          :aria-label="t('outputConsole.showMeters')" :title="t('outputConsole.showMeters')"
+          aria-expanded="false" @click="metersCollapsed = false">
+          <span class="material-symbols-rounded" aria-hidden="true">chevron_left</span>
+          <span class="output-console__rail-label" aria-hidden="true">{{ t('properties.output') }}</span>
+        </button>
+        <div v-show="!metersCollapsed" class="output-console__header workspace-panel-header">
+          <button type="button" class="output-console__fold"
+            :aria-label="t('outputConsole.hideMeters')" :title="t('outputConsole.hideMeters')"
+            aria-expanded="true" @click="metersCollapsed = true">
+            <span class="material-symbols-rounded" aria-hidden="true">chevron_right</span>
+          </button>
           <div class="output-console__header-controls">
 
             <button
@@ -166,7 +180,7 @@
             </div>
           </div>
         </div>
-        <div class="output-console__strips">
+        <div v-show="!metersCollapsed" class="output-console__strips">
           <section
             v-for="pair in outputPairs"
             :key="pair.key"
@@ -349,6 +363,15 @@ const autoSizeImportPanel = computed(() => visibleImportPanel.value === 'delete-
 const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value
   : autoSizeImportPanel.value ? null
   : visibleImportPanel.value ? importHeight.value : propertiesHeight.value);
+// The output meter strip can be folded to a slim rail; the choice is remembered.
+const METERS_COLLAPSED_KEY = 'dwcue.outputMetersCollapsed';
+const metersCollapsed = useState<boolean>('OutputConsole.collapsed', () => false);
+if (import.meta.client) {
+  try { metersCollapsed.value = localStorage.getItem(METERS_COLLAPSED_KEY) === '1'; } catch { /* keep the default */ }
+  watch(metersCollapsed, (collapsed) => {
+    try { localStorage.setItem(METERS_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch { /* not remembered this time */ }
+  });
+}
 const noteEditRequest = useState<string | null>('playlistNoteEditRequest', () => null);
 const importExpanded = useState<boolean>('ImportPanel.expanded', () => false);
 const tallImportPanel = computed(() => !showProjectSettings.value && !!visibleImportPanel.value && !autoSizeImportPanel.value);
@@ -1108,6 +1131,47 @@ onUnmounted(() => {
   overflow: hidden;
   background: var(--color-surface);
   border-inline-start: 1px solid var(--color-border);
+}
+
+.output-console--collapsed {
+  flex-basis: 36px;
+  width: 36px;
+}
+
+/* Slim: the limiter controls need the rest of this narrow header. */
+.output-console__fold {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  margin-inline: -6px -2px;
+  height: var(--panel-control-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.output-console__fold:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.output-console__fold--rail {
+  align-content: start;
+  gap: var(--spacing-sm);
+  width: 100%;
+  height: 100%;
+  padding-top: var(--spacing-sm);
+  border-radius: 0;
+}
+
+.output-console__rail-label {
+  writing-mode: vertical-rl;
+  font-size: 12px;
+  letter-spacing: 0.04em;
 }
 
 .monitor-console {

@@ -33,7 +33,8 @@
     "videoOutputEnterFullscreen": "Vollbild aktivieren",
     "videoOutputExitFullscreen": "Vollbild beenden",
     "videoOutputShowTestCard": "Testbild anzeigen",
-    "videoOutputExit": "Videoausgabe beenden"
+    "videoOutputExit": "Videoausgabe beenden",
+    "exportCueSheet": "Cue-Liste exportieren (PDF)…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -758,6 +759,8 @@
     "cueImageHelp": "Wird auf der Videoausgabe angezeigt, solange dieser Cue ohne Video läuft."
   },
   "outputConsole": {
+    "hideMeters": "Ausgangspegelanzeigen ausblenden",
+    "showMeters": "Ausgangspegelanzeigen einblenden",
     "limiter": "TP-Limiter",
     "enabled": "Aktiv",
     "bypassed": "Umgangen",
@@ -1336,5 +1339,30 @@
     "noItems": "Keine Elemente in diesem Projekt",
     "holdToStop": "Gedrückt halten zum Stoppen",
     "holdToStopAll": "Gedrückt halten, um alles zu stoppen"
+  },
+  "cueSheet": {
+    "title": "Cue-Liste",
+    "generated": "Erstellt",
+    "cues": "Cues",
+    "runningTime": "Gesamtlaufzeit",
+    "playlist": "Wiedergabeliste",
+    "quickPlays": "QuickPlays",
+    "columnNumber": "#",
+    "columnSlot": "Slot",
+    "columnTitle": "Titel",
+    "columnNote": "Notiz",
+    "columnDuration": "Dauer",
+    "columnLevel": "Pegel (dB)",
+    "columnEnd": "Am Ende",
+    "endNothing": "Stopp",
+    "endNext": "Weiter",
+    "endGoto": "Gehe zu",
+    "endLoop": "Schleife",
+    "emptyPlaylist": "Keine Cues in der Wiedergabeliste.",
+    "truncated": "Diese Liste wurde auf die ersten {count} Zeilen gekürzt.",
+    "page": "Seite {page} von {pages}",
+    "untitledShow": "Unbenannte Show",
+    "exported": "Cue-Liste gespeichert als {name}",
+    "exportFailed": "Die Cue-Liste konnte nicht exportiert werden: {error}"
   }
 }

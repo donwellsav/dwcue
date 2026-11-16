@@ -33,7 +33,8 @@
     "videoOutputEnterFullscreen": "Είσοδος σε Πλήρη Οθόνη",
     "videoOutputExitFullscreen": "Έξοδος από Πλήρη Οθόνη",
     "videoOutputShowTestCard": "Εμφάνιση Δοκιμαστικής Εικόνας",
-    "videoOutputExit": "Έξοδος Βίντεο"
+    "videoOutputExit": "Έξοδος Βίντεο",
+    "exportCueSheet": "Εξαγωγή λίστας ενδείξεων (PDF)…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -758,6 +759,8 @@
     "cueImageHelp": "Εμφανίζεται στην Έξοδο Βίντεο όσο παίζει αυτή η ένδειξη, αν δεν έχει βίντεο."
   },
   "outputConsole": {
+    "hideMeters": "Απόκρυψη μετρητών εξόδου",
+    "showMeters": "Εμφάνιση μετρητών εξόδου",
     "limiter": "TP Limiter",
     "enabled": "Ενεργό",
     "bypassed": "Παράκαμψη",
@@ -1336,5 +1339,30 @@
     "noItems": "Δεν υπάρχουν στοιχεία σε αυτό το έργο",
     "holdToStop": "Κρατήστε πατημένο για διακοπή",
     "holdToStopAll": "Κρατήστε πατημένο για διακοπή όλων"
+  },
+  "cueSheet": {
+    "title": "Λίστα ενδείξεων",
+    "generated": "Δημιουργήθηκε",
+    "cues": "Ενδείξεις",
+    "runningTime": "Συνολική διάρκεια",
+    "playlist": "Λίστα Αναπαραγωγής",
+    "quickPlays": "QuickPlays",
+    "columnNumber": "#",
+    "columnSlot": "Θέση",
+    "columnTitle": "Τίτλος",
+    "columnNote": "Σημείωση",
+    "columnDuration": "Διάρκεια",
+    "columnLevel": "Επίπεδο (dB)",
+    "columnEnd": "Στο τέλος",
+    "endNothing": "Διακοπή",
+    "endNext": "Επόμενο",
+    "endGoto": "Μετάβαση σε",
+    "endLoop": "Επανάληψη",
+    "emptyPlaylist": "Δεν υπάρχουν ενδείξεις στη λίστα αναπαραγωγής.",
+    "truncated": "Η λίστα συντομεύτηκε στις πρώτες {count} γραμμές.",
+    "page": "Σελίδα {page} από {pages}",
+    "untitledShow": "Παράσταση χωρίς τίτλο",
+    "exported": "Η λίστα ενδείξεων αποθηκεύτηκε ως {name}",
+    "exportFailed": "Δεν ήταν δυνατή η εξαγωγή της λίστας ενδείξεων: {error}"
   }
 }

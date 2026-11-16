@@ -2389,6 +2389,19 @@ assert.doesNotMatch(playlistView.slice(0, playlistView.indexOf('<Teleport defer 
 assert.match(playlistView,
   /handleImportButton = \(\) => \{\s*if \(!currentProject\.value\) return;\s*if \(!canOnlineImport\.value\) return handleImport\(\);/,
   'with only one import source the Import button must go straight to it');
+// Cue sheet export: a read-only PDF of the open show.
+const cueSheetModule = read('client/electron/cue-sheet.js');
+assert.match(electron,
+  /ipcMain\.handle\('export-cue-sheet', async \(event, payload\) => \{\s*requireTrustedIpc\(event\);[\s\S]{0,200}requireBoundedIpcObject\(payload, 'cue sheet', CUE_SHEET_LIMITS\.maxPayloadBytes\);/,
+  'the cue sheet export must accept only a trusted, size-limited summary from the renderer');
+assert.match(electron,
+  /const result = await showNativeFilePicker\(\(\) => dialog\.showSaveDialog\([\s\S]{0,1400}await fs\.promises\.writeFile\(result\.filePath, pdf\);/,
+  'a cue sheet must be written only where the native save dialog says, never to a path from the renderer');
+assert.match(cueSheetModule,
+  /function cueSheetWindowOptions\(\) \{[\s\S]{0,260}sandbox: true,\s*contextIsolation: true,\s*nodeIntegration: false,\s*javascript: false,/,
+  'the hidden window that prints a cue sheet must be sandboxed with JavaScript off');
+assert.doesNotMatch(cueSheetModule, /require\(['"]electron['"]\)|<script/i,
+  'the cue sheet builder must stay a pure module and must not generate script');
 assert.match(mainWorkspace,
   /const MAX_PANEL_HEIGHT_PERCENT = 60;[\s\S]*const IMPORT_MAX_PANEL_HEIGHT_PERCENT = 84;[\s\S]*roomyPanel = computed\(\(\) => tallImportPanel\.value \|\| decisionOpen \|\| !!filePicker\.value\);\s*const panelMaxPercent = computed\(\(\) => roomyPanel\.value \? IMPORT_MAX_PANEL_HEIGHT_PERCENT : MAX_PANEL_HEIGHT_PERCENT\)/,
   'importers may grow taller than Settings and Properties, but never to the whole window: the transport bar stays in view');
@@ -2398,19 +2411,29 @@ assert.match(mainWorkspace,
 assert.match(read('client/app/components/ServerFileBrowser.vue'),
   /&--staging &__content \{\s*flex: 1 1 clamp\(128px, 24vh, 192px\);/,
   'the staged file list must grow with its panel instead of being capped at a few rows');
+const itemLevel = read('client/app/components/ItemLevel.vue');
 assert.match(playlistItem,
-  /<div class="item-state">[\s\S]*<span class="row-level"[\s\S]*<output v-if="showMode" class="row-level__value row-level__value--readout"[\s\S]*<input v-else class="row-level__value" type="number"[\s\S]*nudgeRowLevel\(1, \$event\)[\s\S]*nudgeRowLevel\(-1, \$event\)[\s\S]*<\/span>\s*<\/div>\s*<span v-if="item\.type === 'audio'" class="item-duration"/,
-  'every row must show its level at the right of the state lane, and must not offer a text field in Show Mode');
-assert.match(playlistItem,
-  /<span class="row-level__spin">[\s\S]*arrow_drop_up[\s\S]*arrow_drop_down[\s\S]*\.row-level__spin \{[\s\S]{0,120}grid-template-rows: 1fr 1fr;\s*width: 16px;[\s\S]*\.playlist-item\.show-mode \.row-level__spin \{ width: 28px; \}/,
-  'the row level is one compact control in both modes: a number with stacked up and down arrows on every row');
-assert.doesNotMatch(playlistItem, /row-level__step|levelArrowsOpen|v-if="[^"]*" class="row-level__spin"/,
-  'the row level arrows must not depend on selection or a tap, and must not return to side-by-side buttons');
-assert.match(playlistItem,
-  /const ROW_LEVEL_STEP_DB = 0\.5;[\s\S]{0,360}\* ROW_LEVEL_STEP_DB\);/,
-  'a press of a level arrow must move a cue or a group by half a dB');
-assert.doesNotMatch(playlistItem, /row-level__step/,
-  'the row level must not return to separate minus and plus buttons');
+  /<div class="item-state">[\s\S]*<ItemLevel :item="item" :read-only="showMode" :large="showMode" :disabled="!projectControlsReady" \/>\s*<\/div>\s*<span v-if="item\.type === 'audio'" class="item-duration"/,
+  'every row must show its level at the right of the state lane');
+assert.match(read('client/app/components/OneShotTile.vue'),
+  /<ItemLevel :item="item" :read-only="showMode" :large="showMode" :max-db="12"\s*:persist="\(\) => persist\(\{ volume: item\.volume \}\)" \/>/,
+  'a QuickPlay tile must use the same level control, saved the way the tile saves its other settings');
+assert.match(itemLevel,
+  /<output v-if="readOnly" class="item-level__value item-level__value--readout"[\s\S]*<input v-else class="item-level__value" type="number"[\s\S]*<span class="item-level__spin">[\s\S]*arrow_drop_up[\s\S]*arrow_drop_down/,
+  'the level is one compact control: a number (never a text field in Show Mode) with stacked up and down arrows');
+assert.match(itemLevel,
+  /\.item-level__spin \{[\s\S]{0,120}grid-template-rows: 1fr 1fr;\s*width: 16px;[\s\S]*\.item-level--large \{[\s\S]{0,260}\.item-level__spin \{ width: 28px; \}/,
+  'the level arrows must stay stacked and slim in both sizes');
+assert.doesNotMatch(itemLevel + playlistItem, /row-level__step|levelArrowsOpen|v-if="[^"]*" class="item-level__spin"/,
+  'the level arrows must not depend on selection or a tap, and must not return to side-by-side buttons');
+assert.match(itemLevel,
+  /const STEP_DB = 0\.5;[\s\S]*function nudge\(direction: number, event: Event\) \{[\s\S]{0,260}\* STEP_DB\);[\s\S]{0,200}\.blur\(\);/,
+  'a press of a level arrow must move a cue or a group by half a dB and give the keyboard back to the transport');
+assert.match(itemLevel,
+  /if \(props\.item\.type === 'group'\) props\.item\.groupGainDb = next;\s*else props\.item\.volume = dbToLinear\(next\);[\s\S]{0,260}if \(props\.persist\) props\.persist\(\); else void saveProject\(\);/,
+  'the level must edit the same volume and groupGainDb values as Properties; nothing new is stored');
+assert.doesNotMatch(playlistItem, /groupGainDb\s*=|\.volume\s*=/,
+  'the playlist row must not carry a second copy of the level logic');
 assert.match(playlistItem,
   /function commitNote\(\) \{[\s\S]{0,260}if \(note\) props\.item\.note = note;\s*else delete props\.item\.note;[\s\S]{0,120}void saveProject\(\);/,
   'a playlist note must be its own field: writing one must never change the cue title or the media file name');
@@ -2419,9 +2442,6 @@ assert.doesNotMatch(playlistItem, /props\.item\.displayName\s*=/,
 assert.match(playlistItem,
   /\.delete-action \{ grid-column: 1; grid-row: 1; \}\s*\.edit-action \{ grid-column: 2; grid-row: 1; \}[\s\S]{0,120}\.delete-action--parked \{ display: none; \}\s*\.item-actions--single \{ grid-template-columns: 32px; \}/,
   'Delete must sit away from Play with Edit between them, and appear only on a selected row');
-assert.match(playlistItem,
-  /if \(props\.item\.type === 'group'\) props\.item\.groupGainDb = next;\s*else props\.item\.volume = dbToLinear\(next\);[\s\S]{0,200}rowLevelSave = setTimeout\(\(\) => \{ void saveProject\(\); \}, 400\);[\s\S]*function nudgeRowLevel[\s\S]{0,360}\.blur\(\);/,
-  'the row level must edit the same volume and groupGainDb values as Properties, and give the keyboard back to the transport');
 assert.doesNotMatch(spotifyImportModal + youtubeImportModal, /aria-modal|--dialog-backdrop|<Teleport to="body"/,
   'online imports must not block the playlist or transport with a modal');
 
@@ -2530,7 +2550,7 @@ assert.match(
 );
 assert.match(
   oneShotPanel,
-  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*const contentMinHeight = Math\.ceil\(\(showMode\.value \? 95 : 83\) \+ 48 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,260}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
+  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*const contentMinHeight = Math\.ceil\(\(showMode\.value \? 143 : 111\) \+ 48 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,260}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
   'One Shots must preserve exact profile columns while reserving a measured safe width and font-scaled two-line row height',
 );
 assert.doesNotMatch(

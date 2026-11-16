@@ -33,7 +33,8 @@
     "videoOutputEnterFullscreen": "전체 화면 시작",
     "videoOutputExitFullscreen": "전체 화면 종료",
     "videoOutputShowTestCard": "테스트 카드 표시",
-    "videoOutputExit": "비디오 출력 종료"
+    "videoOutputExit": "비디오 출력 종료",
+    "exportCueSheet": "큐 시트 내보내기 (PDF)…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -758,6 +759,8 @@
     "cueImageHelp": "이 큐에 비디오가 없을 때 재생되는 동안 비디오 출력에 표시됩니다."
   },
   "outputConsole": {
+    "hideMeters": "출력 미터 숨기기",
+    "showMeters": "출력 미터 표시",
     "limiter": "TP 리미터",
     "enabled": "켜짐",
     "bypassed": "바이패스",
@@ -1336,5 +1339,30 @@
     "noItems": "이 프로젝트에 항목이 없습니다",
     "holdToStop": "길게 눌러 정지",
     "holdToStopAll": "길게 눌러 모두 정지"
+  },
+  "cueSheet": {
+    "title": "큐 시트",
+    "generated": "생성일",
+    "cues": "큐",
+    "runningTime": "총 재생 시간",
+    "playlist": "재생 목록",
+    "quickPlays": "QuickPlays",
+    "columnNumber": "#",
+    "columnSlot": "슬롯",
+    "columnTitle": "제목",
+    "columnNote": "메모",
+    "columnDuration": "지속 시간",
+    "columnLevel": "레벨 (dB)",
+    "columnEnd": "종료 시",
+    "endNothing": "정지",
+    "endNext": "다음",
+    "endGoto": "이동",
+    "endLoop": "반복",
+    "emptyPlaylist": "재생 목록에 큐가 없습니다.",
+    "truncated": "이 목록은 처음 {count}개 행으로 줄였습니다.",
+    "page": "{pages}페이지 중 {page}페이지",
+    "untitledShow": "제목 없는 공연",
+    "exported": "큐 시트를 {name}(으)로 저장했습니다",
+    "exportFailed": "큐 시트를 내보내지 못했습니다: {error}"
   }
 }

@@ -183,7 +183,7 @@ const oneShotSlots = computed(() => {
   return slots;
 });
 // Tallest a Show Mode tile grows when few rows share the panel.
-const SHOW_MODE_MAX_ROW_HEIGHT = 220;
+const SHOW_MODE_MAX_ROW_HEIGHT = 250;
 const oneShotGridStyle = computed(() => {
   const layout = gridLayout.value;
   // Show Mode shares the height between the rows in use, up to the layout's rows.
@@ -192,9 +192,9 @@ const oneShotGridStyle = computed(() => {
     : layout.rows;
   const rowPercent = 100 / rows;
   const rowGapOffset = GRID_GAP_PX * (rows - 1) / rows;
-  // Allow the metadata row, two title lines, status, and the action strip
-  // (32px in Edit Mode, 44px touch targets in Show Mode).
-  const contentMinHeight = Math.ceil((showMode.value ? 95 : 83) + 48 * oneShotFontScale.value / 100);
+  // Allow the metadata row, two title lines, status, the level line and the
+  // action strip (24px + 32px in Edit Mode, 44px + 44px touch targets in Show Mode).
+  const contentMinHeight = Math.ceil((showMode.value ? 143 : 111) + 48 * oneShotFontScale.value / 100);
   const minHeight = Math.max(layout.minHeight, contentMinHeight);
   const rowHeight = `max(${minHeight}px, calc(${rowPercent}% - ${rowGapOffset}px))`;
   return {

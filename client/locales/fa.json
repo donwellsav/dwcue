@@ -33,7 +33,8 @@
     "videoOutputEnterFullscreen": "ورود به تمام‌صفحه",
     "videoOutputExitFullscreen": "خروج از تمام‌صفحه",
     "videoOutputShowTestCard": "نمایش کارت تست",
-    "videoOutputExit": "خروج از خروجی ویدیو"
+    "videoOutputExit": "خروج از خروجی ویدیو",
+    "exportCueSheet": "صادرات برگه سیگنال‌ها (PDF)…"
   },
   "welcome": {
     "title": "DonWells Cue",
@@ -758,6 +759,8 @@
     "cueImageHelp": "اگر این سیگنال ویدیو نداشته باشد، هنگام پخش آن روی خروجی ویدیو نمایش داده می‌شود."
   },
   "outputConsole": {
+    "hideMeters": "پنهان کردن نشانگرهای خروجی",
+    "showMeters": "نمایش نشانگرهای خروجی",
     "limiter": "لیمیتر TP",
     "enabled": "فعال",
     "bypassed": "بایپس‌شده",
@@ -1336,5 +1339,30 @@
     "noItems": "هیچ موردی در این پروژه وجود ندارد",
     "holdToStop": "برای توقف نگه دارید",
     "holdToStopAll": "برای توقف همه نگه دارید"
+  },
+  "cueSheet": {
+    "title": "برگه سیگنال‌ها",
+    "generated": "تاریخ تولید",
+    "cues": "سیگنال‌ها",
+    "runningTime": "مدت کل اجرا",
+    "playlist": "لیست پخش",
+    "quickPlays": "QuickPlays",
+    "columnNumber": "#",
+    "columnSlot": "جایگاه",
+    "columnTitle": "عنوان",
+    "columnNote": "یادداشت",
+    "columnDuration": "مدت",
+    "columnLevel": "سطح (dB)",
+    "columnEnd": "در پایان",
+    "endNothing": "توقف",
+    "endNext": "بعدی",
+    "endGoto": "برو به",
+    "endLoop": "تکرار",
+    "emptyPlaylist": "هیچ سیگنالی در لیست پخش نیست.",
+    "truncated": "این فهرست به {count} ردیف اول کوتاه شد.",
+    "page": "صفحه {page} از {pages}",
+    "untitledShow": "اجرای بدون عنوان",
+    "exported": "برگه سیگنال‌ها با نام {name} ذخیره شد",
+    "exportFailed": "صادر کردن برگه سیگنال‌ها ممکن نشد: {error}"
   }
 }

@@ -10,6 +10,7 @@
       'is-sticky-group': item.type === 'group' && isExpanded && depth === 0,
       'is-audio': item.type === 'audio',
       'is-playing': isPlaying,
+      'no-preview-lane': item.type === 'audio' && !hasPreviewDevice,
       'is-paused': isPaused,
       'is-up-next': isQueuedNext,
       'show-mode': showMode,
@@ -90,8 +91,10 @@
             :aria-pressed="isManuallyQueued"
           />
         </div>
+        <!-- Without a preview device the headphones button has nothing to do;
+             it is left out and the title takes its lane. -->
         <ActionButton
-          v-if="item.type === 'audio'"
+          v-if="item.type === 'audio' && hasPreviewDevice"
           class="preview-action"
           symbol="preview"
           highlight-color="var(--state-preview)"
@@ -205,37 +208,8 @@
             >replay</span>
           </div>
           <!-- Level, on every row: a cue's Volume or a group's Group level,
-               the same values Properties edits. In Show Mode the number is
-               display-only and the steppers stay, so no text field can take
-               the keyboard from GO. -->
-          <span class="row-level" draggable="false"
-            @click.stop @dblclick.stop @pointerdown.stop @mousedown.stop>
-            <output v-if="showMode" class="row-level__value row-level__value--readout"
-              :aria-label="t(rowLevelLabel, { name: item.displayName })">{{ rowLevel.toFixed(1) }}</output>
-            <input v-else class="row-level__value" type="number" inputmode="decimal" draggable="false"
-              :min="rowLevelRange.min" :max="rowLevelRange.max" :step="ROW_LEVEL_STEP_DB" :value="rowLevel.toFixed(1)"
-              :aria-label="t(rowLevelLabel, { name: item.displayName })"
-              :title="t(rowLevelLabel, { name: item.displayName })"
-              :disabled="!projectControlsReady"
-              @keydown.stop @keyup.stop @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
-              @change="setRowLevel(($event.target as HTMLInputElement).valueAsNumber, $event)" />
-            <span class="row-level__unit" aria-hidden="true">dB</span>
-            <!-- Stacked up and down arrows, 0.5 dB a press. The same control
-                 on every row in Edit Mode and Show Mode; only its size follows
-                 the row. -->
-            <span class="row-level__spin">
-              <button type="button" class="row-level__nudge" draggable="false" tabindex="-1"
-                :aria-label="t('playlist.groupLevelUp', { name: item.displayName })"
-                :title="t('playlist.groupLevelUp', { name: item.displayName })"
-                :disabled="!projectControlsReady || rowLevel >= rowLevelRange.max"
-                @click.stop="nudgeRowLevel(1, $event)"><span class="material-symbols-rounded" aria-hidden="true">arrow_drop_up</span></button>
-              <button type="button" class="row-level__nudge" draggable="false" tabindex="-1"
-                :aria-label="t('playlist.groupLevelDown', { name: item.displayName })"
-                :title="t('playlist.groupLevelDown', { name: item.displayName })"
-                :disabled="!projectControlsReady || rowLevel <= rowLevelRange.min"
-                @click.stop="nudgeRowLevel(-1, $event)"><span class="material-symbols-rounded" aria-hidden="true">arrow_drop_down</span></button>
-            </span>
-          </span>
+               the same values Properties edits (see ItemLevel). -->
+          <ItemLevel :item="item" :read-only="showMode" :large="showMode" :disabled="!projectControlsReady" />
         </div>
 
         <span v-if="item.type === 'audio'" class="item-duration" :style="{ color: durationColor ?? undefined }">{{ durationDisplay }}</span>
@@ -336,8 +310,9 @@
 <script setup lang="ts">
 import { countdownColorForSeconds, type AudioItem, type GroupItem, type BaseItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
+import ItemLevel from './ItemLevel.vue';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
-import { dbToLinear, exceedsTruePeakCeiling, linearToDb } from '~/utils/audio';
+import { exceedsTruePeakCeiling } from '~/utils/audio';
 import { cloneAsPlaylistItem } from '~/utils/oneShots';
 
 const props = defineProps<{
@@ -433,44 +408,6 @@ watch(noteEditRequest, (uuid) => {
   startNote();
 });
 
-// Row level. It edits the values Properties already owns, nothing new:
-// a cue's `volume` (stored linear, shown in dB, -60 to +10 like the Volume
-// field) and a group's `groupGainDb` (-60 to 0 like the Group level slider).
-const rowLevelRange = computed(() => props.item.type === 'group'
-  ? { min: -60, max: 0, step: 0.5 }
-  : { min: -60, max: 10, step: 0.1 });
-const rowLevelLabel = computed(() => props.item.type === 'group' ? 'playlist.groupLevelFor' : 'playlist.cueLevelFor');
-const rowLevel = computed(() => {
-  const { min, max } = rowLevelRange.value;
-  const db = props.item.type === 'group' ? props.item.groupGainDb : linearToDb(props.item.volume ?? 1);
-  return typeof db === 'number' && Number.isFinite(db) ? Math.min(max, Math.max(min, db)) : 0;
-});
-let rowLevelSave: ReturnType<typeof setTimeout> | undefined;
-function setRowLevel(value: number, event?: Event) {
-  if (!projectControlsReady.value) return;
-  const { min, max, step } = rowLevelRange.value;
-  const next = Number.isFinite(value)
-    ? Math.min(max, Math.max(min, Math.round(value / step) * step))
-    : rowLevel.value;
-  // Show what was accepted, even when it equals the old value (out-of-range entry).
-  const field = event?.target as HTMLInputElement | undefined;
-  if (field?.tagName === 'INPUT') field.value = next.toFixed(1);
-  if (Math.abs(next - rowLevel.value) < 0.001) return;
-  // Reaches the engine at once, like the same edit made in Properties.
-  if (props.item.type === 'group') props.item.groupGainDb = next;
-  else props.item.volume = dbToLinear(next);
-  // Several presses in a row become one save of the show file.
-  clearTimeout(rowLevelSave);
-  rowLevelSave = setTimeout(() => { void saveProject(); }, 400);
-}
-// One press of an arrow: to the next half dB in that direction.
-const ROW_LEVEL_STEP_DB = 0.5;
-function nudgeRowLevel(direction: number, event: Event) {
-  const steps = rowLevel.value / ROW_LEVEL_STEP_DB;
-  setRowLevel((direction > 0 ? Math.floor(steps + 1e-6) + 1 : Math.ceil(steps - 1e-6) - 1) * ROW_LEVEL_STEP_DB);
-  // Leave the keyboard with the transport: Space must stay GO, not this button.
-  (event.currentTarget as HTMLElement | null)?.blur();
-}
 
 const { isRevealed, forgetReveal } = usePlaylistReveal();
 
@@ -1390,85 +1327,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   grid-template-columns: var(--cue-number-width, 36px) max-content minmax(0, 1fr);
 }
 
-/* Compact on purpose: the title owns the row, the level is a small field. */
-.row-level {
-  flex: none;
-  display: inline-flex;
-  align-items: stretch;
-  height: var(--cue-cell-height);
-  padding-left: 4px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--control-radius);
-  background: var(--color-control);
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  cursor: default;
-}
-
-.row-level__value {
-  align-self: center;
-  width: 5ch;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-text-primary);
-  font: inherit;
-  font-size: 12px;
-  text-align: right;
-  appearance: textfield;
-  -moz-appearance: textfield;
-
-  &::-webkit-outer-spin-button,
-  &::-webkit-inner-spin-button { appearance: none; margin: 0; }
-  &:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; border-radius: 2px; }
-}
-
-.row-level__value--readout { display: inline-block; }
-
-.row-level__unit {
-  align-self: center;
-  margin: 0 3px 0 2px;
-  color: var(--color-text-secondary);
-  font-size: 11px;
-}
-
-/* Stacked arrows: 16px wide in Edit Mode, wider and taller with the row in Show Mode. */
-.row-level__spin {
-  display: grid;
-  grid-template-rows: 1fr 1fr;
-  width: 16px;
-  border-left: 1px solid var(--color-border);
-}
-
-.row-level__nudge {
-  display: grid;
-  place-items: center;
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  overflow: hidden;
-
-  .material-symbols-rounded { font-size: 18px; line-height: 0.7; }
-  &:hover:not(:disabled) { background: var(--color-surface-hover); color: var(--color-text-primary); }
-  &:disabled { color: var(--color-text-disabled); cursor: default; }
-}
-
-/* Show Mode: the same control, scaled to the taller row. */
-.playlist-item.show-mode .row-level {
-  height: 44px;
-  padding-left: 8px;
-}
-
-.playlist-item.show-mode .row-level__value { font-size: 16px; width: 4.6ch; }
-.playlist-item.show-mode .row-level__unit { font-size: 12px; margin-right: 5px; }
-.playlist-item.show-mode .row-level__spin { width: 28px; }
-.playlist-item.show-mode .row-level__nudge { color: var(--color-text-primary); }
-.playlist-item.show-mode .row-level__nudge + .row-level__nudge { border-top: 1px solid var(--color-border); }
-.playlist-item.show-mode .row-level__nudge .material-symbols-rounded { font-size: 26px; }
 
 .item-index {
   grid-column: 1;
@@ -1668,7 +1526,7 @@ button.item-name {
   /* Fixed-width, right-aligned column so the leading "-" shown during the
      playing countdown widens the text without shoving the flags around, and
      so the duration lines up vertically from row to row. */
-  min-width: 3.5em;
+  min-width: min(3.5em, var(--cue-time-width, 96px));
   text-align: right;
   flex-shrink: 0;
 }
@@ -1756,6 +1614,15 @@ button.item-name {
 }
 
 .preview-action { grid-area: expand; }
+
+/* The leading lane stays in the grid (groups keep their arrow there); a cue
+   with no headphones button lets its number and title slide into it. */
+.playlist-item.no-preview-lane > .item-content .item-identity {
+  --freed-lane: calc(var(--cue-leading-width, 34px) + var(--row-lane-gap, var(--spacing-sm)));
+  margin-left: calc(-1 * var(--freed-lane));
+  width: calc(100% + var(--freed-lane));
+  max-width: none;
+}
 .group-shuffle-action {
   grid-area: video;
   justify-self: end;
@@ -1981,6 +1848,7 @@ button.item-name {
 @container (max-width: 700px) {
   .playlist-item > .item-content .item-left {
     --folder-column-gap: var(--spacing-xs);
+    --row-lane-gap: var(--spacing-xs);
     grid-template-columns: var(--cue-leading-width, 34px) minmax(0, 1fr) max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
     grid-template-areas:
       'expand identity identity identity identity state video'
