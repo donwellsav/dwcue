@@ -208,11 +208,12 @@
                the same values Properties edits. In Show Mode the number is
                display-only and the steppers stay, so no text field can take
                the keyboard from GO. -->
-          <span class="row-level" draggable="false"
+          <span class="row-level" :class="{ 'row-level--touch': showMode && isSelected }" draggable="false"
             @click.stop @dblclick.stop @pointerdown.stop @mousedown.stop>
-            <button type="button" class="row-level__step" draggable="false"
+            <!-- Show Mode: every row shows its level; the selected row adds
+                 full-size steppers, so a stray tap elsewhere changes nothing. -->
+            <button v-if="showMode && isSelected" type="button" class="row-level__step" draggable="false"
               :aria-label="t('playlist.groupLevelDown', { name: item.displayName })"
-              :title="t('playlist.groupLevelDown', { name: item.displayName })"
               :disabled="!projectControlsReady || rowLevel <= rowLevelRange.min"
               @click.stop="nudgeRowLevel(-1, $event)">−</button>
             <output v-if="showMode" class="row-level__value row-level__value--readout"
@@ -225,9 +226,21 @@
               @keydown.stop @keyup.stop @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
               @change="setRowLevel(($event.target as HTMLInputElement).valueAsNumber, $event)" />
             <span class="row-level__unit" aria-hidden="true">dB</span>
-            <button type="button" class="row-level__step" draggable="false"
+            <!-- Edit Mode: a slim pair of arrows, like any number field. -->
+            <span v-if="!showMode" class="row-level__spin">
+              <button type="button" class="row-level__nudge" draggable="false" tabindex="-1"
+                :aria-label="t('playlist.groupLevelUp', { name: item.displayName })"
+                :title="t('playlist.groupLevelUp', { name: item.displayName })"
+                :disabled="!projectControlsReady || rowLevel >= rowLevelRange.max"
+                @click.stop="nudgeRowLevel(1, $event)"><span class="material-symbols-rounded" aria-hidden="true">arrow_drop_up</span></button>
+              <button type="button" class="row-level__nudge" draggable="false" tabindex="-1"
+                :aria-label="t('playlist.groupLevelDown', { name: item.displayName })"
+                :title="t('playlist.groupLevelDown', { name: item.displayName })"
+                :disabled="!projectControlsReady || rowLevel <= rowLevelRange.min"
+                @click.stop="nudgeRowLevel(-1, $event)"><span class="material-symbols-rounded" aria-hidden="true">arrow_drop_down</span></button>
+            </span>
+            <button v-if="showMode && isSelected" type="button" class="row-level__step" draggable="false"
               :aria-label="t('playlist.groupLevelUp', { name: item.displayName })"
-              :title="t('playlist.groupLevelUp', { name: item.displayName })"
               :disabled="!projectControlsReady || rowLevel >= rowLevelRange.max"
               @click.stop="nudgeRowLevel(1, $event)">+</button>
           </span>
@@ -295,7 +308,7 @@
         <!-- Keep transport beside the clock, with Play Next in the far-right
              arm lane; preview remains beside the cue number and edit/delete
              stay hidden in Show Mode. -->
-        <div v-if="!showMode" class="item-actions">
+        <div v-if="!showMode" class="item-actions" :class="{ 'item-actions--single': !isSelected }">
           <ActionButton
             class="edit-action"
             icon="settings"
@@ -1383,47 +1396,31 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   grid-template-columns: var(--cue-number-width, 36px) max-content minmax(0, 1fr);
 }
 
+/* Compact on purpose: the title owns the row, the level is a small field. */
 .row-level {
   flex: none;
   display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 1px;
+  align-items: stretch;
+  height: var(--cue-cell-height);
+  padding-left: 4px;
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   background: var(--color-control);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  overflow: hidden;
   cursor: default;
 }
 
-.row-level__step {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: calc(var(--control-radius) - 1px);
-  background: none;
-  color: var(--color-text-primary);
-  font: inherit;
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-
-  &:hover:not(:disabled) { background: var(--color-surface-hover); }
-  &:disabled { color: var(--color-text-tertiary); cursor: default; }
-}
-
 .row-level__value {
-  width: 5.2ch;
+  align-self: center;
+  width: 5ch;
   padding: 0;
   border: 0;
   background: none;
   color: var(--color-text-primary);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   text-align: right;
   appearance: textfield;
   -moz-appearance: textfield;
@@ -1436,18 +1433,62 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .row-level__value--readout { display: inline-block; }
 
 .row-level__unit {
-  margin-right: 2px;
+  align-self: center;
+  margin: 0 3px 0 2px;
   color: var(--color-text-secondary);
   font-size: 11px;
 }
 
-.playlist-item.show-mode .row-level__step {
-  width: 44px;
-  height: 44px;
-  font-size: 22px;
+/* Edit Mode: stacked arrows, 16px wide. */
+.row-level__spin {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  width: 16px;
+  border-left: 1px solid var(--color-border);
 }
 
-.playlist-item.show-mode .row-level__value { font-size: 16px; }
+.row-level__nudge {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  overflow: hidden;
+
+  .material-symbols-rounded { font-size: 18px; line-height: 0.7; }
+  &:hover:not(:disabled) { background: var(--color-surface-hover); color: var(--color-text-primary); }
+  &:disabled { color: var(--color-text-disabled); cursor: default; }
+}
+
+/* Show Mode: a readout on every row; the selected row gets touch steppers. */
+.row-level__step {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover:not(:disabled) { background: var(--color-surface-hover); }
+  &:disabled { color: var(--color-text-tertiary); cursor: default; }
+}
+
+.playlist-item.show-mode .row-level {
+  height: 44px;
+  padding-inline: 8px 5px;
+}
+
+.playlist-item.show-mode .row-level--touch { padding-inline: 0; }
+.playlist-item.show-mode .row-level__value { font-size: 16px; width: 4.6ch; }
+.playlist-item.show-mode .row-level__unit { font-size: 12px; }
 
 .item-index {
   grid-column: 1;
@@ -1760,7 +1801,10 @@ button.item-name {
    a selected row: the row a stray click lands on is rarely the selected one. */
 .delete-action { grid-column: 1; grid-row: 1; }
 .edit-action { grid-column: 2; grid-row: 1; }
-.delete-action--parked { visibility: hidden; }
+/* An unselected row gives Delete's place back to the title. */
+.delete-action--parked { display: none; }
+.item-actions--single { grid-template-columns: 32px; }
+.item-actions--single .edit-action { grid-column: 1; }
 
 /* The note reads as an aside to the title, not as part of the name. */
 .item-note {

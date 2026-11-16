@@ -2402,12 +2402,15 @@ assert.match(playlistItem,
   /<div class="item-state">[\s\S]*<span class="row-level"[\s\S]*nudgeRowLevel\(-1, \$event\)[\s\S]*<output v-if="showMode" class="row-level__value row-level__value--readout"[\s\S]*<input v-else class="row-level__value" type="number"[\s\S]*nudgeRowLevel\(1, \$event\)[\s\S]*<\/span>\s*<\/div>\s*<span v-if="item\.type === 'audio'" class="item-duration"/,
   'every row must show its level at the right of the state lane, and must not offer a text field in Show Mode');
 assert.match(playlistItem,
+  /<button v-if="showMode && isSelected" type="button" class="row-level__step"[\s\S]*<span v-if="!showMode" class="row-level__spin">[\s\S]*\.row-level__spin \{[\s\S]{0,120}width: 16px;/,
+  'the row level must stay compact: slim arrows in Edit Mode, and touch steppers only on the selected row in Show Mode');
+assert.match(playlistItem,
   /function commitNote\(\) \{[\s\S]{0,260}if \(note\) props\.item\.note = note;\s*else delete props\.item\.note;[\s\S]{0,120}void saveProject\(\);/,
   'a playlist note must be its own field: writing one must never change the cue title or the media file name');
 assert.doesNotMatch(playlistItem, /props\.item\.displayName\s*=/,
   'the playlist row must not rename a cue; titles are edited in Properties');
 assert.match(playlistItem,
-  /\.delete-action \{ grid-column: 1; grid-row: 1; \}\s*\.edit-action \{ grid-column: 2; grid-row: 1; \}\s*\.delete-action--parked \{ visibility: hidden; \}/,
+  /\.delete-action \{ grid-column: 1; grid-row: 1; \}\s*\.edit-action \{ grid-column: 2; grid-row: 1; \}[\s\S]{0,120}\.delete-action--parked \{ display: none; \}\s*\.item-actions--single \{ grid-template-columns: 32px; \}/,
   'Delete must sit away from Play with Edit between them, and appear only on a selected row');
 assert.match(playlistItem,
   /if \(props\.item\.type === 'group'\) props\.item\.groupGainDb = next;\s*else props\.item\.volume = dbToLinear\(next\);[\s\S]{0,200}rowLevelSave = setTimeout\(\(\) => \{ void saveProject\(\); \}, 400\);[\s\S]*function nudgeRowLevel[\s\S]{0,360}\.blur\(\);/,
