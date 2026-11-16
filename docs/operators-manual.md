@@ -796,7 +796,7 @@ Before a save replaces the show file, the engine keeps a copy of the file it is 
 
 **Settings → Playback Behaviour → Show backups** lists the copies by date and time. Choose **Restore**, then confirm, to replace the open show with that copy. The show as it is now is backed up first, so a restore can itself be undone from the same list. A restore is refused while a cue or Preview is playing.
 
-The engine also still copies the saved show file into a **backups** folder beside it every 10 minutes, retaining at most 20 of those copies; they are not shown in the list. All of these are project-file backups, not full media packages, and they cannot capture unsaved edits that never reached disk. Keep a separate known-good full-show copy as well.
+Earlier versions also copied the show file every 10 minutes. That timer is retired: any of its copies already in the folder are left in place, and they are not shown in the list. Show backups are project-file backups, not full media packages, and they cannot capture unsaved edits that never reached disk. Keep a separate known-good full-show copy as well.
 
 ### Export a portable show
 

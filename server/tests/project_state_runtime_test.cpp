@@ -18,7 +18,6 @@
 #include "liveplay/audio/engine.hpp"
 #include "liveplay/core/project_state.hpp"
 #include "liveplay/util/atomic_file.hpp"
-#include "liveplay/core/backup_manager.hpp"
 
 #include <array>
 #include <chrono>
@@ -3251,71 +3250,6 @@ void test_loading_metadata_preserves_controls(const std::filesystem::path& wav) 
     std::filesystem::remove(gate + ".entered");
 }
 
-void test_backup_retention() {
-    namespace fs = std::filesystem;
-    const auto root = fs::temp_directory_path() /
-        ("dwcue-backup-runtime-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-    const auto now = fs::file_time_type::clock::now();
-    liveplay::audio::AudioEngine engine;
-    liveplay::core::ProjectState state(engine);
-    liveplay::core::BackupManager backup(state);
-    for (const bool fail_copy : {false, true}) {
-        const auto folder = root / (fail_copy ? "failed-copy" : "chronology");
-        const auto history = folder / "backups";
-        fs::create_directories(history);
-        std::vector<fs::path> existing;
-        for (int i = 0; i < 19; ++i) {
-            const auto file = history / ("Z_backup_" + std::to_string(i) + ".dwcue");
-            std::ofstream(file) << "old-" << i;
-            fs::last_write_time(file, now - 48h + std::chrono::minutes(i));
-            existing.push_back(file);
-        }
-        const auto newest = history / "A_backup_newer.dwcue";
-        std::ofstream(newest) << "newer-history";
-        fs::last_write_time(newest, now - 1h);
-        existing.push_back(newest);
-        // A save-time backup (show_backups.hpp) shares the folder on Windows
-        // and macOS. Even as the oldest file it is not this cap's to count.
-        const auto save_time = history / "Show 2020-01-01 00.00.00.dwcue";
-        std::ofstream(save_time) << "save-time-backup";
-        fs::last_write_time(save_time, now - 100h);
-        const auto source = folder / "Show.dwcue";
-        if (fail_copy) fs::create_directory(source); // Deterministic failure, including elevated test runs.
-        else {
-            std::ofstream(source) << "complete-source";
-            fs::last_write_time(source, now - 200h);
-        }
-        state.set_project_file_path(source);
-        backup.do_backup();
-        std::size_t files = 0;
-        bool complete_copy = false;
-        bool partial_left = false;
-        for (const auto& entry : fs::directory_iterator(history)) {
-            if (!entry.is_regular_file()) continue;
-            partial_left |= entry.path().extension() != ".dwcue";
-            if (entry.path().extension() != ".dwcue" || entry.path() == save_time) continue;
-            ++files;
-            if (entry.path().filename().string().starts_with("Show_backup_")) {
-                std::ifstream in(entry.path());
-                std::string contents{std::istreambuf_iterator<char>{in}, {}};
-                complete_copy = contents == "complete-source";
-                check(fs::last_write_time(entry.path()) >= now - 1min,
-                      "backup: age reflects publication rather than source modification");
-            }
-        }
-        if (fail_copy) {
-            check(files == 20 && std::all_of(existing.begin(), existing.end(), [](const auto& p) { return fs::exists(p); }),
-                  "backup: failed copy retains all twenty usable history files");
-        } else {
-            check(files == 20 && fs::exists(newest) && !fs::exists(existing.front()),
-                  "backup: chronology prunes oldest Z and retains newer A across names");
-            check(complete_copy, "backup: publishes a complete copy before retaining the cap");
-        }
-        check(!partial_left, "backup: no partial publication file remains");
-        check(fs::exists(save_time), "backup: the periodic cap never counts or deletes a save-time backup");
-    }
-    fs::remove_all(root);
-}
 } // namespace
 
 int test_crash_resume_lifecycle();
@@ -3667,7 +3601,6 @@ int main() try {
     test_replacement_cancels_ownership();
     test_group_waits_for_fading_child(wav);
     test_group_waits_for_retired_tail(wav);
-    test_backup_retention();
     std::error_code error;
     // Detached decoder cleanup can outlive a fixture. Windows waits for the handle to close.
     for (int i = 0; i < 200; ++i) {

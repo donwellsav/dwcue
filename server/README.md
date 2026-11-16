@@ -73,7 +73,6 @@ server/
 │   │   └── engine.hpp         Tier 3: master bus + device fan-out
 │   ├── core/
 │   │   ├── project_state.hpp  v2 project model + legacy 1.x upgrade
-│   │   ├── backup_manager.hpp periodic rotating backups
 │   │   └── show_backups.hpp   save-time backups: naming, rules, restore
 │   ├── meta/
 │   │   ├── metadata.hpp       TagLib wrapper
@@ -651,9 +650,7 @@ The upgrade reconstructs cues and baseline routes for older native shows. Verify
 
 ### Backups
 
-`BackupManager` ([`core/backup_manager.hpp`](include/liveplay/core/backup_manager.hpp)) copies the saved project file every ten minutes. It publishes a complete copy before pruning the oldest backups to the existing cap of 20 in the adjacent `backups` folder; a failed copy retains the previous history. Unsaved edits are not included in these periodic copies.
-
-Save-time backups ([`core/show_backups.hpp`](include/liveplay/core/show_backups.hpp)) are separate: just before `ProjectState::save()` replaces an existing show file (Save, Save As onto an existing file, autosave and repair all go through it), the file on disk is copied to `<show folder>/Backups/<show stem> <YYYY-MM-DD HH.MM.SS>.dwcue` (local time). At most one is made per five minutes, except on the first save after a show is opened; a copy identical to the newest backup is skipped; the newest ten per show are kept. The copy runs under the save mutex with no project lock held, and a failure is logged and never fails the save. `GET /api/project/backups` and `POST /api/project/backups/restore` list and restore them. On Windows and macOS `Backups` and the periodic `backups` are the same folder; each mechanism lists and prunes only its own file names. The folder is left out of `.dwcuepack` exports.
+Backups are made at save time ([`core/show_backups.hpp`](include/liveplay/core/show_backups.hpp)): just before `ProjectState::save()` replaces an existing show file (Save, Save As onto an existing file, autosave and repair all go through it), the file on disk is copied to `<show folder>/Backups/<show stem> <YYYY-MM-DD HH.MM.SS>.dwcue` (local time). At most one is made per five minutes, except on the first save after a show is opened; a copy identical to the newest backup is skipped; the newest ten per show are kept. The copy runs under the save mutex with no project lock held, and a failure is logged and never fails the save. `GET /api/project/backups` and `POST /api/project/backups/restore` list and restore them. Copies left by the retired 10-minute timer (`<show stem>_backup_<date>.dwcue`, in the same folder on Windows and macOS) are never listed, pruned or deleted. The folder is left out of `.dwcuepack` exports.
 
 Native saves are serialized under the project save mutex. The target path and complete document snapshot are resolved under that serialization boundary, written to a sibling temporary file and atomically published. A failed Save As does not adopt the requested path; a pathless save resolves the current canonical path while holding the same lock.
 

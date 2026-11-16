@@ -130,7 +130,7 @@ void test_pattern_matches_only_this_show() {
              "show 2026-11-16 09.05.07.dwcue",            // byte comparison is exact
              "Show  2026-11-16 09.05.07.dwcue",           // stem "Show " is not "Show"
              "Show 2026-11-16 09.05.07 2026-11-17 10.00.00.dwcue",  // backup of a backup
-             "Show_backup_2026-11-16_09-05.dwcue",        // the periodic BackupManager's name
+             "Show_backup_2026-11-16_09-05.dwcue",        // the retired 10-minute backup's name
              "Show 2026-11-16 09.05.dwcue",
              "Show 2026-11-16 09.05.07.DWCUE",
              "Show 2026-11-16 09.05.07.dwcue.tmp",

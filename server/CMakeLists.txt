@@ -169,7 +169,6 @@ add_executable(liveplay-server
     # Milestone 3 — project state + control plane
     src/core/project_state.cpp
     src/core/project_file.cpp
-    src/core/backup_manager.cpp
     src/core/show_backups.cpp
     src/net/control_server.cpp
     src/net/project_archive.cpp
@@ -427,7 +426,6 @@ if(LIVEPLAY_BUILD_TESTS)
         src/audio/playback_item.cpp
         src/audio/engine.cpp
         src/core/project_state.cpp
-        src/core/backup_manager.cpp
         src/core/show_backups.cpp
         src/core/project_file.cpp
         src/meta/metadata.cpp

@@ -7,7 +7,6 @@
 // plug in at the marked extension points.
 // ============================================================================
 #include "liveplay/audio/engine.hpp"
-#include "liveplay/core/backup_manager.hpp"
 #include "liveplay/core/project_state.hpp"
 #include "liveplay/crash_handler.hpp"
 #include "liveplay/logger.hpp"
@@ -883,8 +882,6 @@ int main(int argc, char** argv) {
     // Project state + control plane (Milestone 3)
     // ------------------------------------------------------------------
     auto project = std::make_unique<core::ProjectState>(*engine);
-    auto backup  = std::make_unique<core::BackupManager>(*project);
-    backup->start();
 
     // ------------------------------------------------------------------
     // Crash-resume: if a previous instance crashed with an open project,
@@ -1030,8 +1027,6 @@ int main(int argc, char** argv) {
     beacon.reset();
     server->stop();
     server.reset();
-    backup->stop();
-    backup.reset();
     project.reset();
     engine->stop();
     engine.reset();
