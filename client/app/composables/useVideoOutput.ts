@@ -20,6 +20,8 @@ const FOLLOW_END_TOLERANCE_S = 0.1;
 const FOLLOW_CUE_GRACE_MS = 750;
 const FIRST_FRAME_WARNING_MS = 3000;
 const DOC_REFETCH_DELAY_MS = 300;
+const MAX_METADATA_RETRY_MS = 2400;
+const METADATA_WARNING = 'Waiting for cue details. Video Output is retrying.';
 
 interface OutputItem {
   uuid: string;
@@ -147,7 +149,10 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
   const doc = shallowRef<DocMirror | null>(null);
   let refetchTimer: number | undefined;
-  let fetchGeneration = 0;
+  let metadataRetryTimer: number | undefined;
+  let metadataRetryDelay = DOC_REFETCH_DELAY_MS;
+  let metadataCueKey: string | null = null;
+  let docRequest: { controller: AbortController; cueKey: string | null } | undefined;
 
   const activeItemUuid = ref<string | null>(null);
   const activeCueId = ref<string | null>(null);
@@ -268,6 +273,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     if (stopRevision !== null && revision > stopRevision) {
       stoppedThroughTriggerSeq = highestTriggerSeqSeen;
       clearHeldFrame();
+      syncMetadataRecovery(null);
     }
     stopRevision = revision;
   }
@@ -548,13 +554,15 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
   function renderNewestActive(seekImmediately = true, stoppedAt?: number) {
     const active = newestActiveCue();
+    const item = active === diagnosticCue ? diagnosticItem : doc.value?.items.get(active?.itemUuid ?? '');
+    syncMetadataRecovery(item ? null : active);
     if (!active) {
       if (activeItemUuid.value) clearActive(stoppedAt !== undefined && holdAtFollowEnd(stoppedAt));
       return;
     }
-    const item = active === diagnosticCue ? diagnosticItem : doc.value?.items.get(active.itemUuid);
-    if (!item) {
-      clearActive();
+    if (!item || (active !== diagnosticCue && active.triggerSeq <= stoppedThroughTriggerSeq
+      && active.triggerSeq !== activeTriggerSeq)) {
+      if (activeItemUuid.value) clearActive();
       return;
     }
 
@@ -603,27 +611,52 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     }
   }
 
+  function syncMetadataRecovery(active: ActiveCue | null) {
+    const key = server.connected && active && active !== diagnosticCue
+      && active.triggerSeq > stoppedThroughTriggerSeq
+      ? `${activeCueKey(active)}:${active.triggerSeq}` : null;
+    if (key === metadataCueKey) return;
+    clearTimeout(metadataRetryTimer);
+    metadataRetryTimer = undefined;
+    metadataRetryDelay = DOC_REFETCH_DELAY_MS;
+    if (docRequest?.cueKey) docRequest.controller.abort();
+    metadataCueKey = key;
+    if (reportedPlaybackError?.message === METADATA_WARNING) reportPlaybackError(null);
+    if (key) metadataRetryTimer = window.setTimeout(retryMetadata, DOC_REFETCH_DELAY_MS);
+  }
+
+  function retryMetadata() {
+    metadataRetryTimer = undefined;
+    void refetchDoc();
+  }
+
   async function refetchDoc() {
-    const generation = ++fetchGeneration;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const nextDoc = readDoc(await server.fetchProject());
-        if (generation !== fetchGeneration) return;
-        doc.value = nextDoc;
-        // Document refreshes are not transport seeks; preserve on-air rate correction.
-        renderNewestActive(activeTransport.value === TRANSPORT_PAUSED);
-        preloadNextItem();
-      } catch {
-        // A cue can start before its metadata is available to this renderer.
-      }
-      if (generation !== fetchGeneration) return;
-      const active = newestActiveCue();
-      if (attempt || !server.connected || !active || active === diagnosticCue
-        || doc.value?.items.has(active.itemUuid) || active.triggerSeq <= stoppedThroughTriggerSeq) return;
-      await new Promise<void>(resolve => { window.setTimeout(resolve, DOC_REFETCH_DELAY_MS); });
-      if (generation !== fetchGeneration || !server.connected || newestActiveCue() !== active
-        || active.triggerSeq <= stoppedThroughTriggerSeq) return;
+    if (metadataRetryTimer !== undefined && metadataRetryDelay > DOC_REFETCH_DELAY_MS) return;
+    if (!server.connected || (docRequest?.cueKey != null && !docRequest.controller.signal.aborted
+      && docRequest.cueKey === metadataCueKey)) return;
+    docRequest?.controller.abort();
+    const request = { controller: new AbortController(), cueKey: metadataCueKey };
+    docRequest = request;
+    clearTimeout(metadataRetryTimer);
+    metadataRetryTimer = undefined;
+    try {
+      const nextDoc = readDoc(await server.fetchProject(request.controller.signal));
+      if (request.controller.signal.aborted) return;
+      docRequest = undefined;
+      doc.value = nextDoc;
+      // Document refreshes are not transport seeks; preserve on-air rate correction.
+      renderNewestActive(activeTransport.value === TRANSPORT_PAUSED);
+      preloadNextItem();
+    } catch {
+      if (request.controller.signal.aborted) return;
+      docRequest = undefined;
     }
+    const active = newestActiveCue();
+    if (!metadataCueKey || !active) return;
+    reportPlaybackError({ itemUuid: active.itemUuid, message: METADATA_WARNING });
+    clearTimeout(metadataRetryTimer);
+    metadataRetryTimer = window.setTimeout(retryMetadata, metadataRetryDelay);
+    metadataRetryDelay = Math.min(metadataRetryDelay * 2, MAX_METADATA_RETRY_MS);
   }
 
   function scheduleRefetch() {
@@ -664,7 +697,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     const ownsPicture = newestActiveCue()?.itemUuid === state.itemUuid;
     if (ownsPicture) recordNativePosition(state.cueId ?? state.itemUuid, state.playheadSeconds, false);
     renderNewestActive(ownsPicture);
-    if (!doc.value?.items.has(state.itemUuid)) void refetchDoc();
+    if (metadataCueKey) void refetchDoc();
   });
 
   const offMeters = server.onMeters((meters: MetersBroadcast) => {
@@ -827,7 +860,8 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
           if (patch.reloaded === true) void refetchDoc();
           return;
         case 'project_changed':
-          fetchGeneration += 1;
+          docRequest?.controller.abort();
+          syncMetadataRecovery(null);
           doc.value = null;
           activeCues.clear();
           nextItemUuid.value = null;
@@ -950,6 +984,8 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
   const stopConnectedWatch = watch(() => server.connected, (connected) => {
     if (!connected) {
+      docRequest?.controller.abort();
+      syncMetadataRecovery(null);
       acceptNextSnapshot = true;
       stopRevision = null;
       clearHeldFrame();
@@ -961,9 +997,10 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   onScopeDispose(() => {
     offCapture?.();
     clearTimeout(refetchTimer);
+    clearTimeout(metadataRetryTimer);
+    docRequest?.controller.abort();
     clearHeldFrame();
     pauseVideo();
-    fetchGeneration += 1;
     offCueState();
     offMeters();
     offSnapshot();

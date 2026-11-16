@@ -661,6 +661,8 @@ Set the HDMI resolution, refresh rate, and display rotation in the operating sys
 
 Use **Settings → Video Output** to read output status. Renderer crashes and hangs latch a native black cover over the existing audience window while the operator controls remain available. Choose **Restart Output** in the header or in Video Output settings. The cover stays until the replacement view is ready. The replacement follows the current native cue state. Check the active cue before another GO. **Copy diagnostics** captures current output information for investigation.
 
+**Waiting for cue details** appears in the operator status area while Video Output retries. If the details arrive during the cue, picture starts at its current playhead. The playlist, GO, and Stop All remain available.
+
 ![Output status and recovery controls in Video Output settings. Restart Output is disabled while the output is closed.](manual-assets/video-recovery-current.png)
 
 Keep the audience output open during this recovery. Closing the output window removes that surface and can expose the desktop. A lost display connection, a system/GPU failure or a downstream switcher fault may require the venue's separate standby/black source. Restart Output does not repair the physical chain.

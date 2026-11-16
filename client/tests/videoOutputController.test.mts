@@ -142,7 +142,7 @@ function createHarness(initialProject: unknown, connected = true, captureApi = {
   const snapshotHandlers = new Set<(value: unknown) => void>();
   const patchHandlers = new Set<(value: unknown) => void>();
   const reports: Array<{ itemUuid: string | null; message: string } | null> = [];
-  let fetchProject = async () => initialProject;
+  let fetchProject = async (_signal?: AbortSignal) => initialProject;
 
   const server = reactive({
     connected,
@@ -155,7 +155,7 @@ function createHarness(initialProject: unknown, connected = true, captureApi = {
     }],
     serverUrl: 'http://127.0.0.1:4480',
     effectiveAccessToken: 'secret-token',
-    fetchProject: () => fetchProject(),
+    fetchProject: (signal?: AbortSignal) => fetchProject(signal),
     onCueState(handler: (value: unknown) => void) {
       cueStateHandlers.add(handler);
       return () => cueStateHandlers.delete(handler);
@@ -202,7 +202,7 @@ function createHarness(initialProject: unknown, connected = true, captureApi = {
     element,
     reports,
     server,
-    setFetchProject(next: () => Promise<unknown>) {
+    setFetchProject(next: (signal?: AbortSignal) => Promise<unknown>) {
       fetchProject = next;
     },
     emitCue(value: unknown) {
@@ -475,24 +475,27 @@ test('an unknown newest cue blanks old media until its document arrives', async 
   h.stop();
 });
 
-test('a failed metadata lookup retries the on-air video at the current playhead', { timeout: 2000 }, async () => {
+test('repeated metadata failures recover the same on-air video at its current playhead', { timeout: 4000 }, async () => {
   const h = createHarness(project([]));
   try {
     await flush();
     const retry = deferred<void>();
     let requests = 0;
     h.setFetchProject(async () => {
-      if (++requests === 1) throw new Error('Temporary project read failure');
+      if (++requests <= 2) throw new Error('Temporary project read failure');
       retry.resolve();
       return project([audioItem('late-video', { hasVideo: true })]);
     });
     h.emitCue(snapshotCue('late-video', 'late-cue', 1));
     h.emitMeters({ items: [{ cue_id: 'late-cue', transport: 1, playhead_seconds: 1.25 }] });
     assert.equal(h.controller.showVideo.value, false);
+    await flush();
+    assert.match(h.reports.at(-1)?.message ?? '', /Video Output is retrying/);
 
     await retry.promise;
     await flush();
-    assert.equal(requests, 2);
+    assert.equal(requests, 3);
+    assert.equal(h.reports.at(-1), null);
     const source = h.controller.videoSrc.value;
     assert.ok(source);
     assert.equal(new URL(source).searchParams.get('item_uuid'), 'late-video');
@@ -501,6 +504,26 @@ test('a failed metadata lookup retries the on-air video at the current playhead'
     h.controller.onVideoCanPlay();
     assert.equal(h.element.currentTime, 1.25);
     assert.equal(h.controller.showVideo.value, true);
+  } finally { h.stop(); }
+});
+
+test('Stop All aborts an unresolved cue lookup and rejects late picture', async () => {
+  const h = createHarness(project([]));
+  try {
+    await flush();
+    h.emitMeters({ stop_revision: 0, items: [] });
+    const pending = deferred<unknown>();
+    let requestSignal: AbortSignal | undefined;
+    h.setFetchProject(signal => { requestSignal = signal; return pending.promise; });
+    h.emitCue(snapshotCue('late-video', 'late-cue', 1));
+    assert.equal(requestSignal?.aborted, false);
+
+    h.emitMeters({ stop_revision: 1, items: [{ cue_id: 'late-cue', transport: 3, playhead_seconds: 1 }] });
+    assert.equal(requestSignal?.aborted, true);
+    pending.resolve(project([audioItem('late-video', { hasVideo: true })]));
+    await flush();
+    assert.equal(h.controller.showVideo.value, false);
+    assert.equal(h.controller.videoSrc.value, null);
   } finally { h.stop(); }
 });
 
@@ -946,6 +969,9 @@ test('unknown cue edges survive document loading and stale fetches cannot restor
   const unknown = createHarness(project([]), false);
   unknown.setFetchProject(async () => project([audioItem('late-item', { hasVideo: true })]));
   unknown.emitCue(snapshotCue('late-item', 'late-cue', 20, 4));
+  await flush();
+  assert.equal(unknown.controller.videoSrc.value, null, 'cue recovery waits for the connection');
+  unknown.server.connected = true;
   await flush();
   assert.equal(new URL(unknown.controller.videoSrc.value!).searchParams.get('item_uuid'), 'late-item');
   unknown.stop();

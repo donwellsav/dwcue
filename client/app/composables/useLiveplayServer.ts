@@ -700,8 +700,10 @@ function createClient() {
   async function fetchDevices() {
     devices.value = await rest<ServerDeviceInfo[]>('/api/devices');
   }
-  async function fetchProject() {
-    return rest<any>('/api/project');
+  async function fetchProject(signal?: AbortSignal) {
+    return rest<any>('/api/project', {
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : undefined,
+    });
   }
   // Lightweight header — everything except the items tree. Used by the
   // "open project" flow so the workspace shell paints before the items
