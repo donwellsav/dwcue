@@ -26,6 +26,7 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 // Expose only playback/engine state for deterministic headless render gates.
