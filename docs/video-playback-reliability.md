@@ -28,6 +28,8 @@ The 3 November source was checkpointed in `2ea5984` and `a9a86a3` (package metad
 | **Identify displays** hid the operator app from the macOS Dock. | The installed Electron version reproduced the Dock change as soon as the label windows were created. | Keep the numbered overlays without changing the app's macOS process type. [Electron's macOS implementation](https://github.com/electron/electron/blob/v42.8.0/shell/browser/native_window_mac.mm#L1330-L1347). |
 | Slow video downloads blocked control networking. | A paused whole-file reader delayed an already-connected WebSocket's command acknowledgment for more than 2 s. The installed Crow transport uses synchronous writes for both general and static-file responses. | Repair and verification are recorded with the native transport patch described below. |
 
+Video Output uses the project identity in a playback snapshot to clear the previous engine’s Stop All boundary. Project lookups keep the usual 30-second request budget and can still be canceled when a cue or connection retires.
+
 Independent review also reproduced a meter/stop-edge ordering bug: a Stopped background video could become the fallback before its `cue_state` edge arrived. Stopped normal cues are now removed before selection, including during device-health loss; removing the displayed cue immediately selects the remaining picture or clears to idle. Diagnostic transport retains its separate behavior.
 
 Auditioning the same playlist item as the on-air cue could suppress or remove its Program picture. The video controller now excludes Preview by its separate engine cue ID. The controller regression covers automatic follow while Preview is active, a Preview restart while Program is playing, and a reconnect snapshot with both instances.

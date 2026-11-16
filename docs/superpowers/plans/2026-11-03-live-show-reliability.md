@@ -505,3 +505,4 @@ In-flight native calls own their resources for the life of the process. Managed 
 - [x] Allow whole-playlist shuffle during playback. Reuse the active-prefix and handoff protection from group shuffle. Preserve active group runs, explicit Up Next, and numbered targets from saved and running actions.
 - [x] Sample video cues at In, midpoint, and near Out in the pre-show check. Reuse one hidden decoder and one eight-second budget per cue. Invalidate results when either trim point changes. Keep findings in the dock and cancel on transport activity.
 - [x] Restore the separate macOS File and app menus. Exit after a confirmed Quit completes cleanup once. Accept native window close when Electron reports the renderer is unresponsive.
+- [x] Scope Video Output’s Stop All boundary to the current show session. Restore the regular project lookup deadline for on-air picture recovery.

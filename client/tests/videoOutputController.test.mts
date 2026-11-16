@@ -936,7 +936,35 @@ test('a new server snapshot resets Preview ordering and refuses an older server 
       item_uuid: 'preview', cue_id: 'preview-cue', revision: 1, project_session_id: 'new-server' } });
     h.emitPatch({ op: 'preview_stopped', revision: 51, project_session_id: 'old-server' });
     h.emitCue(snapshotCue('preview', 'preview-cue', 99));
+    await flush();
     assert.equal(new URL(h.controller.videoSrc.value!).searchParams.get('item_uuid'), 'program');
+  } finally { h.stop(); }
+});
+
+test('a replacement engine can show its first cue after Stop All on the old engine', async () => {
+  const items = [audioItem('film', { hasVideo: true })];
+  const show = (projectSessionId: string) => ({ ...project(items), server: { projectSessionId } });
+  const h = createHarness(show('old-show'));
+  try {
+    await flush();
+    h.emitSnapshot({ cues: [snapshotCue('film', 'old-cue', 9)], stop_revision: 0,
+      preview: { project_session_id: 'old-show', revision: 0 } });
+    h.emitMeters({ items: [{ cue_id: 'old-cue', transport: 0, playhead_seconds: 0 }], stop_revision: 1 });
+    h.server.connected = false;
+    await flush();
+
+    h.setFetchProject(async () => show('new-show'));
+    h.server.connected = true;
+    h.emitSnapshot({ cues: [snapshotCue('film', 'new-cue', 1, 1.25)], stop_revision: 0,
+      preview: { project_session_id: 'new-show', revision: 0 } });
+    await flush();
+    const src = h.controller.videoSrc.value;
+    assert.ok(src);
+    assert.equal(new URL(src).searchParams.get('project_session_id'), 'new-show');
+    h.element.currentSrc = src;
+    h.controller.onVideoCanPlay();
+    assert.equal(h.controller.showVideo.value, true);
+    assert.equal(h.element.currentTime, 1.25);
   } finally { h.stop(); }
 });
 

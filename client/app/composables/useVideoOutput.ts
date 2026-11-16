@@ -804,6 +804,33 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
   const stopNextItemWatch = watch(nextItemUuid, preloadNextItem);
 
+  function resetProjectProjection() {
+    docRequest?.controller.abort();
+    syncMetadataRecovery(null);
+    doc.value = null;
+    activeCues.clear();
+    nextItemUuid.value = null;
+    previewCueId = null;
+    previewStateRevision = -1;
+    previewStateSession = '';
+    highestTriggerSeqSeen = -1;
+    stoppedThroughTriggerSeq = -1;
+    stopRevision = null;
+    clearHeldFrame();
+    acceptNextSnapshot = true;
+    if (!diagnosticCue) {
+      clearActive();
+      videoSrc.value = null;
+      videoReady.value = false;
+      videoFailed.value = false;
+      sourceItemUuid = null;
+      sourceSignature = null;
+      sourceFileRevision = null;
+      playAttemptFailed = false;
+      noDecodableVideoTrack = false;
+    }
+  }
+
   function applyPreviewState(state: Record<string, unknown> | null, fromSnapshot = false) {
     const session = readString(state?.project_session_id) ?? '';
     const revision = readNumber(state?.revision) ?? 0;
@@ -819,11 +846,15 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   const offSnapshot = server.onPlaybackSnapshot((raw: unknown) => {
     if (!raw || typeof raw !== 'object') return;
     const snapshot = raw as Record<string, unknown>;
-    observeStopRevision(snapshot.stop_revision);
-    nextItemUuid.value = readString(snapshot.next_item_uuid);
     const preview = snapshot.preview && typeof snapshot.preview === 'object'
       ? snapshot.preview as Record<string, unknown>
       : null;
+    const session = readString(preview?.project_session_id);
+    const previousSession = previewStateSession || doc.value?.sessionId;
+    // The snapshot includes the current show identity even when Preview is idle.
+    if (session && previousSession && session !== previousSession) resetProjectProjection();
+    observeStopRevision(snapshot.stop_revision);
+    nextItemUuid.value = readString(snapshot.next_item_uuid);
     applyPreviewState(preview ? { ...preview, cueId: preview.cue_id ?? preview.cueId } : null, true);
 
     const candidates: ActiveCue[] = [];
@@ -860,29 +891,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
           if (patch.reloaded === true) void refetchDoc();
           return;
         case 'project_changed':
-          docRequest?.controller.abort();
-          syncMetadataRecovery(null);
-          doc.value = null;
-          activeCues.clear();
-          nextItemUuid.value = null;
-          previewCueId = null;
-          previewStateRevision = -1;
-          previewStateSession = '';
-          highestTriggerSeqSeen = -1;
-          stoppedThroughTriggerSeq = -1;
-          clearHeldFrame();
-          acceptNextSnapshot = true;
-          if (!diagnosticCue) {
-            clearActive();
-            videoSrc.value = null;
-            videoReady.value = false;
-            videoFailed.value = false;
-            sourceItemUuid = null;
-            sourceSignature = null;
-            sourceFileRevision = null;
-            playAttemptFailed = false;
-            noDecodableVideoTrack = false;
-          }
+          resetProjectProjection();
           break;
         case 'next_item_set':
           nextItemUuid.value = readString(patch.itemUuid);

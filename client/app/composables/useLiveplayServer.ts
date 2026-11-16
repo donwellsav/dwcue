@@ -702,7 +702,7 @@ function createClient() {
   }
   async function fetchProject(signal?: AbortSignal) {
     return rest<any>('/api/project', {
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(5000)]) : undefined,
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
     });
   }
   // Lightweight header — everything except the items tree. Used by the
