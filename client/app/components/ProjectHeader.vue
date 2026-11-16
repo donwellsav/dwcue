@@ -717,6 +717,19 @@ onMounted(() => {
   }
 }
 
+/* The Video Output thumbnail takes the room List Left would have had. */
+@media (max-width: 1570px) {
+  .project-header--show .clock-pair:has(.confidence-chip) .clock--list-left {
+    display: none;
+  }
+}
+
+@media (max-width: 1520px) {
+  .clock-pair:has(.confidence-chip) .clock--list-left {
+    display: none;
+  }
+}
+
 @media (max-width: 1424px) {
   .project-header--show .clock--list-left {
     display: none;

@@ -259,6 +259,7 @@
           <DeleteSelectionPanel v-if="visibleImportPanel === 'delete-selection'" />
           <ProjectRepairNotice v-else-if="visibleImportPanel === 'repair' && projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
           <PreShowCheckPanel v-else-if="visibleImportPanel === 'show-check'" />
+          <VideoCaptureControls v-else-if="visibleImportPanel === 'video-capture'" class="workspace-capture" />
         </div>
       </section>
       <div v-show="decisionOpen" id="workspace-project-decision"></div>
@@ -313,7 +314,8 @@ const visibleImportPanel = computed(() => {
   if (panel === 'delete-selection') return !showProjectSettings.value && pendingDelete.value ? panel : null;
   if (panel === 'repair') return !showProjectSettings.value && projectRepair.value ? panel : null;
   // Read-only, so the Pre-show check is available in Show Mode as well.
-  if (panel === 'show-check') return !showProjectSettings.value ? panel : null;
+  // So is capturing a picture: it is used during a show.
+  if (panel === 'show-check' || panel === 'video-capture') return !showProjectSettings.value ? panel : null;
   return !showProjectSettings.value && (uiMode.value !== 'playback' || panel === 'quickplay' || panel?.startsWith('archive-')) ? panel : null;
 });
 const importPanelTitle = computed(() => {
@@ -326,6 +328,7 @@ const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'delete-selection') return t('deleteSelection.title');
   if (visibleImportPanel.value === 'repair') return t('repair.noticeTitle');
   if (visibleImportPanel.value === 'show-check') return t('showCheck.title');
+  if (visibleImportPanel.value === 'video-capture') return t('standbyCapture.panelTitle');
   if (visibleImportPanel.value === 'quickplay') return t(quickPlayEditor.value?.remove
     ? 'oneShots.removeConfirmTitle' : quickPlayEditor.value ? 'oneShots.settings' : 'oneShots.importInto',
     { number: (quickPlayImportSlot.value ?? 0) + 1 });
@@ -365,7 +368,7 @@ const settingsHeight = useState<number | null>('ProjectSettingsPanel.height', ()
 const propertiesHeight = useState<number | null>('PropertiesPanel.height', () => null);
 const importHeight = useState<number | null>('ImportPanel.height', () => null);
 const autoSizeImportPanel = computed(() => visibleImportPanel.value === 'delete-selection' || visibleImportPanel.value === 'repair'
-  || visibleImportPanel.value === 'import-choice');
+  || visibleImportPanel.value === 'import-choice' || visibleImportPanel.value === 'video-capture');
 const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value
   : autoSizeImportPanel.value ? null
   : visibleImportPanel.value ? importHeight.value : propertiesHeight.value);
@@ -1074,6 +1077,10 @@ onUnmounted(() => {
 
 .workspace-import-close:hover {
   background: var(--color-surface-hover);
+}
+
+.workspace-capture {
+  padding: var(--spacing-sm) var(--workspace-gutter);
 }
 
 .workspace-import-host {

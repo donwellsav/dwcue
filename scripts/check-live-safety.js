@@ -780,7 +780,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*autoSizeImportPanel = computed\(\(\) => visibleImportPanel\.value === 'delete-selection' \|\| visibleImportPanel\.value === 'repair'\s*\|\| visibleImportPanel\.value === 'import-choice'\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value\s*: autoSizeImportPanel\.value \? null\s*: visibleImportPanel\.value \? importHeight\.value : propertiesHeight\.value\);/,
+  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*autoSizeImportPanel = computed\(\(\) => visibleImportPanel\.value === 'delete-selection' \|\| visibleImportPanel\.value === 'repair'\s*\|\| visibleImportPanel\.value === 'import-choice' \|\| visibleImportPanel\.value === 'video-capture'\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value\s*: autoSizeImportPanel\.value \? null\s*: visibleImportPanel\.value \? importHeight\.value : propertiesHeight\.value\);/,
   'each lower panel must fit its contents until the operator resizes it',
 );
 assert.ok(mainWorkspace.includes('<DeleteSelectionPanel v-if="visibleImportPanel === \'delete-selection\'" />')
@@ -2514,6 +2514,27 @@ assert.doesNotMatch(spotifyImportModal + youtubeImportModal, /aria-modal|--dialo
   'online imports must not block the playlist or transport with a modal');
 
 const electronMain = read('client/electron/main.js');
+const stillCapture = read('client/app/composables/useVideoStandbyCapture.ts');
+assert.match(
+  stillCapture,
+  /async function captureStill\(target: StillTarget, source: 'output' \| 'display' = 'output'\)[\s\S]*await server\.uploadFile\(dataUrlToFile\(image, name\), name, sessionId\)[\s\S]*const previous = [\s\S]*lastCapture\.value = \{ target, itemUuid: cue\?\.uuid \?\? null, cueLabel: label, image, path, previous \};/,
+  'a capture says what it is for when it is taken, is saved into the show, and remembers what it replaced for Undo',
+);
+assert.match(
+  stillCapture,
+  /const captureCue = computed<AudioItem \| null>\(\(\) => \{\s*for \(const uuid of \[\.\.\.activeCues\.value\.keys\(\)\]\.reverse\(\)\) \{/,
+  'a capture for a cue goes to the cue that is playing before the one that is merely selected',
+);
+assert.doesNotMatch(
+  read('client/app/components/VideoConfidenceChip.vue'),
+  /captureStill|captureStandby\(/,
+  'the top-bar Video Output picture opens the capture panel; a single click never captures',
+);
+assert.doesNotMatch(
+  electronMain + stillCapture + read('client/locales/en.json').replace(/"showCheck"[\s\S]*?\n  \},/, ''),
+  /screen recording permission|Check (?:the )?(?:system|privacy) settings/i,
+  'a failed screen capture is said plainly, with no advice about system settings',
+);
 assert.match(
   electronMain,
   /ipcMain\.handle\('video-output:convert-cue', async \(event, request\) => \{\s*requireVideoCheckOwner\(event\);[\s\S]{0,700}if \(readLiveplayConfig\(\)\.mode === 'remote'\) return \{ status: 'failed', reason: 'remote' \};\s*const sourcePath = cueSourcePath\(currentProjectData\?\.folderPath, cue\);[\s\S]{0,700}if \(!await setupFfmpeg\(\) \|\| !ffmpegPath\) return \{ status: 'failed', reason: 'no-converter' \};/,

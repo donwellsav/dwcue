@@ -223,25 +223,23 @@ function createHarness(initialProject: unknown, connected = true, captureApi = {
   };
 }
 
-test('session capture fills gaps while assigned cue art wins and cue switches clear old stills', async () => {
-  const still = (value: string) => 'data:image/jpeg;base64,' + value;
+test('the pictures shown are the ones saved in the show: the cue picture, else the standby picture', async () => {
+  // A captured picture is saved into the show and set as one of these two, so
+  // nothing held outside the show can appear on the output.
+  let asked = 0;
   const h = createHarness({
-    ...project([audioItem('authored', { imagePath: 'images/manual.png' }), audioItem('captured')]),
+    ...project([audioItem('authored', { imagePath: 'images/manual.png' }), audioItem('plain')]),
     server: { projectSessionId: 'show' },
-  }, true, {
-    getStandbyCapture: async (session: string, uuid: string | null) => {
-      assert.equal(session, 'show');
-      return { standby: still('session'), cue: uuid ? still(uuid) : null };
-    },
-  });
+  }, true, { getStandbyCapture: async () => { asked += 1; return { standby: 'data:x', cue: 'data:y' }; } });
   await flush();
-  assert.equal(h.controller.standbySrc.value, still('session'));
-  h.emitCue(snapshotCue('captured', 'cue1', 1));
+  assert.match(h.controller.standbySrc.value ?? '', /standby\.png/);
+  h.emitCue(snapshotCue('plain', 'cue1', 1));
   await flush();
-  assert.equal(h.controller.cueImageSrc.value, still('captured'));
+  assert.equal(h.controller.cueImageSrc.value, null);
   h.emitCue(snapshotCue('authored', 'cue2', 2));
   await flush();
   assert.match(h.controller.cueImageSrc.value ?? '', /manual\.png/);
+  assert.equal(asked, 0);
   h.stop();
 });
 

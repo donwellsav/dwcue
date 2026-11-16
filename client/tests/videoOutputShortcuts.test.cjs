@@ -55,7 +55,7 @@ test('output framing fits the selected canvas without forcing an HDMI mode', () 
   assert.deepEqual(videoFrameCaptureRect(1920, 1080, limited, 2), { x: 720, y: 405, width: 480, height: 270 });
 });
 
-test('standby capture follows the saved frame or selected screen and rejects stale captures', async () => {
+test('a capture follows the saved frame or selected screen, hands back the picture and rejects stale captures', async () => {
   const handlers = new Map();
   const sender = {};
   const identity = { projectPath: '/show.dwcue', projectEpoch: 1, ownerSessionId: 'owner' };
@@ -82,7 +82,7 @@ test('standby capture follows the saved frame or selected screen and rejects sta
   const captureHelpers = require('../electron/video-standby-capture');
   const context = {
     Buffer,
-    ...captureHelpers, videoStandbyCaptures: captureHelpers.createStandbyCaptureStore(128),
+    ...captureHelpers,
     DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect,
     screen: { getDisplayMatching: () => ({ scaleFactor }) },
     ipcMain: { handle: (name, handler) => handlers.set(name, handler), on() {} },
@@ -112,10 +112,10 @@ test('standby capture follows the saved frame or selected screen and rejects sta
   const capture = (source, itemUuid, event = { sender }) => handlers.get('video-output:capture-standby')(
     event, source, { identity, sessionId: 'session', itemUuid },
   );
-  const read = (session, media = cue.mediaPath) =>
-    handlers.get('video-output:get-standby-capture')({ sender: output.webContents }, session, cue.uuid, media);
-  await capture('display', null);
-  await capture('output', cue.uuid);
+  const picture = value => ({ image: 'data:image/png;base64,' + Buffer.from(value).toString('base64') });
+  // The picture is handed back to be saved into the show; nothing is kept here.
+  assert.equal((await capture('display', null)).image, picture('selected screen').image);
+  assert.equal((await capture('output', cue.uuid)).image, picture('output').image);
   assert.deepEqual(captureRect, { x: 0, y: 0, width: 1920, height: 1080 });
   outputSize = [1600, 1200];
   await capture('output', cue.uuid);
@@ -135,24 +135,24 @@ test('standby capture follows the saved frame or selected screen and rejects sta
   scaleFactor = 2;
   await capture('output', cue.uuid);
   assert.deepEqual(captureRect, { x: 576, y: 300, width: 768, height: 480 });
-  assert.equal(read('session').standby, 'data:image/png;base64,' + Buffer.from('selected screen').toString('base64'));
-  assert.equal(read('session').cue, 'data:image/png;base64,' + Buffer.from('output').toString('base64'));
-  assert.equal(read('session', 'media/replacement.wav').cue, null);
-  assert.equal(read('other-session').standby, null);
   await assert.rejects(capture('output', null, { sender: output.webContents }), /main workspace/);
-  assert.throws(() => handlers.get('video-output:get-standby-capture')({ sender }, 'session', null, null), /output window/);
+  await assert.rejects(capture('output', 'not-in-the-show'), /Select a media cue/);
+  assert.equal(handlers.has('video-output:get-standby-capture'), false);
+  assert.equal(handlers.has('video-output:clear-standby-capture'), false);
+  // A cue that already has a picture can be captured for again: the new one replaces it.
   cue.imagePath = 'images/manual.png';
-  await assert.rejects(capture('output', cue.uuid), /assigned image/);
+  assert.equal((await capture('output', cue.uuid)).image, picture('output').image);
   delete cue.imagePath;
   context.desktopCapturer.getSources = async () => [{ display_id: 'wrong', thumbnail: still('wrong') }];
-  await assert.rejects(capture('display', null), /screen recording permission/);
+  // Said plainly, with no advice about system settings.
+  await assert.rejects(capture('display', null), /has not let the app see it/);
+  await assert.rejects(capture('display', null), error => !/permission|settings|try again/i.test(error.message));
   const resizing = deferred();
   output.webContents.capturePage = () => resizing.promise;
   const resizedCapture = capture('output', null);
   outputSize = [1920, 1200];
   resizing.resolve(still('resized'));
   await assert.rejects(resizedCapture, /Video Output changed/);
-  assert.equal(read('session').standby, 'data:image/png;base64,' + Buffer.from('selected screen').toString('base64'));
   const reframing = deferred();
   output.webContents.capturePage = () => reframing.promise;
   const reframedCapture = capture('output', null);
@@ -165,8 +165,14 @@ test('standby capture follows the saved frame or selected screen and rejects sta
   context.currentCaptureSession = 'another show';
   pending.resolve(still('late'));
   await assert.rejects(inFlight, /active show changed/);
-  handlers.get('video-output:clear-standby-capture')({ sender }, { identity, sessionId: 'another show', itemUuid: null });
-  assert.equal(read('another show').standby, null);
+  // The cue's media changed while its picture was being taken.
+  context.currentCaptureSession = 'session';
+  const swapped = deferred();
+  output.webContents.capturePage = () => swapped.promise;
+  const duringSwap = capture('output', cue.uuid);
+  cue.mediaPath = 'media/replacement.wav';
+  swapped.resolve(still('old picture'));
+  await assert.rejects(duringSwap, /cue changed during capture/);
 });
 
 test('standby stills preserve slide detail and keep large photo captures bounded', () => {

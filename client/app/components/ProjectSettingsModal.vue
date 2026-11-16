@@ -568,31 +568,8 @@
                   </button>
                 </div>
               </section>
-              <template v-if="voStatus">
-                <section class="settings-field video-capture">
-                  <span class="settings-label">{{ t('standbyCapture.display') }}</span>
-                  <InlineChoicePicker id="capture-display" :label="t('standbyCapture.display')"
-                  :value="voStatus.captureDisplayId ?? ''" :options="captureDisplayOptions"
-                  :disabled="captureSettingsPending || standbyCapturePending" @change="onCaptureSettingsChange($event, 'display')" />
-                </section>
-                <section class="settings-field video-capture">
-                  <span class="settings-label">{{ t('standbyCapture.destination') }}</span>
-                  <InlineChoicePicker id="capture-destination" :label="t('standbyCapture.destination')"
-                  :value="voStatus.captureTarget ?? 'session'" :options="captureTargetOptions"
-                  :disabled="captureSettingsPending || standbyCapturePending" @change="onCaptureSettingsChange($event, 'target')" />
-                </section>
-              </template>
               <section v-if="voStatus" class="settings-field">
-                <div class="video-output-standby">
-                  <button type="button" class="modal-btn" :disabled="standbyCapturePending || !voStatus.open"
-                    @click="captureStandby('output', voStatus.captureTarget)">{{ t('standbyCapture.outputButton') }}</button>
-                  <button type="button" class="modal-btn"
-                    :disabled="standbyCapturePending || !voDisplays.some(d => d.id === voStatus?.captureDisplayId)"
-                    @click="captureStandby('display', voStatus.captureTarget)">{{ t('standbyCapture.displayButton') }}</button>
-                  <button type="button" class="modal-btn" :disabled="standbyCapturePending"
-                    @click="captureStandby('clear', voStatus.captureTarget)">{{ t('standbyCapture.clearButton') }}</button>
-                </div>
-                <p class="settings-help">{{ t('standbyCapture.help') }}</p>
+                <VideoCaptureControls hide-standby-clear />
               </section>
             </div>
             <div class="settings-rows settings-test-card">
@@ -922,8 +899,6 @@ const voFramingDirty = computed(() => {
   const draft = voFraming.value;
   return saved.width !== draft.width || saved.height !== draft.height || saved.scale !== draft.scale || saved.scaling !== draft.scaling;
 });
-const { captureStandby, standbyCapturePending } = useVideoStandbyCapture();
-const captureSettingsPending = ref(false);
 const voDiagnosticsCopied = ref(false);
 const voTestCardConfig = ref<TestCardConfig>(createTestCardConfig());
 
@@ -936,24 +911,6 @@ const voDisplayOptions = computed(() => [
     label: `${d.index} — ${d.label} — ${d.width}×${d.height}${d.primary ? ` (${t('common.default')})` : ''}`,
   })),
 ]);
-const captureDisplayOptions = computed(() => {
-  const selected = voStatus.value?.captureDisplayId;
-  const missing = selected && !voDisplays.value.some(display => display.id === selected)
-    ? [{ value: selected, label: t('standbyCapture.missingDisplay'), disabled: true }]
-    : [];
-  return [
-    { value: '', label: t('standbyCapture.chooseDisplay') },
-    ...missing,
-    ...voDisplays.value.map(display => ({
-      value: display.id,
-      label: `${display.index} · ${display.label} (${display.width} × ${display.height})`,
-    })),
-  ];
-});
-const captureTargetOptions = computed(() => [
-  { value: 'session', label: t('standbyCapture.session') },
-  { value: 'cue', label: t('standbyCapture.cue') },
-] as const);
 const voFramePresetOptions = computed(() => [
   ...VIDEO_FRAME_PRESETS.map(preset => ({
     value: preset.id, label: `${t(`settings.videoFraming.${preset.id}`)} · ${preset.width}×${preset.height}`,
@@ -1050,23 +1007,6 @@ async function onVideoOutputDisplayChange(value: string) {
     receiveVideoOutputStatus(await api.setDisplay(value || null));
   } catch (error) {
     settingsError.value = describeSettingsError(error);
-  }
-}
-
-async function onCaptureSettingsChange(value: string, field: 'display' | 'target') {
-  const api = window.electronAPI?.videoOutput;
-  const status = voStatus.value;
-  if (!api?.setCaptureSettings || !status) return;
-  const display = field === 'display' ? value || null : status.captureDisplayId;
-  const target = field === 'target' ? (value === 'cue' ? 'cue' : 'session') : status.captureTarget;
-  captureSettingsPending.value = true;
-  settingsError.value = '';
-  try {
-    receiveVideoOutputStatus(await api.setCaptureSettings(display, target));
-  } catch (error) {
-    settingsError.value = describeSettingsError(error);
-  } finally {
-    captureSettingsPending.value = false;
   }
 }
 
@@ -1745,10 +1685,6 @@ function close() {
     outline: 2px solid var(--color-text-primary);
     outline-offset: 1px;
   }
-}
-
-.settings-rows > .settings-field.video-capture {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 56%);
 }
 
 .settings-content .video-standby-field {

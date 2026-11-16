@@ -36,7 +36,7 @@ const {
 const { cleanupConnectionFor, TestCardPlayback } = require('./test-card-playback');
 const { managedWebSocketHeaders } = require('./managed-websocket-origin');
 const { createOneShotMutationBroker, validateIdentity, sameIdentity } = require('./one-shot-mutation-broker');
-const { createStandbyCaptureStore, findCaptureCue, captureImageUrl } = require('./video-standby-capture');
+const { findCaptureCue, captureImageUrl } = require('./video-standby-capture');
 const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('./video-output-framing.mjs');
 const { planGeometryCorrection, readViewportReport } = require('./video-output-geometry');
 const { checkVideoFrame } = require('./video-frame-check');
@@ -2754,7 +2754,6 @@ let videoOutputRestarting = false;
 let videoOutputPictureHealth = null;
 const videoOutputDiagnostics = [];
 let videoOutputFrameTimer = null;
-const videoStandbyCaptures = createStandbyCaptureStore();
 let capturingVideoStandby = false;
 let displayIdentifierWindows = [];
 let displayIdentifierTimer = null;
@@ -2920,7 +2919,6 @@ function readVideoOutputConfig() {
     return {
       displayId: typeof parsed.displayId === 'string' ? parsed.displayId : null,
       captureDisplayId: typeof parsed.captureDisplayId === 'string' ? parsed.captureDisplayId : null,
-      captureTarget: parsed.captureTarget === 'cue' ? 'cue' : 'session',
       framing: readVideoFraming(parsed.framing) ?? DEFAULT_VIDEO_FRAMING,
       // Resolution+label hint for re-attach when the OS hands out a new display
       // id after a reconnect. Ambiguous for two identical projectors — the id
@@ -2931,7 +2929,7 @@ function readVideoOutputConfig() {
     };
   } catch {
     return { displayId: null, displayFingerprint: null, captureDisplayId: null,
-      captureTarget: 'session', framing: DEFAULT_VIDEO_FRAMING, testCardConfig: createTestCardConfig() };
+      framing: DEFAULT_VIDEO_FRAMING, testCardConfig: createTestCardConfig() };
   }
 }
 
@@ -3005,7 +3003,6 @@ function videoOutputStatus() {
     open: videoOutputWindow !== null && !videoOutputWindow.isDestroyed(),
     displayId: cfg.displayId,
     captureDisplayId: cfg.captureDisplayId,
-    captureTarget: cfg.captureTarget,
     framing: cfg.framing,
     targetId: target ? String(target.id) : null,
     targetLabel: target ? (target.label || `Display ${target.id}`) : null,
@@ -3670,13 +3667,6 @@ function requireCaptureOwner(event) {
   }
 }
 
-function notifyStandbyCaptureChanged() {
-  const output = videoOutputWindow;
-  if (output && !output.isDestroyed() && !output.webContents.isDestroyed()) {
-    output.webContents.send('video-output:standby-capture-changed');
-  }
-}
-
 function requireCaptureTarget(event, target) {
   requireCaptureOwner(event);
   requireBoundedIpcObject(target, 'capture target', 64 * 1024);
@@ -3829,9 +3819,10 @@ ipcMain.handle('video-output:convert-cue', async (event, request) => {
   }
 });
 
-ipcMain.handle('video-output:set-capture-settings', (event, displayId, target) => {
+// Which other screen a capture may be taken from. What a capture is used for is
+// said at the moment it is taken, never remembered here.
+ipcMain.handle('video-output:set-capture-settings', (event, displayId) => {
   requireCaptureOwner(event);
-  if (target !== 'session' && target !== 'cue') throw new TypeError('Invalid standby capture destination.');
   const config = readVideoOutputConfig();
   if (displayId !== null) requireIpcString(displayId, 'displayId', 64);
   if (displayId !== config.captureDisplayId && displayId !== null &&
@@ -3839,15 +3830,16 @@ ipcMain.handle('video-output:set-capture-settings', (event, displayId, target) =
     throw new Error('The selected capture display is unavailable.');
   }
   config.captureDisplayId = displayId;
-  config.captureTarget = target;
   if (!writeVideoOutputConfig(config)) throw new Error('Could not save standby capture settings.');
   return broadcastVideoOutputStatus();
 });
 
+// Take a picture of the Video Output or of another screen and hand it back.
+// The main workspace saves it into the show and sets it as the standby
+// picture or a cue's picture, exactly as a picture chosen from a file is.
 ipcMain.handle('video-output:capture-standby', async (event, source, target) => {
   const cue = requireCaptureTarget(event, target);
-  if (cue?.imagePath) throw new Error('The selected cue already has an assigned image.');
-  if (capturingVideoStandby) throw new Error('A standby capture is already in progress.');
+  if (capturingVideoStandby) throw new Error('A capture is already in progress.');
   const media = cue?.mediaServerPath || cue?.mediaPath;
   let image;
   capturingVideoStandby = true;
@@ -3881,35 +3873,19 @@ ipcMain.handle('video-output:capture-standby', async (event, source, target) => 
       }
       image = sources.find(entry => entry.display_id === captureDisplayId)?.thumbnail;
       if (!image || image.isEmpty()) {
-        throw new Error('No picture was captured from the selected display. Check screen recording permission and try again.');
+        throw new Error('That screen could not be captured: this computer has not let the app see it.');
       }
     } else {
       throw new TypeError('Invalid standby capture source.');
     }
     const current = requireCaptureTarget(event, target);
-    if (current?.imagePath || (current?.mediaServerPath || current?.mediaPath) !== media) {
-      throw new Error('The selected cue changed during capture. Try again.');
+    if ((current?.mediaServerPath || current?.mediaPath) !== media) {
+      throw new Error('The cue changed during capture. Try again.');
     }
-    videoStandbyCaptures.put(target.sessionId, target.itemUuid, media, captureImageUrl(image));
-    notifyStandbyCaptureChanged();
+    return { image: captureImageUrl(image) };
   } finally {
     capturingVideoStandby = false;
   }
-});
-
-ipcMain.handle('video-output:clear-standby-capture', (event, target) => {
-  requireCaptureTarget(event, target);
-  if (capturingVideoStandby) throw new Error('Wait for the standby capture to finish before clearing it.');
-  videoStandbyCaptures.remove(target.sessionId, target.itemUuid);
-  notifyStandbyCaptureChanged();
-});
-
-ipcMain.handle('video-output:get-standby-capture', (event, sessionId, uuid, media) => {
-  requireVideoOutputIpc(event);
-  requireIpcString(sessionId, 'sessionId', 256);
-  if (uuid !== null) requireIpcString(uuid, 'itemUuid', 256);
-  if (media !== null) requireIpcString(media, 'media', 32768);
-  return videoStandbyCaptures.read(sessionId, uuid, media ?? undefined);
 });
 
 ipcMain.handle('video-output:set-display', (event, displayId) => {
@@ -5232,8 +5208,6 @@ ipcMain.on('sync-project-data', (event, projectData, identity, captureSession = 
   if (nextCaptureSession !== currentCaptureSession || (identity && !sameIdentity(identity, currentProjectIdentity))) {
     videoFrameProbe?.controller.abort();
     videoConversion?.controller.abort();
-    videoStandbyCaptures.reset();
-    notifyStandbyCaptureChanged();
   }
   currentCaptureSession = nextCaptureSession;
   currentProjectData = projectData;

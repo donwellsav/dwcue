@@ -262,11 +262,10 @@ declare global {
         convertCue: (request: { id: string; sessionId: string; uuid: string }) => Promise<VideoConvertResult>;
         cancelConvert: (id: string) => void;
         onConvertProgress: (callback: (progress: { id: string; uuid: string; percent: number }) => void) => () => void;
-        setCaptureSettings: (displayId: string | null, target: VideoStandbyDestination) => Promise<VideoOutputStatus>;
-        captureStandby: (source: 'output' | 'display', target: VideoStandbyTarget) => Promise<void>;
-        clearStandbyCapture: (target: VideoStandbyTarget) => Promise<void>;
-        getStandbyCapture: (sessionId: string, uuid: string | null, media: string | null) => Promise<VideoStandbyStill>;
-        onStandbyCaptureChanged: (callback: () => void) => () => void;
+        // Which other screen a capture may be taken from.
+        setCaptureSettings: (displayId: string | null) => Promise<VideoOutputStatus>;
+        // A picture of the Video Output, or of that other screen, as a data URL.
+        captureStandby: (source: 'output' | 'display', target: VideoStandbyTarget) => Promise<{ image: string }>;
         setTestCard: (show: boolean) => Promise<boolean>;
         setTestCardConfig: (config: TestCardConfig) => Promise<VideoOutputStatus>;
         setTestCardConnection: (connection: { serverUrl: string; accessToken: string } | null) => Promise<VideoOutputStatus>;
@@ -319,7 +318,6 @@ declare global {
     open: boolean;
     displayId: string | null;
     captureDisplayId: string | null;
-    captureTarget: VideoStandbyDestination;
     framing: VideoFraming;
     targetId: string | null;
     targetLabel: string | null;
@@ -339,15 +337,11 @@ declare global {
     fullscreen: boolean;
   }
 
-  type VideoStandbyDestination = 'session' | 'cue';
+  // The show a capture is for, and the cue when it is for one.
   interface VideoStandbyTarget {
     identity: OneShotMutationIdentity;
     sessionId: string;
     itemUuid: string | null;
-  }
-  interface VideoStandbyStill {
-    standby: string | null;
-    cue: string | null;
   }
 
   interface VideoPictureHealth {

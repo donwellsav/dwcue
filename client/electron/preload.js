@@ -295,16 +295,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('video-output:convert-progress', listener);
       return () => ipcRenderer.removeListener('video-output:convert-progress', listener);
     },
-    setCaptureSettings: (displayId, target) => ipcRenderer.invoke('video-output:set-capture-settings', displayId, target),
+    setCaptureSettings: (displayId) => ipcRenderer.invoke('video-output:set-capture-settings', displayId),
     captureStandby: (source, target) => ipcRenderer.invoke('video-output:capture-standby', source, target),
-    clearStandbyCapture: (target) => ipcRenderer.invoke('video-output:clear-standby-capture', target),
-    getStandbyCapture: (sessionId, uuid, media) =>
-      ipcRenderer.invoke('video-output:get-standby-capture', sessionId, uuid, media),
-    onStandbyCaptureChanged: (callback) => {
-      const listener = () => callback();
-      ipcRenderer.on('video-output:standby-capture-changed', listener);
-      return () => ipcRenderer.removeListener('video-output:standby-capture-changed', listener);
-    },
     setTestCard:  (show)       => ipcRenderer.invoke('video-output:test-card', show),
     setTestCardConfig: (config) => ipcRenderer.invoke('video-output:test-card-config', config),
     setTestCardConnection: (connection) => ipcRenderer.invoke('video-output:test-card-connection', connection),

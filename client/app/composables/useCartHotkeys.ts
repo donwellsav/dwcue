@@ -147,7 +147,7 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
   const { isDetached } = useDetachedOneShotMutation();
   const { showHeaderWarning } = useHeaderWarnings();
   const { t } = useLocalization();
-  const { captureStandby } = useVideoStandbyCapture();
+  const { captureStill } = useVideoStandbyCapture();
   const { playCue, playNext, setNextItem, pauseCue, resumeCue, stopAllCues, activeCues, queueLoopContinuation, jumpCue } = useAudioEngine();
 
   const oneShotSlots = computed(() => buildOneShotSlots(
@@ -276,8 +276,10 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
 
     if (action === 'stop-all') return stopAllCues();
     if (action === 'toggle-video-output') return toggleVideoOutput();
-    if (action === 'capture-video-standby') return captureStandby('output');
-    if (action === 'capture-display-standby') return captureStandby('display');
+    // Both capture the Video Output. The second action keeps the name it was
+    // saved under in show files; it used to capture another screen.
+    if (action === 'capture-video-standby') return captureStill('standby');
+    if (action === 'capture-display-standby') return captureStill('cue');
 
     if (action === 'select-up' || action === 'select-down') {
       const project = currentProject.value;

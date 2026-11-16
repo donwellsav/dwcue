@@ -664,7 +664,7 @@ In **Settings → Video Output → Test card**, drop or paste a PNG, JPEG, WebP,
 
 The output shows one picture at a time and cuts to the newest sounding cue. **Full HD**, **Fit to display**, and **100%** are the default picture settings. A 16:9 cue fills a 1920 × 1080 output edge to edge. Video and stills retain their proportions and show the entire source. Black fills any space around the picture.
 
-When a cue has no usable video, the output uses the first available layer in this order. Assigned **Cue image**, captured cue still, captured session standby, saved **Standby image**, then black. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output. A video can play on Video Output while the operator auditions that same cue in Preview.
+When a cue has no usable video, the output uses the first available layer in this order: the cue's own **Cue image**, the show's **Standby image**, then black. A captured picture becomes one of those two. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output. A video can play on Video Output while the operator auditions that same cue in Preview.
 
 Choose an image in **Properties → Basic Info → Cue image** or **Settings → Video Output → Standby image**. Browse in the lower panel, select the file, and click **Open** to copy it to the show's media folder. **Cancel** returns to the previous panel. Selecting another cue closes an unconfirmed cue image picker. The playlist, GO, and Stop All are available while browsing. **Escape** runs Stop All and leaves the picker open.
 
@@ -710,14 +710,18 @@ In **Settings → Video Output → Picture framing**, click the current **Canvas
 
 Set the HDMI resolution, refresh rate, and display rotation in the operating system. Confirm the received signal at the switcher or display. For a standard projector or TV, rehearse at Full HD with Fit to display at 100%. Check that the corner markers and edges of a framing pattern are visible and its circle is round.
 
-### Capture a standby still
+### Capture a picture
 
-**Capture display** and **Destination** expand inside Video Output settings. Selecting either only sets up the capture. Use a capture button or shortcut when ready.
+A capture takes a picture of what is on **Video Output** and saves it in the show's media folder. You say what it is for as you capture it:
 
-- Press **G** or choose **Capture output** in **Settings → Video Output** to save the current picture from the configured canvas. Bars outside that canvas are excluded.
-- Choose a **Capture display** in **Settings → Video Output**, then press **Shift+G** or choose **Capture display** to save the selected screen. The capture display can be different from the audience display. Grant screen capture permission if the operating system asks.
-- Set **Destination** to **Session standby** for a shared fallback or **Selected cue** for a specific cue. To capture Video Output for a specific cue in one step, select it and click the confidence thumbnail in the header.
-- Capture again to replace the still at that destination. **Clear still** removes the capture for the chosen destination. Assigned cue images always take priority. Use a saved Cue image or Standby image for artwork that must survive closing or reloading the show.
+- **Capture as standby picture** (default **G**) makes it the show's **Standby image**, shown when a cue has no picture of its own.
+- **Capture for cue** (default **Shift+G**) makes it the **Cue image** of one cue: the cue that is playing, or the selected cue when nothing is playing. The button names that cue.
+
+Click the small Video Output picture in the top bar to open the **Capture a picture** panel. It is available in Show Mode, and the same controls are in **Settings → Video Output**. The panel shows the picture just captured with **Undo**, which puts back the picture that was there before, and the current standby and cue pictures with **Clear picture**.
+
+To capture another screen instead, such as a presenter's slide, choose it under **Capture from** and then press a capture button. That choice lasts only while the panel is open; the shortcuts always capture Video Output. The first time, the operating system may ask whether the app may see that screen.
+
+A capture is saved with the show: it is there when the show is opened again and it travels with an exported show. Each capture is its own file, named with the cue and the time, so capturing again replaces the picture in use and leaves the earlier file in the media folder.
 
 ### Recover a frozen or failed video output
 
@@ -1071,8 +1075,8 @@ These are source defaults, not a promise about a project's customized assignment
 | Shift+S | Toggle Properties for the selected cue in Edit Mode or while that cue is in Preview |
 | L | Toggle the target cue's saved End Behavior between Loop and Nothing |
 | V | Open or close the Video Output window |
-| G | Capture Video Output as a standby still |
-| Shift+G | Capture the display selected in Video Output settings |
+| G | Capture Video Output as the standby picture |
+| Shift+G | Capture Video Output as the picture for the playing or selected cue |
 | F1 | Separate Play Selected audio action |
 | C | Cue to Continue at the end of the active loop pass; on an active QuickPlay it switches the handoff on or off |
 | J | Jump Cue immediately |
