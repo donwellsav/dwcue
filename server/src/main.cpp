@@ -387,16 +387,25 @@ CliOptions parse_cli(int argc, char** argv) {
 // Returns true if the given address:port is already bound by another process.
 static bool is_port_in_use(const std::string& addr, uint16_t port) {
 #if defined(_WIN32)
+    // This runs before anything else has started Winsock; without it the
+    // socket call fails and every port looks free.
+    WSADATA wsa{};
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return false;
     SOCKET s = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (s == INVALID_SOCKET) return false;
+    if (s == INVALID_SOCKET) { WSACleanup(); return false; }
     BOOL opt = TRUE;
-    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt), sizeof(opt));
+    // On Windows SO_REUSEADDR lets a second socket bind a port that is already
+    // being served, so a probe using it always reports "free". Exclusive use
+    // makes this bind fail whenever anything else holds the port, which is the
+    // question being asked; the launcher then moves us to a free port.
+    setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&opt), sizeof(opt));
     sockaddr_in sa{};
     sa.sin_family = AF_INET;
     sa.sin_port   = htons(port);
     inet_pton(AF_INET, addr.c_str(), &sa.sin_addr);
     bool in_use = (::bind(s, reinterpret_cast<sockaddr*>(&sa), sizeof(sa)) == SOCKET_ERROR);
     ::closesocket(s);
+    WSACleanup();
     return in_use;
 #else
     int s = ::socket(AF_INET, SOCK_STREAM, 0);

@@ -380,7 +380,10 @@ async function inspectServerProcess(pid) {
     const { stdout } = await execFilePromise(
       'powershell.exe',
       ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
-      { timeout: 3000, windowsHide: true, maxBuffer: 64 * 1024 },
+      // PowerShell can take several seconds to start on a busy or freshly
+      // booted machine. Timing out here reads as "cannot prove it is ours",
+      // which blocks stopping or replacing a server that has hung.
+      { timeout: 8000, windowsHide: true, maxBuffer: 64 * 1024 },
     );
     const info = JSON.parse(stdout);
     return {
@@ -510,23 +513,42 @@ async function probeServerHealth(port, timeoutMs = 1000) {
   });
 }
 
+const validTcpPort = (value) => Number.isInteger(value) && value >= 1 && value <= 65535;
+
+// `localPort` is the port the local server uses right now. It is normally the
+// configured port. When that port is taken by another program the app moves
+// the server to a free one by itself (see launchLiveplayServerWithFallback)
+// and remembers it here, so every reader keeps working without knowing.
+// `configuredLocalPort` is what the operator chose and what the next fresh
+// launch tries first.
 function readLiveplayConfig() {
   try {
     const raw = fs.readFileSync(liveplayConfigPath(), 'utf-8');
     const parsed = JSON.parse(raw);
+    const configuredLocalPort = Number.isInteger(parsed.localPort) ? parsed.localPort : LIVEPLAY_DEFAULT_PORT;
+    const fallback = validTcpPort(parsed.localPortFallback) && parsed.localPortFallbackFor === configuredLocalPort
+      ? parsed.localPortFallback : null;
     return {
       mode:      parsed.mode === 'remote' ? 'remote' : 'local',
       remoteUrl: typeof parsed.remoteUrl === 'string' ? parsed.remoteUrl : `http://127.0.0.1:${LIVEPLAY_DEFAULT_PORT}`,
-      localPort: Number.isInteger(parsed.localPort) ? parsed.localPort : LIVEPLAY_DEFAULT_PORT,
+      localPort: fallback ?? configuredLocalPort,
+      configuredLocalPort,
     };
   } catch {
-    return { mode: 'local', remoteUrl: `http://127.0.0.1:${LIVEPLAY_DEFAULT_PORT}`, localPort: LIVEPLAY_DEFAULT_PORT };
+    return { mode: 'local', remoteUrl: `http://127.0.0.1:${LIVEPLAY_DEFAULT_PORT}`,
+      localPort: LIVEPLAY_DEFAULT_PORT, configuredLocalPort: LIVEPLAY_DEFAULT_PORT };
   }
 }
 
 function writeLiveplayConfig(cfg) {
   try {
-    fs.writeFileSync(liveplayConfigPath(), JSON.stringify(cfg, null, 2));
+    const configured = validTcpPort(cfg.configuredLocalPort) ? cfg.configuredLocalPort : cfg.localPort;
+    const stored = { mode: cfg.mode, remoteUrl: cfg.remoteUrl, localPort: configured };
+    if (cfg.localPort !== configured) {
+      stored.localPortFallback = cfg.localPort;
+      stored.localPortFallbackFor = configured;
+    }
+    fs.writeFileSync(liveplayConfigPath(), JSON.stringify(stored, null, 2));
   } catch (e) {
     console.error('[liveplay-server] could not persist config:', e);
   }
@@ -780,6 +802,120 @@ function initializeCapabilitiesFromRecentProjects() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Recovering by itself from the states that used to need a person.
+// ---------------------------------------------------------------------------
+// The lock file can outlive its server: Windows ends a detached server at
+// sign-out or shutdown without letting it clean up, and the process id in the
+// lock is later handed to some other program. The checks above rightly refuse
+// to touch a live process they cannot prove is ours — but they must not treat
+// "could not prove it" as "it is ours" forever. A lock is discarded only on
+// positive evidence that no server of ours is behind it.
+const LIVEPLAY_SERVER_IMAGE_NAMES = new Set([
+  'dwcue-server', 'dwcue-server.exe', 'liveplay-server', 'liveplay-server.exe',
+]);
+
+// Program name of a running process, or null when it cannot be read. Only a
+// name that was actually read is ever used as evidence.
+async function processImageName(pid) {
+  try {
+    if (process.platform === 'win32') {
+      // tasklist ships with every Windows, answers in a fraction of a second,
+      // and can name system processes this user is not allowed to open.
+      const { stdout } = await execFilePromise(
+        'tasklist.exe', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'],
+        { timeout: 5000, windowsHide: true, maxBuffer: 64 * 1024 },
+      );
+      const row = /^"([^"]+)","(\d+)"/m.exec(stdout);
+      return row && Number(row[2]) === pid ? row[1].toLowerCase() : null;
+    }
+    const info = await inspectServerProcess(pid);
+    return path.basename(String(info.executable || '')).toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
+// A lock written before this computer last started cannot belong to anything
+// running now, whatever has since been given its process id.
+function liveplayLockPredatesBoot() {
+  try {
+    const startedAt = Date.now() - os.uptime() * 1000;
+    return fs.statSync(liveplayLockPath()).mtimeMs < startedAt - 10000;
+  } catch {
+    return false;
+  }
+}
+
+// True when `identity` (a lock, or this app's own record) names a live process
+// that is provably not a server of ours; the stale record is then removed so
+// the next launch is not blocked by it. Callers have already failed to verify
+// it as ours through health and process identity.
+async function discardStaleLiveplayIdentity(identity) {
+  if (!identity || !isPidAlive(identity.pid)) return false;
+  const lock = readLiveplayLock();
+  const fromLock = !!lock && lock.pid === identity.pid;
+  let reason = fromLock && liveplayLockPredatesBoot() ? 'the lock predates the last system start' : '';
+  if (!reason) {
+    const image = await processImageName(identity.pid);
+    if (image && !LIVEPLAY_SERVER_IMAGE_NAMES.has(image)) reason = `its process id now belongs to ${image}`;
+  }
+  if (!reason) return false;
+  console.warn('[liveplay-server] discarding stale server record for pid', identity.pid, '-', reason);
+  if (fromLock) {
+    try { fs.rmSync(liveplayLockPath(), { force: true }); }
+    catch (error) { console.warn('[liveplay-server] could not remove stale lock:', error.message); }
+  }
+  if (liveplayServerIdentity?.pid === identity.pid) clearLiveplayIdentity();
+  return true;
+}
+
+// Whether a server could listen on this port right now. Asked before every
+// launch because on Windows a second program can bind a port that is already
+// being served, and the server would then never be reachable.
+function isLoopbackPortFree(port) {
+  return new Promise((resolve) => {
+    const probe = require('net').createServer();
+    probe.once('error', () => resolve(false));
+    probe.listen({ host: '127.0.0.1', port }, () => probe.close(() => resolve(true)));
+  });
+}
+
+// A free port on this computer only, chosen by the operating system.
+function findFreeLoopbackPort() {
+  return new Promise((resolve) => {
+    const probe = require('net').createServer();
+    probe.once('error', () => resolve(null));
+    probe.listen({ host: '127.0.0.1', port: 0 }, () => {
+      const address = probe.address();
+      probe.close(() => resolve(address && typeof address === 'object' ? address.port : null));
+    });
+  });
+}
+
+// The last thing the server itself said went wrong, if it said so just now.
+function lastLiveplayServerLogError() {
+  let fd;
+  try {
+    const file = path.join(app.getPath('userData'), 'logs', 'dwcue-server.log');
+    const stat = fs.statSync(file);
+    if (Date.now() - stat.mtimeMs > 60000) return '';
+    const length = Math.min(stat.size, 16384);
+    const tail = Buffer.alloc(length);
+    fd = fs.openSync(file, 'r');
+    fs.readSync(fd, tail, 0, length, stat.size - length);
+    const errors = tail.toString('utf8').split(/\r?\n/).filter(line => line.includes('[ERROR]'));
+    return (errors.at(-1) || '')
+      .replace(/\u001b\[[0-9;]*m/g, '')
+      .replace(/^.*?\[ERROR\]\s*/, '')
+      .trim().slice(0, 300);
+  } catch {
+    return '';
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* already closed */ } }
+  }
+}
+
 function resolveServerBinaryPath() {
   const exeName = process.platform === 'win32' ? 'dwcue-server.exe' : 'dwcue-server';
 
@@ -846,18 +982,31 @@ async function verifyLiveplayLock(lock) {
   return null;
 }
 
+// A crashing server starts its replacement at once, and the replacement
+// publishes its process id before doing anything else. So a replacement shows
+// up in the lock within moments or not at all; only one that has shown up is
+// worth the longer wait for it to finish starting.
+const LIVEPLAY_REPLACEMENT_APPEAR_MS = 3000;
+
 async function waitForCrashReplacement(staleIdentity, timeoutMs = 6500) {
   if (!/^[0-9a-f]{32}$/.test(staleIdentity?.instanceToken || '')) return null;
-  const deadline = Date.now() + timeoutMs;
+  // Nothing that died with the last system start is coming back.
+  if (liveplayLockPredatesBoot()) return null;
+  const started = Date.now();
+  const deadline = started + timeoutMs;
+  const appearDeadline = started + Math.min(timeoutMs, LIVEPLAY_REPLACEMENT_APPEAR_MS);
+  let replacementSeen = false;
   while (Date.now() < deadline) {
     const lock = readLiveplayLock();
     if (lock && lock.pid !== staleIdentity.pid &&
         lock.instanceToken === staleIdentity.instanceToken &&
         lock.accessToken === staleIdentity.accessToken &&
         isPidAlive(lock.pid)) {
+      replacementSeen = true;
       const replacement = await verifyLiveplayLock(lock);
       if (replacement) return adoptLiveplayIdentity(replacement);
     }
+    if (!replacementSeen && Date.now() >= appearDeadline) return null;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   return null;
@@ -957,14 +1106,15 @@ async function startLiveplayServerOnce() {
     if (cfg.mode !== 'local') return null;
   }
 
-  // Never signal, adopt, or overwrite a live PID that failed identity checks.
-  // The user can stop that process directly; spawning beside it risks two
-  // independent audio engines if the configured port also changed.
-  const unverifiedLock = [readLiveplayLock(), liveplayServerIdentity].find(
-    identity => identity && isPidAlive(identity.pid));
-  if (unverifiedLock) {
+  // Never signal, adopt, or overwrite a live PID that failed identity checks:
+  // spawning beside a server of ours risks two independent audio engines. A
+  // record that provably points at some other program is not such a server;
+  // it is discarded so a leftover lock can never keep the app from starting.
+  for (const candidate of [readLiveplayLock(), liveplayServerIdentity]) {
+    if (!candidate || !isPidAlive(candidate.pid)) continue;
+    if (await discardStaleLiveplayIdentity(candidate)) continue;
     console.error('[liveplay-server] refusing to launch beside unverified pid',
-                  unverifiedLock.pid);
+                  candidate.pid);
     notifyServerStateChange();
     return null;
   }
@@ -977,14 +1127,53 @@ async function startLiveplayServerOnce() {
     return;
   }
 
+  return launchLiveplayServerWithFallback(exePath, cfg);
+}
+
+// Start the server on the operator's port; if it declines to start there,
+// move it to a free port instead of leaving the operator with a dead app.
+async function launchLiveplayServerWithFallback(exePath, startConfig) {
+  let cfg = startConfig;
+  // A fresh launch always tries the operator's own port first.
+  if (cfg.localPort !== cfg.configuredLocalPort) {
+    writeLiveplayConfig({ ...cfg, localPort: cfg.configuredLocalPort });
+    cfg = readLiveplayConfig();
+  }
+  let launch = { identity: null, declined: true };
+  if (await isLoopbackPortFree(cfg.localPort)) {
+    launch = await launchLiveplayServerProcess(exePath, cfg.localPort);
+  } else {
+    console.warn('[liveplay-server] port', cfg.localPort, 'is in use by another program');
+  }
+  if (!launch.identity && launch.declined && readLiveplayConfig().mode === 'local') {
+    const fallbackPort = await findFreeLoopbackPort();
+    if (fallbackPort && fallbackPort !== cfg.localPort) {
+      console.warn('[liveplay-server] server would not start on port', cfg.localPort,
+                   '— retrying on free port', fallbackPort);
+      writeLiveplayConfig({ ...cfg, localPort: fallbackPort });
+      cfg = readLiveplayConfig();
+      launch = await launchLiveplayServerProcess(exePath, cfg.localPort);
+      if (!launch.identity && launch.declined) {
+        // The port was not the reason. Leave the configuration as it was.
+        writeLiveplayConfig({ ...cfg, localPort: cfg.configuredLocalPort });
+      }
+    }
+  }
+  notifyServerStateChange();
+  return launch.identity;
+}
+
+// One launch attempt. `declined` means the server ended itself before it was
+// ready with its own "could not start" status, as it does for a busy port.
+async function launchLiveplayServerProcess(exePath, port) {
   // Launch detached and headless; retain ownership even if readiness stalls.
   const lockPath = liveplayLockPath();
   const instanceToken = crypto.randomBytes(16).toString('hex');
   const accessToken = crypto.randomBytes(32).toString('hex');
   const allowedOrigins = app.isPackaged ? '' : 'http://localhost:3000';
-  console.log('[liveplay-server] launching in background', exePath, 'on port', cfg.localPort);
+  console.log('[liveplay-server] launching in background', exePath, 'on port', port);
   const serverArgs = [
-    '--port',           String(cfg.localPort),
+    '--port',           String(port),
     '--pidfile',        lockPath,
     '--instance-token', instanceToken,
   ];
@@ -1008,29 +1197,36 @@ async function startLiveplayServerOnce() {
   } catch (e) {
     console.error('[liveplay-server] spawn failed:', e);
     notifyServerStateChange();
-    return null;
+    return { identity: null, declined: false };
   }
 
-  const launchState = { error: null };
+  const launchState = { error: null, exitCode: null };
   launcher.once('error', (error) => {
     launchState.error = error;
     console.error('[liveplay-server] spawn failed:', error);
     notifyServerStateChange();
   });
+  // The server ends itself with status 1 when it cannot start where it was
+  // told to (a busy port above all). A crash ends differently and starts its
+  // own replacement, which the readiness wait below still adopts.
+  launcher.once('exit', (code) => { launchState.exitCode = code; });
 
   if (Number.isSafeInteger(launcher.pid) && launcher.pid > 0) {
-    adoptLiveplayIdentity({ pid: launcher.pid, port: cfg.localPort,
+    adoptLiveplayIdentity({ pid: launcher.pid, port,
       instanceToken, accessToken, legacy: false });
   }
   try { launcher.unref(); } catch {}
 
   // Readiness still requires the server's authenticated health response.
   const identity = await pollPidfileForServerPid(
-    lockPath, instanceToken, accessToken, cfg.localPort, launchState,
+    lockPath, instanceToken, accessToken, port, launchState,
   );
+  const declined = !identity && launchState.exitCode === 1;
+  // A server that has ended is not ours to keep track of.
+  if (declined && liveplayServerIdentity?.pid === launcher.pid) clearLiveplayIdentity();
 
   notifyServerStateChange();
-  return identity;
+  return { identity, declined };
 }
 
 // Watch the pidfile until the server publishes the expected generation (or we
@@ -1042,6 +1238,8 @@ async function pollPidfileForServerPid(
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
     if (launchState.error) return null;
+    // Declined to start: waiting out the clock would only delay the retry.
+    if (launchState.exitCode === 1) return null;
     const lock = readLiveplayLock();
     const health = lock ? await probeServerHealth(lock.port) : null;
     if (lock?.instanceToken === expectedInstanceToken &&
@@ -1066,7 +1264,16 @@ async function stopVerifiedLiveplayServer(identity) {
   const stopped = await terminateLiveplayPid(
     identity.pid, identity.port, identity.instanceToken, identity.legacy,
   );
-  if (stopped) clearLiveplayIdentity(identity);
+  if (stopped) {
+    clearLiveplayIdentity(identity);
+    // A server ended by force (always, on Windows) cannot remove its own lock.
+    // Left behind, it would later name whatever program inherits the id.
+    try {
+      if (readLiveplayLock()?.pid === identity.pid) fs.rmSync(liveplayLockPath(), { force: true });
+    } catch (error) {
+      console.warn('[liveplay-server] could not remove the stopped server lock:', error.message);
+    }
+  }
   notifyServerStateChange();
   return stopped;
 }
@@ -1079,11 +1286,12 @@ async function stopLiveplayServer() {
 async function stopLiveplayServerOnce() {
   const identity = await reconcileLiveplayServerIdentity(true);
   if (!identity) {
-    const unverifiedLock = [readLiveplayLock(), liveplayServerIdentity].find(
-      candidate => candidate && isPidAlive(candidate.pid));
-    if (unverifiedLock) {
+    // A record that provably points at another program is nothing to stop.
+    for (const candidate of [readLiveplayLock(), liveplayServerIdentity]) {
+      if (!candidate || !isPidAlive(candidate.pid)) continue;
+      if (await discardStaleLiveplayIdentity(candidate)) continue;
       console.error('[liveplay-server] refusing to stop unverified lock PID:',
-                    unverifiedLock.pid);
+                    candidate.pid);
       notifyServerStateChange();
       return false;
     }
@@ -1141,6 +1349,12 @@ ipcMain.handle('liveplay-server:set-config', async (event, incoming) => {
   if (!Number.isInteger(next.localPort) || next.localPort < 1 || next.localPort > 65535) {
     next.localPort = LIVEPLAY_DEFAULT_PORT;
   }
+  // A fallback port stands in for the configured one. Saving settings that
+  // still show it must not turn it into the operator's choice; a different
+  // port is a new choice and ends the fallback.
+  next.configuredLocalPort = next.localPort === current.localPort
+    ? current.configuredLocalPort
+    : next.localPort;
   try {
     const remote = new URL(next.remoteUrl);
     if (!['http:', 'https:'].includes(remote.protocol) || remote.username || remote.password) {
@@ -1258,17 +1472,10 @@ ipcMain.handle('liveplay-server:shutdown', async (event) => {
 // answers. The welcome screen calls this when the user picks Local mode
 // so the renderer doesn't try to connect before the server is bound.
 // Returns { ok, port, accessToken?, error? } — never throws.
-ipcMain.handle('liveplay-server:ensure-running', async (event) => {
-  requireTrustedIpc(event);
-  const cfg = readLiveplayConfig();
-  if (cfg.mode !== 'local') {
-    return { ok: false, port: cfg.localPort, error: 'config mode is not local' };
-  }
-  try { await startLiveplayServer(); }
-  catch (e) { return { ok: false, port: cfg.localPort, error: String(e) }; }
-
-  // Poll health. The detached server process needs a moment to bind.
-  const deadline = Date.now() + 10000;
+// Wait for the server this app owns to answer on `cfg.localPort`. Resolves to
+// the result for the renderer, or null when the wait ran out.
+async function awaitLiveplayServerHealthy(cfg, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const lock = readLiveplayLock();
     const health = lock?.port === cfg.localPort
@@ -1293,7 +1500,65 @@ ipcMain.handle('liveplay-server:ensure-running', async (event) => {
     }
     await new Promise(r => setTimeout(r, 200));
   }
-  return { ok: false, port: cfg.localPort, error: 'server did not become healthy within 10s' };
+  return null;
+}
+
+async function ensureLiveplayServerRunning() {
+  let cfg = readLiveplayConfig();
+  if (cfg.mode !== 'local') {
+    return { ok: false, port: cfg.localPort, error: 'config mode is not local' };
+  }
+  if (!fs.existsSync(resolveServerBinaryPath())) {
+    return { ok: false, port: cfg.localPort, error: 'the audio server program is missing from this installation' };
+  }
+  try { await startLiveplayServer(); }
+  catch (e) { return { ok: false, port: cfg.localPort, error: String(e) }; }
+  // The launch may have moved the server to a free port.
+  cfg = readLiveplayConfig();
+  if (cfg.mode !== 'local') {
+    return { ok: false, port: cfg.localPort, error: 'config mode is not local' };
+  }
+
+  // The detached server process needs a moment to bind. With no server and no
+  // lock at all, the launch already failed and there is nothing to wait for.
+  let ready = (liveplayServerIdentity || readLiveplayLock())
+    ? await awaitLiveplayServerHealthy(cfg, 10000)
+    : null;
+  if (!ready) {
+    // Running but not answering. Restarting the computer used to be the only
+    // cure; restart just the server instead, once. Only a server proven to be
+    // ours is ever stopped (stopLiveplayServerOnce refuses anything else).
+    const stuck = liveplayServerIdentity;
+    if (stuck && isPidAlive(stuck.pid)) {
+      console.warn('[liveplay-server] server pid', stuck.pid, 'is running but not answering; restarting it');
+      liveplayServerStartPromise = null;
+      const restarted = await runLiveplayServerOperation(async () => {
+        // Every window asks at once. If another request already replaced the
+        // stuck server while this one waited its turn, do not replace it again.
+        if (liveplayServerIdentity?.pid !== stuck.pid) return true;
+        if (!(await stopLiveplayServerOnce())) return false;
+        await startLiveplayServerOnce();
+        return true;
+      }).catch(() => false);
+      if (restarted) {
+        cfg = readLiveplayConfig();
+        if (cfg.mode === 'local') ready = await awaitLiveplayServerHealthy(cfg, 10000);
+      }
+    }
+  }
+  if (ready) return ready;
+  // Say what the server itself reported, not just that time ran out.
+  const reported = lastLiveplayServerLogError();
+  return {
+    ok: false,
+    port: cfg.localPort,
+    error: reported ? `the audio server reported: ${reported}` : 'server did not become healthy within 10s',
+  };
+}
+
+ipcMain.handle('liveplay-server:ensure-running', async (event) => {
+  requireTrustedIpc(event);
+  return ensureLiveplayServerRunning();
 });
 
 // ===========================================================================

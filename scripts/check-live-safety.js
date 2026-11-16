@@ -1366,7 +1366,7 @@ assert.match(electron, /let liveplayServerStartPromise = null/, 'concurrent star
 assert.match(electron, /if \(liveplayServerStartPromise\) return liveplayServerStartPromise/, 'concurrent start requests must not spawn twice');
 assert.match(
   electron,
-  /await pollPidfileForServerPid\(\s*lockPath, instanceToken, accessToken, cfg\.localPort, launchState/,
+  /await pollPidfileForServerPid\(\s*lockPath, instanceToken, accessToken, port, launchState/,
   'a launch must adopt its PID before it is considered complete',
 );
 assert.match(
@@ -1472,7 +1472,9 @@ assert.doesNotMatch(
 );
 assert.match(
   electron,
-  /ensure-running[\s\S]*healthMatchesIdentity\(health, lock\)/,
+  // The readiness wait moved into its own function so it can run again after
+  // an unresponsive server is restarted; ensure-running must still go through it.
+  /async function awaitLiveplayServerHealthy[\s\S]*healthMatchesIdentity\(health, lock\)[\s\S]*async function ensureLiveplayServerRunning[\s\S]*awaitLiveplayServerHealthy\(cfg, 10000\)[\s\S]*'liveplay-server:ensure-running'[\s\S]*ensureLiveplayServerRunning\(\)/,
   'ensure-running must match the configured port health to the managed pidfile generation',
 );
 assert.match(

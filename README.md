@@ -216,7 +216,7 @@ Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.
 +--------------------------------+                                   +-----------------------------------+
 ```
 
-Client and server can run on **the same machine** (the desktop installer bundles both, spawns the server on `127.0.0.1:4480`, and supplies a per-generation managed token) or on **different machines** on a LAN — e.g. the show laptop driving a stage-side mini-PC that's wired to the actual sound interfaces.
+Client and server can run on **the same machine** (the desktop installer bundles both, spawns the server on `127.0.0.1:4480`, or by itself on a free port when another program already holds 4480, and supplies a per-generation managed token) or on **different machines** on a LAN — e.g. the show laptop driving a stage-side mini-PC that's wired to the actual sound interfaces.
 
 For the deep architectural docs (mixer tiers, routing matrix, LTC, limiter, metering, network event lifecycle, project-file backwards compatibility), see [`server/README.md`](server/README.md).
 
