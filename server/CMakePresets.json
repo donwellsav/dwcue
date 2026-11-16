@@ -8,8 +8,7 @@
       "binaryDir": "${sourceDir}/build",
       "generator": "Ninja",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "VCPKG_OVERLAY_PORTS": "${sourceDir}/ports"
+        "CMAKE_BUILD_TYPE": "Release"
       },
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
     },
@@ -26,10 +25,7 @@
       "binaryDir": "${sourceDir}/build",
       "generator": "Visual Studio 17 2022",
       "architecture": { "value": "x64", "strategy": "set" },
-      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-      "cacheVariables": {
-        "VCPKG_OVERLAY_PORTS": "${sourceDir}/ports"
-      }
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
     }
   ],
   "buildPresets": [

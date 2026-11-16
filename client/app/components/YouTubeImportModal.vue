@@ -767,7 +767,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  max-height: clamp(115px, 24vh, 230px);
+  /* Results are the point of this panel: show many at once. */
+  max-height: clamp(230px, 52vh, 640px);
   overflow: auto;
   overscroll-behavior: contain;
 }
@@ -924,7 +925,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  max-height: clamp(124px, 26vh, 240px);
+  max-height: clamp(160px, 34vh, 420px);
   overflow: auto;
   overscroll-behavior: contain;
 }

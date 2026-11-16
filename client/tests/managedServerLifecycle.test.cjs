@@ -16,7 +16,9 @@ const names = new Set(['validManagedAccessToken', 'isPidAlive', 'healthMatchesId
   'stopVerifiedLiveplayServer', 'stopLiveplayServer', 'stopLiveplayServerOnce', 'runLiveplayServerOperation', 'liveplayServerStatus', 'notifyServerStateChange',
   // Self-recovery: stale locks, a busy port, and a server that stopped answering.
   'discardStaleLiveplayIdentity', 'launchLiveplayServerWithFallback', 'launchLiveplayServerProcess',
-  'awaitLiveplayServerHealthy', 'ensureLiveplayServerRunning']);
+  'awaitLiveplayServerHealthy', 'ensureLiveplayServerRunning',
+  // An engine left running by the previous version, and the release build's self-test flag.
+  'replaceOutdatedIdleEngine', 'ensureCurrentEngineRunning', 'engineSelfTestResultPath']);
 const managerSource = ast.statements.filter(node =>
   (ts.isFunctionDeclaration(node) && names.has(node.name?.text)) ||
   (ts.isExpressionStatement(node) && ts.isCallExpression(node.expression) &&
@@ -24,7 +26,7 @@ const managerSource = ast.statements.filter(node =>
     ['liveplay-server:restart', 'liveplay-server:shutdown', 'liveplay-server:set-config']
       .includes(node.expression.arguments[0]?.text)) ||
   (ts.isVariableStatement(node) && node.declarationList.declarations.every(
-    declaration => /^(liveplayServer|LIVEPLAY_SERVER_IMAGE_NAMES$|LIVEPLAY_REPLACEMENT_APPEAR_MS$)/
+    declaration => /^(liveplayServer|engineUpdate|LIVEPLAY_SERVER_IMAGE_NAMES$|LIVEPLAY_REPLACEMENT_APPEAR_MS$)/
       .test(declaration.name.getText(ast)))))
   .map(node => node.getText(ast)).join('\n');
 
@@ -32,7 +34,10 @@ const managerSource = ast.statements.filter(node =>
 // publishes its lock and answers, 'mute' publishes its lock but never answers,
 // 'decline' ends itself with status 1 as it does for a busy port. With no
 // script a server stays alive without a lock (the original fixture behaviour).
-function fixture(platform = 'darwin', { script = [], taskkillWorks = false } = {}) {
+// `versions` gives the version each launched server reports, in launch order
+// (the app's own version when it runs out).
+const APP_VERSION = '2.7.0';
+function fixture(platform = 'darwin', { script = [], taskkillWorks = false, versions = [] } = {}) {
   let now = 1000;
   let nextPid = 100;
   let inspectionFails = false;
@@ -49,12 +54,21 @@ function fixture(platform = 'darwin', { script = [], taskkillWorks = false } = {
   const configWrites = [];
   const answering = new Set();
   const busyPorts = new Set();     // ports another program is already serving
+  const engineVersions = new Map();
+  const engineUse = { hasOpenProject: false, audioLoading: false, playing: [] };
   const lockPath = '/fixture/profile/liveplay-server.lock';
   const executable = '/fixture/server-bin/dwcue-server';
   const context = {
     ipcMain: { handle(name, handler) { handlers.set(name, handler); } }, requireTrustedIpc() {},
     LIVEPLAY_DEFAULT_PORT: 4480, path, crypto: require('node:crypto'),
-    app: { isPackaged: true }, mainWindow: null, cartPlayerWindow: null, videoOutputWindow: null,
+    app: { isPackaged: true, getVersion: () => APP_VERSION },
+    mainWindow: null, cartPlayerWindow: null, videoOutputWindow: null,
+    fetchEngineSummary: async (port) => {
+      if (!lock || lock.port !== port || !answering.has(lock.pid)) return null;
+      return { server: { version: engineVersions.get(lock.pid) },
+        project: { hasOpenProject: engineUse.hasOpenProject, audioLoading: engineUse.audioLoading },
+        playing: [...engineUse.playing] };
+    },
     console: { log() {}, warn() {}, error() {} }, Date: { now: () => now },
     setTimeout(callback, ms) { now += ms; queueMicrotask(callback); },
     process: { platform, env: {}, kill(pid, signal) {
@@ -91,6 +105,7 @@ function fixture(platform = 'darwin', { script = [], taskkillWorks = false } = {
       const listeners = {};
       const child = { pid: nextPid++, args, once(event, listener) { listeners[event] = listener; }, unref() {} };
       children.set(child.pid, child);
+      engineVersions.set(child.pid, versions.shift() ?? APP_VERSION);
       const behaviour = script.shift();
       const option = flag => args[args.indexOf(flag) + 1];
       if (behaviour === 'healthy' || behaviour === 'mute') {
@@ -113,7 +128,7 @@ function fixture(platform = 'darwin', { script = [], taskkillWorks = false } = {
     },
   };
   vm.runInNewContext(managerSource, context);
-  return { context, children, handlers, foreign, signalled, removedLocks, configWrites, lockPath, busyPorts,
+  return { context, children, handlers, foreign, signalled, removedLocks, configWrites, lockPath, busyPorts, engineUse,
     now: () => now, config: () => ({ ...config }), lock: () => lock,
     setConfig(next) { config = { ...config, ...next }; },
     setLock(next) { lock = next; }, setPredatesBoot(value) { predatesBoot = value; },
@@ -338,7 +353,7 @@ test('an unresponsive server is restarted only once, then the failure is reporte
   const f = fixture('darwin', { script: ['mute', 'mute'] });
   const ready = await f.context.ensureLiveplayServerRunning();
   assert.equal(ready.ok, false);
-  assert.equal(ready.error, 'server did not become healthy within 10s');
+  assert.equal(ready.error, 'it did not respond in time');
   assert.equal(f.children.size, 1, 'no pile of servers is left behind');
 });
 
@@ -349,7 +364,7 @@ test('a failed start reports what the server itself said, without waiting out th
   const ready = await f.context.ensureLiveplayServerRunning();
   // The result comes from another realm; compare its plain contents.
   assert.equal(JSON.stringify(ready), JSON.stringify(
-    { ok: false, port: 4480, error: 'the audio server reported: Audio engine failed to start.' }));
+    { ok: false, port: 4480, error: 'it reported: Audio engine failed to start.' }));
   assert.ok(f.now() - before < 8000, 'nothing is waited for once every launch has ended');
 });
 
@@ -390,4 +405,69 @@ test('several windows asking at once replace an unresponsive server only once', 
   assert.equal(new Set(results.map(result => result.accessToken)).size, 1, 'every window gets the same server');
   assert.equal(f.children.size, 1);
   assert.equal([...f.children.keys()][0], 101, 'exactly one replacement was launched');
+});
+
+test('an idle engine left running by the previous version is replaced with this version', async () => {
+  const f = fixture('darwin', { script: ['healthy', 'healthy'], versions: ['2.6.24'] });
+  await f.context.startLiveplayServer();                      // the old engine, already running
+  const ready = await f.context.ensureCurrentEngineRunning();
+  assert.equal(ready.ok, true);
+  assert.deepEqual([...f.children.keys()], [101], 'the old engine was stopped and one new engine started');
+  assert.equal(f.context.liveplayServerStatus().pid, 101);
+});
+
+for (const [what, use] of [
+  ['has a show open', { hasOpenProject: true }],
+  ['is loading audio', { audioLoading: true }],
+  ['is playing', { playing: [{ itemUuid: 'cue' }] }],
+]) {
+  test(`an older engine that ${what} is never interrupted`, async () => {
+    const f = fixture('darwin', { script: ['healthy', 'healthy'], versions: ['2.6.24'] });
+    Object.assign(f.engineUse, use);
+    await f.context.startLiveplayServer();
+    const ready = await f.context.ensureCurrentEngineRunning();
+    assert.equal(ready.ok, true);
+    assert.deepEqual([...f.children.keys()], [100], 'the engine in use keeps running');
+    // Once it is idle again, the next request replaces it.
+    Object.assign(f.engineUse, { hasOpenProject: false, audioLoading: false, playing: [] });
+    assert.equal((await f.context.ensureCurrentEngineRunning()).ok, true);
+    assert.deepEqual([...f.children.keys()], [101]);
+  });
+}
+
+test('an engine of this version is left alone', async () => {
+  const f = fixture('darwin', { script: ['healthy', 'healthy'] });
+  await f.context.startLiveplayServer();
+  assert.equal((await f.context.ensureCurrentEngineRunning()).ok, true);
+  assert.equal((await f.context.ensureCurrentEngineRunning()).ok, true);
+  assert.deepEqual([...f.children.keys()], [100]);
+});
+
+test('an installation whose own engine reports another version is restarted once, not in a loop', async () => {
+  const f = fixture('darwin', { script: ['healthy', 'healthy', 'healthy'], versions: ['2.6.24', '2.6.24', '2.6.24'] });
+  await f.context.startLiveplayServer();
+  assert.equal((await f.context.ensureCurrentEngineRunning()).ok, true);
+  assert.equal((await f.context.ensureCurrentEngineRunning()).ok, true);
+  assert.deepEqual([...f.children.keys()], [101], 'one replacement, then it is accepted as it is');
+});
+
+test('several windows asking at once replace an outdated engine only once', async () => {
+  const f = fixture('darwin', { script: ['healthy', 'healthy', 'healthy', 'healthy'], versions: ['2.6.24'] });
+  await f.context.startLiveplayServer();
+  const results = await Promise.all([
+    f.context.ensureCurrentEngineRunning(),
+    f.context.ensureCurrentEngineRunning(),
+    f.context.ensureCurrentEngineRunning(),
+  ]);
+  assert.deepEqual(results.map(result => result.ok), [true, true, true]);
+  assert.equal(new Set(results.map(result => result.accessToken)).size, 1, 'every window gets the same engine');
+  assert.deepEqual([...f.children.keys()], [101]);
+});
+
+test('the engine self-test only accepts an absolute result file', () => {
+  const { engineSelfTestResultPath } = fixture().context;
+  assert.equal(engineSelfTestResultPath(['app', '--engine-self-test=/tmp/result.json']), '/tmp/result.json');
+  assert.equal(engineSelfTestResultPath(['app', '--engine-self-test=result.json']), null);
+  assert.equal(engineSelfTestResultPath(['app', '--engine-self-test=']), null);
+  assert.equal(engineSelfTestResultPath(['app', '--smoke-quit']), null);
 });

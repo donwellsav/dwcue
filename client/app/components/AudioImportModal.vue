@@ -928,4 +928,24 @@ function formatBytes(n: number): string {
 @container (max-width: 760px) {
   .workspace-import-body { grid-template-columns: minmax(0, 1fr); }
 }
+
+// In the workspace panel the file browser takes all the height the panel has,
+// so a taller panel shows more files instead of more empty space.
+.docked-import {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+
+  > .workspace-import-body {
+    flex: 1 0 auto;
+    grid-template-rows: minmax(0, 1fr);
+    align-content: stretch;
+  }
+  .import-source--picking {
+    align-self: stretch;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .import-source--picking > .pane { min-height: 0; }
+  .import-source--picking > .pane :deep(.picker-dock) { flex: 1 1 clamp(174px, 28vh, 235px); }
+}
 </style>

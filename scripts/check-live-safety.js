@@ -93,21 +93,22 @@ assert.match(
   /MSVC[\s\S]*CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE[\s\S]*InstallRequiredSystemLibraries[\s\S]*copy_if_different[\s\S]*CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS[\s\S]*TARGET_FILE_DIR:liveplay-server/,
   'Windows packages must stage the MSVC runtime beside the native server',
 );
-const vgmstreamPort = read('server/ports/vgmstream/portfile.cmake');
-for (const plugin of ['FB2K', 'WINAMP', 'XMPLAY']) {
-  assert.match(
-    vgmstreamPort,
-    new RegExp(`-DBUILD_${plugin}=OFF`),
-    `the vgmstream library build must not require the Windows ${plugin} plugin SDK`,
-  );
+// MIDI files, tracker modules and game-console music were removed from the
+// engine: they cost three extra libraries, a 6 MB SoundFont and their own
+// build patches for formats a live show does not use.
+const serverManifest = JSON.parse(read('server/vcpkg.json'));
+const serverDependencyNames = serverManifest.dependencies.map(dep => typeof dep === 'string' ? dep : dep.name);
+for (const removed of ['fluidsynth', 'game-music-emu', 'vgmstream']) {
+  assert.ok(!serverDependencyNames.includes(removed), `${removed} must not return to the engine`);
 }
-assert.match(
-  vgmstreamPort,
-  /vcpkg_check_linkage\(ONLY_STATIC_LIBRARY\)/,
-  'vgmstream must stay static when the Windows triplet defaults to shared libraries',
+assert.ok(
+  !serverManifest.dependencies.some(dep => dep.name === 'ffmpeg' && dep.features.includes('openmpt')),
+  'the engine FFmpeg must be built without the tracker-module library',
 );
-assert.match(vgmstreamPort, /miniz-config\.patch/,
-  'vgmstream must disable bundled miniz archive APIs before linking the project ZIP reader');
+assert.doesNotMatch(serverCmake, /VCPKG_OVERLAY_PORTS|SOUNDFONT|TimGM6mb/,
+  'the engine build must not depend on private ports or a bundled SoundFont');
+assert.doesNotMatch(JSON.stringify(pkg.build), /TimGM6mb|\.sf2/,
+  'the installer must not package a SoundFont');
 assert.doesNotMatch(read('server/assets/server.rc'), /RT_MANIFEST/,
   'the Windows resource script must not duplicate CMake manifest embedding');
 assert.match(serverCmake, /LIVEPLAY_RC[\s\S]*assets\/server\.manifest/,
@@ -497,6 +498,29 @@ assert.match(
   'the limiter ceiling must be presented as true peak (dBTP)',
 );
 const enLocale = JSON.parse(read('client/locales/en.json'));
+// Every language carries every string, with the same {placeholders}. A missing
+// string silently shows English in the middle of a translated screen.
+{
+  const flattenLocale = (node, prefix = '') => Object.entries(node).flatMap(([key, value]) =>
+    value && typeof value === 'object' ? flattenLocale(value, `${prefix}${key}.`) : [[`${prefix}${key}`, value]]);
+  const placeholders = text => (String(text).match(/\{[^}]*\}/g) || []).sort().join(',');
+  const english = new Map(flattenLocale(enLocale));
+  const localeDir = path.join(root, 'client', 'locales');
+  const localeFiles = fs.readdirSync(localeDir).filter(file => file.endsWith('.json') && file !== 'en.json');
+  assert.equal(localeFiles.length, 20, 'the app ships 20 languages besides English');
+  for (const file of localeFiles) {
+    const translated = new Map(flattenLocale(JSON.parse(fs.readFileSync(path.join(localeDir, file), 'utf8'))));
+    const missing = [...english.keys()].filter(key => !translated.has(key));
+    const extra = [...translated.keys()].filter(key => !english.has(key));
+    assert.deepEqual(missing, [], `${file} is missing strings`);
+    assert.deepEqual(extra, [], `${file} has strings the app no longer uses`);
+    for (const [key, text] of english) {
+      const value = translated.get(key);
+      assert.ok(typeof value === 'string' && value.trim(), `${file} has an empty ${key}`);
+      assert.equal(placeholders(value), placeholders(text), `${file} must keep the placeholders of ${key}`);
+    }
+  }
+}
 assert.equal(enLocale.outputConsole.ceilingInputLabel, 'True-peak limiter ceiling in dBTP');
 assert.match(
   mainWorkspace,
@@ -701,12 +725,12 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /class="lower-workspace-panel"[\s\S]*:style="\{ height: [^"]+panelHeight[^"]+\}"[\s\S]*class="lower-panel-resize-handle"[\s\S]*role="separator"[\s\S]*@pointerdown="startPanelResize"[\s\S]*@keydown="handlePanelResizeKey"/,
+  /class="lower-workspace-panel"[\s\S]*:style="\{ height: lowerPanelHeight, maxHeight: [^"]+\}"[\s\S]*class="lower-panel-resize-handle"[\s\S]*role="separator"[\s\S]*@pointerdown="startPanelResize"[\s\S]*@keydown="handlePanelResizeKey"/,
   'Settings, Properties, and imports must share the pointer and keyboard resize control',
 );
 assert.match(
   mainWorkspace,
-  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*autoSizeImportPanel = computed\(\(\) => visibleImportPanel\.value === 'delete-selection' \|\| visibleImportPanel\.value === 'repair'\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value\s*: autoSizeImportPanel\.value \? null\s*: visibleImportPanel\.value \? importHeight\.value : propertiesHeight\.value\);/,
+  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*autoSizeImportPanel = computed\(\(\) => visibleImportPanel\.value === 'delete-selection' \|\| visibleImportPanel\.value === 'repair'\s*\|\| visibleImportPanel\.value === 'import-choice'\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value\s*: autoSizeImportPanel\.value \? null\s*: visibleImportPanel\.value \? importHeight\.value : propertiesHeight\.value\);/,
   'each lower panel must fit its contents until the operator resizes it',
 );
 assert.ok(mainWorkspace.includes('<DeleteSelectionPanel v-if="visibleImportPanel === \'delete-selection\'" />')
@@ -1569,15 +1593,37 @@ const readyStart = electron.indexOf('app.whenReady().then');
 const readyEnd = electron.indexOf('\\n  });', readyStart);
 const readyPath = electron.slice(readyStart, readyEnd);
 assert.ok(
-  readyPath.indexOf('createWindow();') >= 0 &&
-  readyPath.indexOf('createWindow();') < readyPath.indexOf('void setupFfmpeg()'),
-  'window creation must not wait for external FFmpeg probes',
+  readyPath.indexOf('createWindow();') >= 0 && !readyPath.includes('setupFfmpeg'),
+  'startup must not probe or download FFmpeg; the importers fetch it on demand',
 );
 assert.match(
   electron,
-  /execFilePromise\(ffmpegPath, \['-version'\], \{ timeout: 5000 \}\)/,
-  'bundled FFmpeg startup probes must have a hard timeout',
+  /execFilePromise\(toolPath, \['-version'\], \{ timeout, windowsHide: true \}\)/,
+  'FFmpeg probes must have a hard timeout',
 );
+// The audio engine carries its own FFmpeg. A second copy for the importers
+// must not return to the installer: it is downloaded, pinned, on first import.
+for (const name of ['@ffmpeg-installer/ffmpeg', '@ffprobe-installer/ffprobe', 'fluent-ffmpeg']) {
+  assert.ok(!(name in pkg.dependencies), `${name} must not be packaged with the app`);
+}
+assert.ok(
+  !pkg.build.asarUnpack.some(pattern => /ffmpeg|ffprobe/.test(pattern)),
+  'no FFmpeg program is unpacked into the installed app',
+);
+assert.doesNotMatch(electron, /require\(['"]@ff(mpeg|probe)-installer/,
+  'the app must not load a bundled FFmpeg');
+assert.match(
+  electron,
+  /await downloadToFile\(net\.fetch, pinned\.url, archivePath\);\s+if \(!await fileMatchesIntegrity\(archivePath, pinned\.integrity\)\) \{\s+throw/,
+  'a downloaded FFmpeg archive must pass its pinned integrity check before it is unpacked',
+);
+assert.match(
+  electron,
+  /ffmpegSetupPromise = initializeFfmpeg\(\)\.then\(\(ready\) => \{\s+if \(!ready\) ffmpegSetupPromise = null;/,
+  'a failed FFmpeg setup must be retried by the next import, not kept until restart',
+);
+assert.doesNotMatch(electron, /Please restart the application/,
+  'import failures must not tell the operator to restart the app');
 const { validatedSpotifyUrl } = require('../client/electron/spotify-import-reliability');
 assert.match(
   validatedSpotifyUrl('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=test'),
@@ -1937,7 +1983,7 @@ assert.doesNotMatch(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.is-group > \.item-content \.item-identity\s*\{\s*grid-template-columns:\s*var\(--cue-number-width, 36px\) max-content minmax\(0, 1fr\);[\s\S]*\.item-index\s*\{\s*grid-column:\s*1;[\s\S]*\.item-icon\s*\{\s*grid-column:\s*2;[\s\S]*\.playlist-item\.is-group \.item-name\s*\{\s*grid-column:\s*3;/,
+  /\.playlist-item\.is-group > \.item-content \.item-identity\s*\{\s*grid-template-columns:\s*var\(--cue-number-width, 36px\) max-content minmax\(0, max-content\) max-content;[\s\S]*\.group-level\s*\{\s*grid-column:\s*4;[\s\S]*\.item-index\s*\{\s*grid-column:\s*1;[\s\S]*\.item-icon\s*\{\s*grid-column:\s*2;[\s\S]*\.playlist-item\.is-group \.item-name\s*\{\s*grid-column:\s*3;/,
   'a folder number, icon and title must have separate columns in the same row',
 );
 assert.match(
@@ -2332,8 +2378,32 @@ const youtubeImportModal = read('client/app/components/YouTubeImportModal.vue');
 assert.match(mainWorkspace, /class="workspace-import-close" :aria-label="t\('actions\.close'\)"/,
   'the shared import close button must expose an accessible name');
 assert.match(playlistView,
-  /<Teleport defer to="#workspace-import-host">\s*<YouTubeImportModal[\s\S]*:visible="workspaceImportPanel === 'youtube'"\s*:is-open="importOpen.youtube"[\s\S]*<SpotifyImportModal[\s\S]*:visible="workspaceImportPanel === 'spotify'"\s*:open="importOpen.spotify"[\s\S]*<AudioImportModal [^>]*docked/,
+  /<Teleport defer to="#workspace-import-host">\s*<section v-if="workspaceImportPanel === 'import-choice'"[\s\S]*?<\/section>\s*<YouTubeImportModal[\s\S]*:visible="workspaceImportPanel === 'youtube'"\s*:is-open="importOpen.youtube"[\s\S]*<SpotifyImportModal[\s\S]*:visible="workspaceImportPanel === 'spotify'"\s*:open="importOpen.spotify"[\s\S]*<AudioImportModal [^>]*docked/,
   'hiding an import must preserve its job and selection inside the shared workspace');
+assert.match(playlistView,
+  /<Btn icon="add" :text="t\('playlist\.importMenu'\)"[^>]*@click="handleImportButton" \/>/,
+  'the playlist must offer one Import button, not one per source');
+assert.doesNotMatch(playlistView.slice(0, playlistView.indexOf('<Teleport defer to="#workspace-import-host">')),
+  /youtube\.importFromYouTube|spotifyImport\.button/,
+  'YouTube and Spotify belong in the Import chooser, not on the playlist bar');
+assert.match(playlistView,
+  /handleImportButton = \(\) => \{\s*if \(!currentProject\.value\) return;\s*if \(!canOnlineImport\.value\) return handleImport\(\);/,
+  'with only one import source the Import button must go straight to it');
+assert.match(mainWorkspace,
+  /const MAX_PANEL_HEIGHT_PERCENT = 60;[\s\S]*const IMPORT_MAX_PANEL_HEIGHT_PERCENT = 84;[\s\S]*panelMaxPercent = computed\(\(\) => tallImportPanel\.value \? IMPORT_MAX_PANEL_HEIGHT_PERCENT : MAX_PANEL_HEIGHT_PERCENT\)/,
+  'importers may grow taller than Settings and Properties, but never to the whole window: the transport bar stays in view');
+assert.match(mainWorkspace,
+  /visibleImportPanel\.value === 'media' \? `\$\{IMPORT_PANEL_HEIGHT_PERCENT\}%` : 'auto'/,
+  'the file browser must open tall instead of at a few rows');
+assert.match(read('client/app/components/ServerFileBrowser.vue'),
+  /&--staging &__content \{\s*flex: 1 1 clamp\(128px, 24vh, 192px\);/,
+  'the staged file list must grow with its panel instead of being capped at a few rows');
+assert.match(playlistItem,
+  /<span v-if="item\.type === 'group'" class="group-level"[\s\S]*nudgeGroupLevel\(-1, \$event\)[\s\S]*<output v-if="showMode" class="group-level__value group-level__value--readout"[\s\S]*<input v-else class="group-level__value" type="number"[\s\S]*nudgeGroupLevel\(1, \$event\)/,
+  'a group row must show its level with steppers, and must not offer a text field in Show Mode');
+assert.match(playlistItem,
+  /props\.item\.groupGainDb = next;[\s\S]{0,200}groupLevelSave = setTimeout\(\(\) => \{ void saveProject\(\); \}, 400\);[\s\S]*function nudgeGroupLevel[\s\S]{0,260}\.blur\(\);/,
+  'the row level control must set the same groupGainDb as Properties and give the keyboard back to the transport');
 assert.doesNotMatch(spotifyImportModal + youtubeImportModal, /aria-modal|--dialog-backdrop|<Teleport to="body"/,
   'online imports must not block the playlist or transport with a modal');
 
@@ -2632,11 +2702,6 @@ assert.doesNotMatch(
   'empty One Shot cells must not repeat obsolete cart loading copy',
 );
 
-const serverSettings = read('client/app/components/ServerSettingsModal.vue');
-assert.match(serverSettings,
-  /v-if="d\.is_open"[\s\S]*server\.closeDevice\(d\.id\)[\s\S]*v-else[\s\S]*server\.openDevice/,
-  'device settings must close an open instance instead of opening a duplicate');
-
 assert.match(
   globalStyles,
   /--dialog-backdrop:[^;]+;[\s\S]*--dialog-surface:[^;]+;[\s\S]*--dialog-radius:[^;]+;[\s\S]*--dialog-shadow:[^;]+;/,
@@ -2644,10 +2709,8 @@ assert.match(
 );
 for (const file of [
   'AudioImportModal.vue',
-  'CartHotkeyConfig.vue',
   'ConnectionLostModal.vue',
   'ServerFilePickerModal.vue',
-  'ServerSettingsModal.vue',
 ].map(file => `client/app/components/${file}`)) {
   const dialog = read(file);
   for (const token of ['backdrop', 'surface', 'radius', 'shadow']) {
@@ -2656,7 +2719,7 @@ for (const file of [
   }
 }
 assert.doesNotMatch(
-  audioImportModal + serverSettings
+  audioImportModal
     + read('client/app/components/ServerFilePickerModal.vue')
     + read('client/app/components/ServerFileBrowser.vue'),
   /#(?:16161d|1a1a1a|1d1d1d|202020|202027|2a2a2a|353535)\b/i,

@@ -126,7 +126,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('server/vcpkg.json', 'server/ports/**', 'server/triplets/**') }}
+          key: vcpkg-${{ matrix.triplet }}-${{ hashFiles('server/vcpkg.json', 'server/triplets/**') }}
           restore-keys: vcpkg-${{ matrix.triplet }}-
 
       - name: Install Linux audio dev packages
@@ -363,14 +363,40 @@ jobs:
           $unpacked = "client/dist-electron/win-unpacked"
           $app = Join-Path $unpacked "DonWells Cue.exe"
           $server = Join-Path $unpacked "resources/server-bin/dwcue-server.exe"
-          $soundfont = Join-Path $unpacked "resources/server-bin/TimGM6mb.sf2"
-          foreach ($required in @($app, $server, $soundfont)) {
+          foreach ($required in @($app, $server)) {
             if (-not (Test-Path $required)) { throw "Packaged file missing: $required" }
           }
 
           # Starting the bundled server here catches missing app-local DLLs.
           & $server --help
           if ($LASTEXITCODE -ne 0) { throw "Packaged server failed with exit code $LASTEXITCODE" }
+
+          # Start the packaged audio engine the way choosing "This computer"
+          # does, and require it to answer as this version. A window check
+          # cannot see an engine that fails to start; this can. The result,
+          # with the tail of the engine log, is printed either way.
+          # Two attempts, each in a fresh profile: a real defect fails both,
+          # a slow runner does not cost the release.
+          $selfTestPassed = $false
+          foreach ($attempt in 1..2) {
+            $selfTest = Join-Path $env:RUNNER_TEMP "engine-self-test-$attempt.json"
+            $env:DWCUE_USERDATA = Join-Path $env:RUNNER_TEMP "dwcue-self-test-profile-$attempt"
+            try {
+              $check = Start-Process -FilePath $app -ArgumentList "--engine-self-test=$selfTest" -PassThru
+              $null = $check.Handle   # keeps the exit code readable after exit
+              $finished = $check.WaitForExit(150000)
+              if (-not $finished) { & taskkill.exe /PID $check.Id /T /F | Out-Null }
+              if (Test-Path $selfTest) { Get-Content $selfTest }
+              if ($finished -and $check.ExitCode -eq 0) { $selfTestPassed = $true; break }
+              Write-Host "Engine self-test attempt $attempt failed."
+            } finally {
+              Remove-Item Env:DWCUE_USERDATA
+              # Nothing from a failed attempt may keep the port or lock files.
+              & taskkill.exe /IM dwcue-server.exe /T /F 2>$null | Out-Null
+              $global:LASTEXITCODE = 0
+            }
+          }
+          if (-not $selfTestPassed) { throw "Packaged audio engine failed its self-test" }
 
           # --smoke-quit: main.js skips the interactive quit-confirmation veto
           # (the renderer's "close the server too?" dialog needs a human) so the

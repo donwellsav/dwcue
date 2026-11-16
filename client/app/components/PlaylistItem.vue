@@ -128,6 +128,33 @@
             draggable="false"
             @click.stop
           >bomb</span>
+          <!-- The group's level, the same value as Group level in Properties.
+               It rides here so a whole group can be trimmed without opening a
+               panel; in Show Mode the number is display-only and the steppers
+               stay, so no text field can take the keyboard from GO. -->
+          <span v-if="item.type === 'group'" class="group-level" draggable="false"
+            @click.stop @dblclick.stop @pointerdown.stop @mousedown.stop>
+            <button type="button" class="group-level__step" draggable="false"
+              :aria-label="t('playlist.groupLevelDown', { name: item.displayName })"
+              :title="t('playlist.groupLevelDown', { name: item.displayName })"
+              :disabled="!projectControlsReady || groupLevel <= GROUP_LEVEL_MIN"
+              @click.stop="nudgeGroupLevel(-1, $event)">−</button>
+            <output v-if="showMode" class="group-level__value group-level__value--readout"
+              :aria-label="t('playlist.groupLevelFor', { name: item.displayName })">{{ groupLevel.toFixed(1) }}</output>
+            <input v-else class="group-level__value" type="number" inputmode="decimal" draggable="false"
+              :min="GROUP_LEVEL_MIN" max="0" step="0.5" :value="groupLevel.toFixed(1)"
+              :aria-label="t('playlist.groupLevelFor', { name: item.displayName })"
+              :title="t('playlist.groupLevelFor', { name: item.displayName })"
+              :disabled="!projectControlsReady"
+              @keydown.stop @keyup.stop @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+              @change="setGroupLevel(($event.target as HTMLInputElement).valueAsNumber, $event)" />
+            <span class="group-level__unit" aria-hidden="true">dB</span>
+            <button type="button" class="group-level__step" draggable="false"
+              :aria-label="t('playlist.groupLevelUp', { name: item.displayName })"
+              :title="t('playlist.groupLevelUp', { name: item.displayName })"
+              :disabled="!projectControlsReady || groupLevel >= 0"
+              @click.stop="nudgeGroupLevel(1, $event)">+</button>
+          </span>
         </div>
 
         <div class="item-state">
@@ -347,6 +374,31 @@ const { uiMode } = useUiMode();
 // and warnings identical to edit mode.
 const showMode = computed(() => uiMode.value === 'playback');
 const projectControlsReady = computed(() => projectHydrationStatus.value === 'ready');
+
+// Group level: one value, also edited by the Group level slider in Properties.
+const GROUP_LEVEL_MIN = -60;
+const groupLevel = computed(() => {
+  const db = props.item.type === 'group' ? props.item.groupGainDb : 0;
+  return typeof db === 'number' && Number.isFinite(db) ? Math.min(0, Math.max(GROUP_LEVEL_MIN, db)) : 0;
+});
+let groupLevelSave: ReturnType<typeof setTimeout> | undefined;
+function setGroupLevel(value: number, event?: Event) {
+  if (props.item.type !== 'group' || !projectControlsReady.value) return;
+  const next = Number.isFinite(value) ? Math.min(0, Math.max(GROUP_LEVEL_MIN, Math.round(value * 2) / 2)) : groupLevel.value;
+  // Show what was accepted, even when it equals the old value (out-of-range entry).
+  const field = event?.target as HTMLInputElement | undefined;
+  if (field?.tagName === 'INPUT') field.value = next.toFixed(1);
+  if (next === groupLevel.value) return;
+  props.item.groupGainDb = next;     // reaches the engine at once, like any cue edit
+  // Several presses in a row become one save of the show file.
+  clearTimeout(groupLevelSave);
+  groupLevelSave = setTimeout(() => { void saveProject(); }, 400);
+}
+function nudgeGroupLevel(step: number, event: Event) {
+  setGroupLevel(groupLevel.value + step);
+  // Leave the keyboard with the transport: Space must stay GO, not this button.
+  (event.currentTarget as HTMLElement | null)?.blur();
+}
 
 const { isRevealed, forgetReveal } = usePlaylistReveal();
 
@@ -1255,8 +1307,76 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item.is-group > .item-content .item-identity {
-  grid-template-columns: var(--cue-number-width, 36px) max-content minmax(0, 1fr);
+  grid-template-columns: var(--cue-number-width, 36px) max-content minmax(0, max-content) max-content;
+  justify-content: start;
 }
+
+.group-level {
+  grid-column: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: var(--spacing-sm);
+  padding: 1px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-control);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+.group-level__step {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--control-radius) - 1px);
+  background: none;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover:not(:disabled) { background: var(--color-surface-hover); }
+  &:disabled { color: var(--color-text-tertiary); cursor: default; }
+}
+
+.group-level__value {
+  width: 5.2ch;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: 13px;
+  text-align: right;
+  appearance: textfield;
+  -moz-appearance: textfield;
+
+  &::-webkit-outer-spin-button,
+  &::-webkit-inner-spin-button { appearance: none; margin: 0; }
+  &:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; border-radius: 2px; }
+}
+
+.group-level__value--readout { display: inline-block; }
+
+.group-level__unit {
+  margin-right: 2px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+
+.playlist-item.show-mode .group-level__step {
+  width: 44px;
+  height: 44px;
+  font-size: 22px;
+}
+
+.playlist-item.show-mode .group-level__value { font-size: 16px; }
 
 .item-index {
   grid-column: 1;

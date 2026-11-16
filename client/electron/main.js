@@ -1,14 +1,12 @@
-const { app, BrowserWindow, View, ipcMain, dialog, shell, Menu, session, screen, desktopCapturer, powerSaveBlocker, webContents } = require('electron');
+const { app, BrowserWindow, View, ipcMain, dialog, shell, Menu, net, session, screen, desktopCapturer, powerSaveBlocker, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { spawn, exec, execFile } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { Readable, Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 const youtubesearchapi = require('youtube-search-api');
-const YTDlpWrap = require('yt-dlp-wrap').default;
-const ffmpeg = require('fluent-ffmpeg');
 const { promisify } = require('util');
 const https = require('https');
 const { fileURLToPath } = require('url');
@@ -28,6 +26,13 @@ const {
 const { buildVideoOutputContextTemplate } = require('./video-output-context-menu');
 const os = require('node:os');
 const { createTestCardConfig, AUDIO_SYNC_RATES } = require('./test-card-config');
+const {
+  downloadToFile,
+  extractTarballEntry,
+  ffmpegToolsFor,
+  fileMatchesIntegrity,
+  toolFileName,
+} = require('./ffmpeg-tools');
 const { cleanupConnectionFor, TestCardPlayback } = require('./test-card-playback');
 const { managedWebSocketHeaders } = require('./managed-websocket-origin');
 const { createOneShotMutationBroker, validateIdentity, sameIdentity } = require('./one-shot-mutation-broker');
@@ -47,7 +52,6 @@ const {
   spotifyReviewIsValid,
   validatedSpotifyUrl,
 } = require('./spotify-import-reliability');
-const execPromise = promisify(exec);
 const execFilePromise = promisify(execFile);
 
 app.setName('DonWells Cue');
@@ -62,7 +66,6 @@ app.setName('DonWells Cue');
 app.setPath('userData', process.env.DWCUE_USERDATA || path.join(app.getPath('appData'), 'LivePlay'));
 
 let ffmpegPath = null;
-let ffmpegAvailable = false;
 let ffmpegSetupPromise = null;
 
 const MAX_IPC_PATH_LENGTH = 32768;
@@ -1509,7 +1512,7 @@ async function ensureLiveplayServerRunning() {
     return { ok: false, port: cfg.localPort, error: 'config mode is not local' };
   }
   if (!fs.existsSync(resolveServerBinaryPath())) {
-    return { ok: false, port: cfg.localPort, error: 'the audio server program is missing from this installation' };
+    return { ok: false, port: cfg.localPort, error: 'its program file is missing from this installation' };
   }
   try { await startLiveplayServer(); }
   catch (e) { return { ok: false, port: cfg.localPort, error: String(e) }; }
@@ -1552,14 +1555,155 @@ async function ensureLiveplayServerRunning() {
   return {
     ok: false,
     port: cfg.localPort,
-    error: reported ? `the audio server reported: ${reported}` : 'server did not become healthy within 10s',
+    error: reported ? `it reported: ${reported}` : 'it did not respond in time',
   };
+}
+
+// What the running engine says about itself: its version and whether it is in use.
+function fetchEngineSummary(port, accessToken, timeoutMs = 2000) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+    const req = require('http').get({
+      host: '127.0.0.1', port, path: '/api/state/summary', timeout: timeoutMs,
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        body += chunk;
+        if (body.length > 4 * 1024 * 1024) { res.destroy(); finish(null); }
+      });
+      res.on('end', () => {
+        try { finish(res.statusCode === 200 ? JSON.parse(body) : null); } catch { finish(null); }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); finish(null); });
+    req.on('error', () => finish(null));
+  });
+}
+
+// The engine keeps running after the app quits, so an updated app can find the
+// previous version's engine still there and would talk to it in a newer
+// dialect. Swap it for the engine this app ships with, but only while it is
+// doing nothing: no show open, nothing loading, nothing playing. An engine in
+// use is never interrupted; it is replaced the next time it is found idle.
+let engineUpdateCheck = null;   // shared by every window asking at once
+let engineUpdateSettled = false;
+
+async function replaceOutdatedIdleEngine(ready) {
+  const summary = await fetchEngineSummary(ready.port, ready.accessToken);
+  const engineVersion = summary?.server?.version;
+  if (typeof engineVersion !== 'string') return ready;
+  if (engineVersion === app.getVersion()) {
+    engineUpdateSettled = true;
+    return ready;
+  }
+  const inUse = summary.project?.hasOpenProject !== false || summary.project?.audioLoading === true ||
+    !Array.isArray(summary.playing) || summary.playing.length > 0;
+  if (inUse) {
+    console.warn('[liveplay-server] engine', engineVersion, 'is older than this app but in use; leaving it running');
+    return ready;
+  }
+  // One swap per run: if the replacement reports the same version, the
+  // installation itself is mismatched and restarting again cannot help.
+  engineUpdateSettled = true;
+  console.log('[liveplay-server] replacing idle engine', engineVersion, 'with', app.getVersion());
+  if (!(await stopLiveplayServer())) return ready;
+  return ensureLiveplayServerRunning();
+}
+
+async function ensureCurrentEngineRunning() {
+  const ready = await ensureLiveplayServerRunning();
+  if (!ready?.ok || engineUpdateSettled) return ready;
+  if (!engineUpdateCheck) {
+    engineUpdateCheck = replaceOutdatedIdleEngine(ready)
+      .catch(() => ready)
+      .finally(() => { engineUpdateCheck = null; });
+  }
+  return engineUpdateCheck;
 }
 
 ipcMain.handle('liveplay-server:ensure-running', async (event) => {
   requireTrustedIpc(event);
-  return ensureLiveplayServerRunning();
+  return ensureCurrentEngineRunning();
 });
+
+// ---------------------------------------------------------------------------
+// Engine self-test, used by the release build
+// ---------------------------------------------------------------------------
+// `--engine-self-test=<file>` starts the audio engine exactly the way choosing
+// "This computer" does, writes what happened to <file>, stops the engine and
+// exits (0 = healthy). The release build runs it against the packaged app so
+// an installer whose engine cannot start is never published.
+function engineSelfTestResultPath(argv) {
+  const prefix = '--engine-self-test=';
+  const arg = argv.find(value => typeof value === 'string' && value.startsWith(prefix));
+  const target = arg ? arg.slice(prefix.length) : '';
+  return path.isAbsolute(target) ? target : null;
+}
+
+function liveplayServerLogTail(maxBytes = 12288) {
+  let fd;
+  try {
+    const file = path.join(app.getPath('userData'), 'logs', 'dwcue-server.log');
+    const stat = fs.statSync(file);
+    const length = Math.min(stat.size, maxBytes);
+    const tail = Buffer.alloc(length);
+    fd = fs.openSync(file, 'r');
+    fs.readSync(fd, tail, 0, length, stat.size - length);
+    return tail.toString('utf8').replace(/\u001b\[[0-9;]*m/g, '');
+  } catch {
+    return '';
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* already closed */ } }
+  }
+}
+
+async function runEngineSelfTest(resultPath) {
+  const result = {
+    ok: false,
+    appVersion: app.getVersion(),
+    platform: `${process.platform}-${process.arch}`,
+    engineBinary: resolveServerBinaryPath(),
+  };
+  // A check that hangs must still end with a verdict.
+  setTimeout(() => {
+    result.error = 'the check did not finish within 90 seconds';
+    result.engineLog = liveplayServerLogTail();
+    try { fs.writeFileSync(resultPath, JSON.stringify(result, null, 2)); } catch { /* reported by exit code */ }
+    app.exit(1);
+  }, 90000).unref();
+  try {
+    writeLiveplayConfig({ ...readLiveplayConfig(), mode: 'local' });
+    const started = await ensureLiveplayServerRunning();
+    result.port = started?.port ?? null;
+    if (!started?.ok) {
+      result.error = started?.error || 'the engine did not start';
+    } else {
+      const summary = await fetchEngineSummary(started.port, started.accessToken, 5000);
+      result.engineVersion = summary?.server?.version ?? null;
+      if (!summary) result.error = 'the engine started but did not answer an authenticated request';
+      else if (result.engineVersion !== result.appVersion) {
+        result.error = `the packaged engine is version ${result.engineVersion}, the app is ${result.appVersion}`;
+      } else result.ok = true;
+    }
+  } catch (error) {
+    result.error = String(error?.message || error);
+  }
+  try {
+    result.stopped = await stopLiveplayServer();
+    if (result.ok && !result.stopped) { result.ok = false; result.error = 'the engine did not stop'; }
+  } catch (error) {
+    result.ok = false;
+    result.error = 'stopping the engine failed: ' + String(error?.message || error);
+  }
+  result.engineLog = liveplayServerLogTail();
+  try { fs.writeFileSync(resultPath, JSON.stringify(result, null, 2)); }
+  catch (error) { console.error('[engine-self-test] could not write the result:', error.message); }
+  console.log('[engine-self-test]', result.ok ? 'passed' : `failed: ${result.error}`);
+  app.exit(result.ok ? 0 : 1);
+}
 
 // ===========================================================================
 // LAN auto-discovery — listen for the C++ server's UDP beacon and surface
@@ -1777,91 +1921,146 @@ ipcMain.handle('liveplay-projects:recent-clear', (event) => {
   return list;
 });
 
-// Setup bundled ffmpeg - always use the bundled version to avoid
-// issues on OS's with strict security requirements
-async function checkAndSetupFfmpeg() {
+// ===========================================================================
+// ffmpeg + ffprobe for the YouTube and Spotify importers
+// ---------------------------------------------------------------------------
+// These are not in the installer. The first import that needs them downloads
+// the builds pinned in ffmpeg-tools.js into userData/bin; nothing is fetched
+// at startup, or ever for a show that does not use the importers. Both
+// programs share one folder because yt-dlp and spotDL look for ffprobe beside
+// ffmpeg. (The audio engine decodes with its own FFmpeg and needs neither.)
+// ===========================================================================
+const FFMPEG_TOOL_NAMES = Object.freeze(['ffmpeg', 'ffprobe']);
+
+function ffmpegBinDir() {
+  return path.join(app.getPath('userData'), 'bin');
+}
+
+function ffmpegToolPath(tool) {
+  return path.join(ffmpegBinDir(), toolFileName(tool, process.platform));
+}
+
+function ffmpegReceiptPath() {
+  return path.join(ffmpegBinDir(), 'ffmpeg-tools.json');
+}
+
+// What was installed, and from which pinned download.
+function readFfmpegReceipt() {
   try {
-    const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
-    ffmpegPath = ffmpegInstaller.path;
-    
-    // In packaged app, the path may be inside app.asar - resolve it
-    if (ffmpegPath.includes('app.asar')) {
-      ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
-    }
-    
-    // Verify bundled version works
-    await execFilePromise(ffmpegPath, ['-version'], { timeout: 5000 });
-    ffmpegAvailable = true;
-    console.log('Using bundled ffmpeg:', ffmpegPath);
-    
-    // Set ffprobe path from @ffprobe-installer/ffprobe
-    try {
-      const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
-      let ffprobePath = ffprobeInstaller.path;
-      if (ffprobePath.includes('app.asar')) {
-        ffprobePath = ffprobePath.replace('app.asar', 'app.asar.unpacked');
-      }
-      ffmpeg.setFfprobePath(ffprobePath);
-      console.log('Using bundled ffprobe:', ffprobePath);
-    } catch (e) {
-      // Fallback: try ffprobe next to ffmpeg
-      const ffprobeFileName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
-      const ffprobePath = path.join(path.dirname(ffmpegPath), ffprobeFileName);
-      if (fs.existsSync(ffprobePath)) {
-        ffmpeg.setFfprobePath(ffprobePath);
-        console.log('Using ffprobe from ffmpeg directory:', ffprobePath);
-      } else {
-        // Fallback: try system-wide ffprobe from PATH
-        try {
-          const whichProbeCmd = process.platform === 'win32' ? 'where ffprobe' : 'which ffprobe';
-          const probeResult = await execPromise(whichProbeCmd, { timeout: 5000 });
-          const systemProbePath = probeResult.stdout.trim().split('\n')[0].trim();
-          ffmpeg.setFfprobePath(systemProbePath);
-          console.log('Using system ffprobe:', systemProbePath);
-        } catch (probeErr) {
-          console.warn('ffprobe not found, some features may be limited');
-        }
-      }
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('Failed to setup bundled ffmpeg:', error);
-    
-    // Fallback: try system-wide ffmpeg from PATH
-    try {
-      const whichCmd = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg';
-      const { stdout } = await execPromise(whichCmd, { timeout: 5000 });
-      const systemFfmpegPath = stdout.trim().split('\n')[0].trim();
-      
-      // Verify the system binary works
-      await execFilePromise(systemFfmpegPath, ['-version'], { timeout: 5000 });
-      ffmpegPath = systemFfmpegPath;
-      ffmpegAvailable = true;
-      console.log('Using system ffmpeg:', ffmpegPath);
-      
-      // Try to find system ffprobe too
-      try {
-        const whichProbeCmd = process.platform === 'win32' ? 'where ffprobe' : 'which ffprobe';
-        const probeResult = await execPromise(whichProbeCmd, { timeout: 5000 });
-        const systemFfprobePath = probeResult.stdout.trim().split('\n')[0].trim();
-        ffmpeg.setFfprobePath(systemFfprobePath);
-        console.log('Using system ffprobe:', systemFfprobePath);
-      } catch (probeErr) {
-        console.warn('System ffprobe not found, some features may be limited');
-      }
-      
-      return true;
-    } catch (systemError) {
-      console.error('System ffmpeg not found either:', systemError.message);
-      ffmpegAvailable = false;
-      return false;
-    }
+    const receipt = JSON.parse(fs.readFileSync(ffmpegReceiptPath(), 'utf8'));
+    return receipt && typeof receipt === 'object' && !Array.isArray(receipt) ? receipt : {};
+  } catch {
+    return {};
   }
 }
 
+async function ffmpegToolRuns(toolPath, timeout = 10000) {
+  try {
+    await execFilePromise(toolPath, ['-version'], { timeout, windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// An installed tool is used only while it is the build this version of the
+// app pins and its file is unchanged since it was verified.
+async function installedFfmpegToolIsCurrent(tool, pinned, receipt) {
+  const entry = receipt[tool];
+  if (!entry || entry.source !== pinned.integrity || typeof entry.sha256 !== 'string') return false;
+  return await hasExpectedSha256(ffmpegToolPath(tool), entry.sha256) &&
+    await ffmpegToolRuns(ffmpegToolPath(tool));
+}
+
+async function installFfmpegTool(tool, pinned) {
+  const toolPath = ffmpegToolPath(tool);
+  const archivePath = path.join(ffmpegBinDir(), tool + '.download.tgz');
+  // The candidate keeps the program's own file name so it can be run for the
+  // check below on every platform.
+  const candidateDir = path.join(ffmpegBinDir(), tool + '.candidate');
+  const candidatePath = path.join(candidateDir, toolFileName(tool, process.platform));
+  fs.rmSync(candidateDir, { recursive: true, force: true });
+  fs.mkdirSync(candidateDir, { recursive: true });
+  try {
+    await downloadToFile(net.fetch, pinned.url, archivePath);
+    if (!await fileMatchesIntegrity(archivePath, pinned.integrity)) {
+      throw new Error(tool + ' download failed its integrity check');
+    }
+    const entryName = 'package/' + toolFileName(tool, process.platform);
+    if (!await extractTarballEntry(archivePath, entryName, candidatePath)) {
+      throw new Error(tool + ' was missing from its download');
+    }
+    if (process.platform !== 'win32') fs.chmodSync(candidatePath, 0o755);
+    // A security scan of a new program can make its first run slow.
+    if (!await ffmpegToolRuns(candidatePath, 30000)) {
+      throw new Error('downloaded ' + tool + ' did not run');
+    }
+    const sha256 = await sha256File(candidatePath);
+    replaceVerifiedFile(candidatePath, toolPath);
+    return { source: pinned.integrity, sha256 };
+  } finally {
+    fs.rmSync(archivePath, { force: true });
+    fs.rmSync(candidateDir, { recursive: true, force: true });
+  }
+}
+
+async function installPinnedFfmpeg(pinned) {
+  fs.mkdirSync(ffmpegBinDir(), { recursive: true });
+  const receipt = readFfmpegReceipt();
+  const results = await Promise.allSettled(FFMPEG_TOOL_NAMES.map(async (tool) => {
+    if (await installedFfmpegToolIsCurrent(tool, pinned[tool], receipt)) return;
+    console.log('Installing integrity-verified ' + tool + '...');
+    receipt[tool] = await installFfmpegTool(tool, pinned[tool]);
+  }));
+  // Keep whichever tool did install, so a retry only fetches what is missing.
+  fs.writeFileSync(ffmpegReceiptPath(), JSON.stringify(receipt, null, 2));
+  const failure = results.find(result => result.status === 'rejected');
+  if (failure) throw failure.reason;
+  return ffmpegToolPath('ffmpeg');
+}
+
+// Used only when the pinned build cannot be installed.
+async function findSystemFfmpeg() {
+  try {
+    const locate = process.platform === 'win32' ? 'where.exe' : 'which';
+    const { stdout } = await execFilePromise(locate, ['ffmpeg'], { timeout: 5000, windowsHide: true });
+    const candidate = stdout.split(/\r?\n/)[0].trim();
+    return candidate && await ffmpegToolRuns(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+async function initializeFfmpeg() {
+  ffmpegPath = null;
+  try {
+    const pinned = ffmpegToolsFor(process.platform, process.arch);
+    if (pinned) {
+      try {
+        ffmpegPath = await installPinnedFfmpeg(pinned);
+        console.log('ffmpeg ready:', ffmpegPath);
+        return true;
+      } catch (error) {
+        console.error('Failed to install verified ffmpeg:', error.message);
+      }
+    }
+    ffmpegPath = await findSystemFfmpeg();
+    if (ffmpegPath) console.log('Using system ffmpeg:', ffmpegPath);
+  } catch (error) {
+    console.error('Failed to set up ffmpeg:', error.message);
+  }
+  return Boolean(ffmpegPath);
+}
+
+// Shared by every import in flight; a failure is forgotten so the next import
+// tries again rather than staying broken until the app is restarted.
 function setupFfmpeg() {
-  if (!ffmpegSetupPromise) ffmpegSetupPromise = checkAndSetupFfmpeg();
+  if (!ffmpegSetupPromise) {
+    ffmpegSetupPromise = initializeFfmpeg().then((ready) => {
+      if (!ready) ffmpegSetupPromise = null;
+      return ready;
+    });
+  }
   return ffmpegSetupPromise;
 }
 
@@ -1976,7 +2175,10 @@ async function downloadVerifiedFile(url, destination, expectedSha256) {
   const temporaryPath = destination + '.download';
   if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
   try {
-    await YTDlpWrap.downloadFile(url, temporaryPath);
+    // Electron's network stack follows the system proxy settings, and the
+    // download gives up when the connection stalls instead of hanging.
+    await app.whenReady();
+    await downloadToFile(net.fetch, url, temporaryPath);
     const actualSha256 = await sha256File(temporaryPath);
     if (actualSha256 !== expectedSha256) {
       throw new Error(
@@ -2195,8 +2397,33 @@ function setupSpotDl() {
 }
 
 // Start initialization immediately (concurrently; both are independent).
-void initializeYtDlp();
-const denoInitialization = initializeDeno();
+// yt-dlp and Deno are fetched in the background at startup so the first import
+// is quick. A computer that was offline then is not left without them: each
+// failed attempt is forgotten, and the next import simply tries again.
+let ytDlpSetupPromise = null;
+function setupYtDlp() {
+  if (!ytDlpSetupPromise) {
+    ytDlpSetupPromise = initializeYtDlp().then((ready) => {
+      if (!ready) ytDlpSetupPromise = null;
+      return ready;
+    });
+  }
+  return ytDlpSetupPromise;
+}
+
+let denoSetupPromise = null;
+function setupDeno() {
+  if (!denoSetupPromise) {
+    denoSetupPromise = initializeDeno().then((ready) => {
+      if (!ready) denoSetupPromise = null;
+      return ready;
+    });
+  }
+  return denoSetupPromise;
+}
+
+void setupYtDlp();
+const denoInitialization = setupDeno();
 
 let mainWindow = null;
 // Set by the updater after it completes shutdown preparation.
@@ -4976,106 +5203,6 @@ ipcMain.handle('is-dev-mode', (event) => {
   return isDevMode;
 });
 
-// Check FFmpeg availability
-ipcMain.handle('check-ffmpeg', async (event) => {
-  requireTrustedIpc(event);
-  await setupFfmpeg();
-  return {
-    available: ffmpegAvailable,
-    path: ffmpegPath || null
-  };
-});
-
-// Waveform generation
-ipcMain.handle('generate-waveform', async (event, audioFilePath, outputPath) => {
-  requireTrustedIpc(event);
-  audioFilePath = requireAuthorizedIpcPath(audioFilePath, 'audioFilePath');
-  outputPath = requireAuthorizedIpcPath(outputPath, 'outputPath', true);
-  if (!(await setupFfmpeg())) throw new Error('FFmpeg is unavailable');
-  return new Promise((resolve, reject) => {
-    console.log('Generating waveform for:', audioFilePath);
-    console.log('Output path:', outputPath);
-    
-    // Ensure output directory exists
-    const outputDir = path.dirname(outputPath);
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-    
-    // Use the detected ffmpeg path
-    if (ffmpegPath) {
-      ffmpeg.setFfmpegPath(ffmpegPath);
-    }
-    
-    // First, get the duration
-    ffmpeg.ffprobe(audioFilePath, (err, metadata) => {
-      if (err) {
-        console.error('FFprobe error:', err);
-        reject(err);
-        return;
-      }
-      
-      const duration = metadata.format.duration;
-      if (!duration) {
-        reject(new Error('Could not determine audio duration'));
-        return;
-      }
-      
-      // Calculate samples: 10 per second
-      const targetSamples = Math.ceil(duration * 10);
-      const samples = [];
-      const tempOutput = outputPath + '.temp.wav';
-      
-      // Extract raw audio data
-      ffmpeg(audioFilePath)
-        .audioChannels(1)
-        .audioFrequency(8000) // Lower frequency for smaller data
-        .format('s16le')
-        .on('error', (err) => {
-          console.error('FFmpeg waveform error:', err);
-          reject(err);
-        })
-        .on('end', () => {
-          // Read the temp file and process samples
-          try {
-            if (fs.existsSync(tempOutput)) {
-              const buffer = fs.readFileSync(tempOutput);
-              
-              // Process samples to get exactly 10 per second
-              const sampleInterval = Math.floor(buffer.length / (targetSamples * 2)); // 2 bytes per sample
-              
-              for (let i = 0; i < buffer.length - 1 && samples.length < targetSamples; i += sampleInterval * 2) {
-                const sample = buffer.readInt16LE(i) / 32768.0; // Normalize to -1 to 1
-                samples.push(Math.abs(sample));
-              }
-              
-              // Clean up temp file
-              fs.unlinkSync(tempOutput);
-              
-              // Save waveform data (including duration for convenience)
-              const waveformData = {
-                peaks: samples,
-                sampleRate: 10, // 10 samples per second
-                duration: duration // Include duration in seconds
-              };
-              
-              fs.writeFileSync(outputPath, JSON.stringify(waveformData));
-              console.log('Waveform generated successfully:', samples.length, 'samples @10/sec for', duration.toFixed(2), 'seconds');
-              
-              resolve({ success: true });
-            } else {
-              reject(new Error('Temporary audio file not created'));
-            }
-          } catch (error) {
-            console.error('Error processing waveform:', error);
-            reject(error);
-          }
-        })
-        .save(tempOutput);
-    });
-  });
-});
-
 const activeSpotifyDownloads = new Map();
 const activeSpotifyPreflightJobs = new Map();
 const spotifyPreflights = new Map();
@@ -6192,11 +6319,9 @@ ipcMain.handle('cancel-youtube-download', async (event, jobId) => {
 });
 
 async function waitForYtDlp() {
-  for (let attempts = 0; !ytDlpReady && attempts < 30; attempts++) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  if (!ytDlpReady || !ytDlpPath) {
-    throw new Error('yt-dlp failed to initialize. Please restart the application.');
+  void setupDeno();   // optional; the download below waits briefly for it
+  if (!await setupYtDlp() || !ytDlpPath) {
+    throw new Error('The YouTube downloader could not be downloaded. The next import will try again.');
   }
 }
 
@@ -6334,7 +6459,7 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
     // Video mode needs ffmpeg to mux the separate video+audio streams; mp3
     // mode needs it for transcode.
     if ((outputMode === 'mp3' || outputMode === 'video') && !(await setupFfmpeg())) {
-      throw new Error('Bundled FFmpeg failed to initialize. Please restart the application.');
+      throw new Error('The converter this import needs could not be downloaded. The next import will try again.');
     }
 
     try {
@@ -6627,6 +6752,14 @@ if (!gotTheLock) {
       ].join('\n'),
     });
 
+    // The release build's engine check runs without any window: nothing else
+    // may start, stop or reconnect to the engine while it is being judged.
+    const engineSelfTest = engineSelfTestResultPath(process.argv);
+    if (engineSelfTest) {
+      void runEngineSelfTest(engineSelfTest);
+      return;
+    }
+
     createWindow();
 
     // Register this only after ready. macOS may emit `activate` during the
@@ -6635,14 +6768,6 @@ if (!gotTheLock) {
     app.on('activate', () => {
       if (mainWindow === null || mainWindow.isDestroyed()) {
         createWindow();
-      }
-    });
-
-    // Tool probing must never gate first paint. Feature handlers await the
-    // same bounded setup promise if the user reaches them immediately.
-    void setupFfmpeg().then((ready) => {
-      if (!ready) {
-        console.error('Warning: Bundled ffmpeg failed to initialize. Audio processing may be limited.');
       }
     });
 

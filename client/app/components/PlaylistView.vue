@@ -16,14 +16,16 @@
       </div>
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
       <div v-if="!showMode" class="playlist-actions" :inert="readOnly">
-        <Btn icon="audio_file" :text="t('playlist.importAudio')" :title="t('playlist.importAudio')"
-          :aria-label="t('playlist.importAudio')" :disabled="!currentProject" @click="handleImport" />
+        <!-- One Import button. With online sources available it opens the
+             choices in the lower panel, like every other picker; otherwise
+             there is only one source and it goes straight to it. -->
+        <Btn icon="add" :text="t('playlist.importMenu')" :title="t('playlist.importMenu')"
+          :aria-label="t('playlist.importMenu')" :disabled="!currentProject"
+          :aria-expanded="canOnlineImport ? workspaceImportPanel === 'import-choice' : undefined"
+          :aria-controls="canOnlineImport ? 'workspace-import-host' : undefined"
+          @click="handleImportButton" />
         <Btn v-if="importReviewAvailable" icon="list_alt" :text="t('importAudio.resultsTitle')"
           :title="t('importAudio.resultsTitle')" :aria-label="t('importAudio.resultsTitle')" @click="handleImport" />
-        <Btn v-if="canOnlineImport" icon="youtube_activity" :text="t('youtube.importFromYouTube')"
-          :title="t('youtube.importFromYouTube')" :aria-label="t('youtube.importFromYouTube')" @click="openImport('youtube')" />
-        <Btn v-if="canOnlineImport" icon="library_music" :text="t('spotifyImport.button')"
-          :title="t('spotifyImport.button')" :aria-label="t('spotifyImport.button')" @click="openImport('spotify')" />
         <Btn icon="folder" :text="t('playlist.addGroup')" :title="t('playlist.addGroup')"
           :aria-label="t('playlist.addGroup')" :disabled="!currentProject" @click="handleAddGroup" />
         <Btn icon="shuffle" :text="t('shuffle.label')" :title="t('shuffle.playlist')"
@@ -64,6 +66,12 @@
     </div>
 
     <Teleport defer to="#workspace-import-host">
+      <section v-if="workspaceImportPanel === 'import-choice'" class="import-choice"
+        :aria-label="t('playlist.importMenu')">
+        <Btn type="button" icon="audio_file" :text="t('playlist.importFiles')" @click="openImport('media')" />
+        <Btn v-if="canOnlineImport" type="button" icon="youtube_activity" :text="t('youtube.importFromYouTube')" @click="openImport('youtube')" />
+        <Btn v-if="canOnlineImport" type="button" icon="library_music" :text="t('spotifyImport.button')" @click="openImport('spotify')" />
+      </section>
       <YouTubeImportModal
         :key="`youtube-${projectEpoch}`"
         :visible="workspaceImportPanel === 'youtube'"
@@ -177,6 +185,10 @@ const playlistRowStyle = computed(() => ({
 }));
 const scrollContainer = ref<HTMLElement | null>(null);
 const canOnlineImport = computed(() => !!currentProject.value && server.isLocalServer);
+// The chooser only exists to offer the online importers; close it if they stop applying.
+watch(canOnlineImport, (allowed) => {
+  if (!allowed && workspaceImportPanel.value === 'import-choice') workspaceImportPanel.value = null;
+});
 
 const showProjectSettings = useState('showProjectSettings', () => false);
 // The dock can hide a form while its import still owns an active job.
@@ -486,6 +498,14 @@ onUnmounted(() => {
 const handleImport = () => {
   if (!currentProject.value) return;
   openImport('media');
+};
+
+// The Import button: a second press puts the choices away again.
+const handleImportButton = () => {
+  if (!currentProject.value) return;
+  if (!canOnlineImport.value) return handleImport();
+  showProjectSettings.value = false;
+  workspaceImportPanel.value = workspaceImportPanel.value === 'import-choice' ? null : 'import-choice';
 };
 
 function openImport(panel: keyof typeof importOpen) {
@@ -1323,6 +1343,20 @@ const handleDrop = async (e: DragEvent) => {
 
 .playlist-header .workspace-panel-header__leading {
   flex: 0 0 auto;
+}
+
+.import-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+  padding: var(--spacing-sm) var(--workspace-gutter);
+}
+
+.import-choice :deep(.btn) {
+  min-height: calc(var(--panel-control-height) + 8px);
+  padding-inline: var(--spacing-lg, 16px);
+  font-size: 13px;
 }
 
 .music-toggle,

@@ -697,14 +697,13 @@ test('broadcast HTTP actions cannot execute side effects in client windows', () 
 });
 
 function loadSetNextCaller(
-  component: 'PlaylistItem' | 'CartSlot' | 'PlaybackControls' | 'WaveformTrimmer',
+  component: 'PlaylistItem' | 'PlaybackControls' | 'WaveformTrimmer',
   dependencies: Record<string, unknown>,
 ): () => Promise<boolean> {
   const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
   const source = readFileSync(filename, 'utf8');
   const names = {
     PlaylistItem: 'handleSetAsNext',
-    CartSlot: 'handleSetAsNext',
     PlaybackControls: 'handleSetPreviewNext',
     WaveformTrimmer: 'setAuditionAsNext',
   } as const;
@@ -739,13 +738,6 @@ test('playlist and cart toggle Set As Next while Preview and Waveform stay set-o
   isManuallyQueued.value = true;
   await playlist();
 
-  props.item.uuid = 'cart-item';
-  isManuallyQueued.value = false;
-  const cart = loadSetNextCaller('CartSlot', { isManuallyQueued, props, setNextItem });
-  await cart();
-  isManuallyQueued.value = true;
-  await cart();
-
   const previewItemUuid = { value: 'preview-item' };
   const preview = loadSetNextCaller('PlaybackControls', { previewItemUuid, setNextItem });
   await preview();
@@ -757,7 +749,6 @@ test('playlist and cart toggle Set As Next while Preview and Waveform stay set-o
 
   assert.deepEqual(calls, [
     'row-item', null,
-    'cart-item', null,
     'preview-item', 'preview-item',
     'wave-item', 'wave-item',
   ]);

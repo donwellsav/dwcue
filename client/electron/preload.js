@@ -67,10 +67,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setCurrentProject: (projectPath) => ipcRenderer.invoke('set-current-project', projectPath),
 
   // Waveform generation
-  generateWaveform: (audioPath, outputPath) => ipcRenderer.invoke('generate-waveform', audioPath, outputPath),
 
   // FFmpeg check
-  checkFfmpeg: () => ipcRenderer.invoke('check-ffmpeg'),
 
   // YouTube features
   searchYouTube: (query) => ipcRenderer.invoke('search-youtube', query),

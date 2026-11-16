@@ -35,8 +35,7 @@ This developer guide tracks the v2.6.20 client. Match the installed About versio
 | Renderer         | Nuxt 4 (Vue 3 Composition API, TypeScript, SCSS)                |
 | UI primitives    | Material Symbols icons; in-house components — no UI framework   |
 | Local server     | C++ `dwcue-server` binary spawned as a child process         |
-| Media tooling    | `@ffmpeg-installer/ffmpeg`, `@ffprobe-installer/ffprobe`        |
-| YouTube import   | `yt-dlp-wrap` + `youtube-search-api`                            |
+| Online import    | `youtube-search-api`; `yt-dlp`, Deno, spotDL, `ffmpeg` and `ffprobe` are not bundled — pinned builds are downloaded and verified on first use (`electron/ffmpeg-tools.js`, `electron/main.js`) |
 | Updates          | `electron-updater` (GitHub Releases feed: `donwellsav/dwcue`)      |
 | File transport   | Chunked uploads for controller media and server-backed REST transfer for `.dwcuepack` project archives |
 

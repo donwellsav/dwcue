@@ -196,9 +196,6 @@ jobs:
           fi
           cp server/README.md artifact/README.md
           cp LICENCE.txt artifact/LICENCE.txt
-          cp server/assets/TimGM6mb.sf2 artifact/
-          cp server/assets/TimGM6mb.NOTICE.md artifact/
-          cp server/assets/TimGM6mb.GPL-2.0.txt artifact/
           tar -czf "${{ matrix.artifact_name }}.tar.gz" -C artifact .
 
       - name: Upload artefact

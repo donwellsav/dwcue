@@ -38,7 +38,6 @@ declare global {
       }) => Promise<{ success: true; path: string } | { success: false; error?: string }>;
       copyFile: (source: string, destination: string) => Promise<{ success: boolean; error?: string }>;
       ensureDirectory: (dirPath: string) => Promise<{ success: boolean; error?: string }>;
-      generateWaveform: (audioPath: string, outputPath: string) => Promise<{ success: boolean; error?: string }>;
       openFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
       getImportPreferences: () => Promise<{
         preferencesSaved: boolean;
@@ -85,7 +84,6 @@ declare global {
       clearSpotifyImportRecovery: (activeProjectFolderPath: string) => Promise<boolean>;
       setCurrentProject: (projectPath: string) => Promise<{ success: boolean }>;
       getFilePath: (file: File) => string | null;
-      checkFfmpeg: () => Promise<{ available: boolean; path: string | null }>;
       searchYouTube: (query: string) => Promise<Array<{
         id: string;
         title: string;

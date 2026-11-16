@@ -61,7 +61,7 @@ When a newer release is available, the desktop app shows a five-second header no
 
 Connect the audio interface before opening the show. Confirm the correct outputs at the sound console, start with a conservative listening level, connect mains power, and disable sleep for the performance using the operating system's controls. Prevent notification sounds from reaching the audience. Keep a separate copy of the show and its media on reliable storage.
 
-On launch, the desktop normally starts its managed local server automatically. The welcome screen indicates **Using local server on this computer** once connected. If the engine is starting, wait for connection rather than repeatedly reopening the app. The **Connect to a server on the network…** option reveals remote setup; see chapter 10 before using it.
+On launch, the desktop normally starts its managed local server automatically. The welcome screen indicates **Using the audio engine on this computer** once connected. If the engine is starting, wait for connection rather than repeatedly reopening the app. The **Connect to a server on the network…** option reveals remote setup; see chapter 10 before using it.
 
 ![Welcome screen connected to the isolated software engine, showing version 2.6.17.](manual-assets/welcome-current.png)
 
@@ -159,7 +159,7 @@ Accepted GO consumes an override and refused GO retains it. Check readiness, err
 
 ### Local files first
 
-Open **Import Media** from the playlist. For a local engine, **Choose files…** and **Choose folder…** both open in the lower panel. Use **Add** to stage selected files. Choosing a folder stages supported files from it and its subfolders in filename order. Use **Select all** or **Select none** to adjust the batch. **Import as group** puts the selected cues in a group named for the folder.
+Choose **Import** on the playlist bar, then **Media files**. The file browser opens tall so a folder can be read without constant scrolling. Use the arrows button beside **Close** to make an import panel larger or return it to its usual size, or drag the bar at its top edge. When the show can only import files (a remote engine), **Import** opens Media files directly. For a local engine, **Choose files…** and **Choose folder…** both open in the lower panel. Use **Add** to stage selected files. Choosing a folder stages supported files from it and its subfolders in filename order. Use **Select all** or **Select none** to adjust the batch. **Import as group** puts the selected cues in a group named for the folder.
 
 If a subfolder cannot be read, its relative path appears in a warning. The readable files remain available to import. Restore access and select the skipped subfolder separately if the show needs its files.
 
@@ -215,7 +215,7 @@ Wait for the source copy/download to finish and for media readiness before takin
 
 YouTube and Spotify import controls are available in Edit Mode. They depend on external services and downloader availability. Prepare and verify these imports before the show, not on a live cue call. Use only material you are authorized to obtain and perform; an import feature does not supply a public-performance licence. Once imported, rehearse from the local show media rather than relying on a working internet connection at the venue.
 
-**Import from YouTube** and **Spotify** open in the lower panel. Close the panel or switch to Settings or Properties to make room for the playlist during a job. Reopen the same import to check its progress, results, or retry actions. Use the job’s **Cancel** button to stop the import. **Stop All Cues** controls playback independently.
+Choose **Import** on the playlist bar, then **Import from YouTube** or **Spotify**; each opens in the lower panel. The first online import on a computer downloads the converter it needs once, and later imports reuse it. Do that first import before the show, while the computer is online. Close the panel or switch to Settings or Properties to make room for the playlist during a job. Reopen the same import to check its progress, results, or retry actions. Use the job’s **Cancel** button to stop the import. **Stop All Cues** controls playback independently.
 
 Paste a Spotify link or short share link, then choose **Review tracks** to retrieve usable tracks in playlist order. The review counts entries with missing or invalid Spotify track IDs. Large playlists can take several minutes to review. Use **Select all** or **Select none** above the track list, then **Download & Add** below it. Use **Change Link** to return to the URL field. During a download, the panel shows the current phase, count, and **Cancel**. Resolve unavailable, unmatched or failed entries before taking the cues. **Technical details** shows the downloader's message if review fails.
 
@@ -299,7 +299,7 @@ Do not use a loop as a substitute for rehearsing the loop boundary. Check for cl
 
 Open the group's **Edit** control to see **Start Behavior**, **End Behavior**, and the **Continue with** backup selector together under **Cueing**. **Play First** follows the first-child path and honors each nested group’s Start Behavior. It requires the first child to be ready. A nested **Play All** on that path can start several cues. **Play All** owns the selected descendant subtree and starts each selected playable descendant exactly once, including nested groups. For **Play All**, set each child's ducking for simultaneous playback.
 
-Use the **Group Level** fader in group Properties to lower all audio inside the group, including the soundtrack of video cues. The fader runs from −60 to 0 dB and shows the exact setting beside it. Individual cue gains stay as saved. A cue inside several groups receives the combined attenuation, and cues outside the group keep their own levels.
+Use the **Group Level** fader in group Properties to lower all audio inside the group, including the soundtrack of video cues. The fader runs from −60 to 0 dB and shows the exact setting beside it. The same level appears on the group's row in the playlist, beside its title: press **−** or **+** to move it 1 dB, or type a value in Edit Mode. In Show Mode the number is display-only and the **−** and **+** buttons remain. Both controls set one value, and the change is heard at once. Individual cue gains stay as saved. A cue inside several groups receives the combined attenuation, and cues outside the group keep their own levels.
 
 ![Group Properties with Group Level, Start Behavior, End Behavior, and backup selection.](manual-assets/group-current.png)
 

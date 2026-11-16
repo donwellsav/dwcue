@@ -74,7 +74,6 @@ for (const [file, source] of files) {
 }
 for (const [file, pathName] of [
   ['client/app/components/PlaylistView.vue', 'playlist/Spotify/YouTube'],
-  ['client/app/components/CartSlot.vue', 'cart slot'],
   ['client/app/components/OneShotPanel.vue', 'one-shot cart'],
 ]) {
   assert.ok(

@@ -207,8 +207,8 @@ Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.
 |  Electron + Nuxt 4 + Vue 3     | <----- transport / route cmds --- |  C++20, miniaudio, Crow, TagLib   |
 |                                |        REST  (http://host:4480)   |                                   |
 |  - Playlist / QuickPlays / output controls | <----- list / load / waveform --> |  - AudioEngine (mixer + limiter)  |
-|  - WaveformCanvas              |                                   |  - ProjectState (.dwcue I/O)      |
-|  - LiveMeterBar                |                                   |  - ControlServer (REST + WS)      |
+|  - WaveformTrimmer             |                                   |  - ProjectState (.dwcue I/O)      |
+|  - StereoMeter                 |                                   |  - ControlServer (REST + WS)      |
 |                                |                                   |  - Metadata + waveform services   |
 |  No audio plays in the         |                                   |                                   |
 |  renderer process.             |                                   |  Win → WASAPI · Mac → CoreAudio   |

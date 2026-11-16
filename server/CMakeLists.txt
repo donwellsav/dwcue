@@ -37,7 +37,6 @@ endif()
 # Read version from vcpkg.json to keep build version in sync with package manifest
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg.json" VCPKG_JSON_CONTENT)
 string(JSON LIVEPLAY_VERSION GET "${VCPKG_JSON_CONTENT}" "version-string")
-set(VCPKG_OVERLAY_PORTS "${CMAKE_CURRENT_SOURCE_DIR}/ports" CACHE STRING "Local vcpkg ports")
 
 project(liveplay-server
     VERSION ${LIVEPLAY_VERSION}
@@ -106,13 +105,6 @@ find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
 # miniz — used for .dwcuepack/.lpa project archive import and export.
 find_package(miniz CONFIG REQUIRED)
 find_package(FFMPEG REQUIRED)
-find_package(FluidSynth CONFIG REQUIRED)
-find_path(GME_INCLUDE_DIR gme/gme.h REQUIRED)
-find_library(GME_LIBRARY NAMES gme REQUIRED)
-# GME is static and its gzip reader needs zlib after the archive on GNU ld.
-list(APPEND GME_LIBRARY ZLIB::ZLIB)
-find_path(VGMSTREAM_INCLUDE_DIR vgmstream/libvgmstream.h REQUIRED)
-find_library(VGMSTREAM_LIBRARY NAMES vgmstream REQUIRED)
 
 # ---------------------------------------------------------------------------
 # miniaudio implementation translation unit
@@ -203,8 +195,6 @@ target_include_directories(liveplay-server
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${FFMPEG_INCLUDE_DIRS}
-        ${GME_INCLUDE_DIR}
-        ${VGMSTREAM_INCLUDE_DIR}
 )
 
 target_link_directories(liveplay-server PRIVATE ${FFMPEG_LIBRARY_DIRS})
@@ -218,9 +208,6 @@ target_link_libraries(liveplay-server
         liveplay_miniaudio
         miniz::miniz
         ${FFMPEG_LIBRARIES}
-        FluidSynth::libfluidsynth
-        ${GME_LIBRARY}
-        ${VGMSTREAM_LIBRARY}
 )
 
 # Link TagLib under whichever target name vcpkg exposed.
@@ -242,15 +229,7 @@ endif()
 target_compile_definitions(liveplay-server PRIVATE
     LIVEPLAY_SERVER_VERSION="${PROJECT_VERSION}"
     LIVEPLAY_SERVER_NAME="dwcue-server"
-    LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2"
 )
-
-foreach(asset TimGM6mb.sf2 TimGM6mb.NOTICE.md TimGM6mb.GPL-2.0.txt)
-    add_custom_command(TARGET liveplay-server POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/assets/${asset}"
-            "$<TARGET_FILE_DIR:liveplay-server>/${asset}")
-endforeach()
 
 # ---------------------------------------------------------------------------
 # Tests (opt-in; framework-free assertion binaries)
@@ -342,8 +321,6 @@ if(LIVEPLAY_BUILD_TESTS)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include
             ${FFMPEG_INCLUDE_DIRS}
-            ${GME_INCLUDE_DIR}
-            ${VGMSTREAM_INCLUDE_DIR}
     )
     target_link_directories(liveplay-waveform-tests PRIVATE ${FFMPEG_LIBRARY_DIRS})
     target_link_libraries(liveplay-waveform-tests
@@ -351,12 +328,6 @@ if(LIVEPLAY_BUILD_TESTS)
             liveplay_miniaudio
             Threads::Threads
             ${FFMPEG_LIBRARIES}
-            FluidSynth::libfluidsynth
-            ${GME_LIBRARY}
-            ${VGMSTREAM_LIBRARY}
-    )
-    target_compile_definitions(liveplay-waveform-tests PRIVATE
-        LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2"
     )
     add_test(NAME waveform COMMAND liveplay-waveform-tests)
 
@@ -369,15 +340,10 @@ if(LIVEPLAY_BUILD_TESTS)
     )
     target_include_directories(liveplay-audio-import-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include ${FFMPEG_INCLUDE_DIRS}
-        ${GME_INCLUDE_DIR} ${VGMSTREAM_INCLUDE_DIR}
     )
     target_link_directories(liveplay-audio-import-tests PRIVATE ${FFMPEG_LIBRARY_DIRS})
     target_link_libraries(liveplay-audio-import-tests PRIVATE
         liveplay_miniaudio Threads::Threads ${FFMPEG_LIBRARIES}
-        FluidSynth::libfluidsynth ${GME_LIBRARY} ${VGMSTREAM_LIBRARY}
-    )
-    target_compile_definitions(liveplay-audio-import-tests PRIVATE
-        LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2"
     )
     find_package(Python3 COMPONENTS Interpreter QUIET)
     find_program(FFMPEG_TEST_EXECUTABLE ffmpeg)
@@ -403,21 +369,15 @@ if(LIVEPLAY_BUILD_TESTS)
     target_include_directories(liveplay-audio-rt-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${FFMPEG_INCLUDE_DIRS}
-        ${GME_INCLUDE_DIR}
-        ${VGMSTREAM_INCLUDE_DIR}
     )
     target_link_directories(liveplay-audio-rt-tests PRIVATE ${FFMPEG_LIBRARY_DIRS})
     target_link_libraries(liveplay-audio-rt-tests PRIVATE
         liveplay_miniaudio
         Threads::Threads
         ${FFMPEG_LIBRARIES}
-        FluidSynth::libfluidsynth
-        ${GME_LIBRARY}
-        ${VGMSTREAM_LIBRARY}
     )
     target_compile_definitions(liveplay-audio-rt-tests PRIVATE
-        LIVEPLAY_TEST_ACCESS=1
-        LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
+        LIVEPLAY_TEST_ACCESS=1)
     add_test(NAME audio-rt COMMAND liveplay-audio-rt-tests)
     add_executable(liveplay-audio-output-tests
         tests/audio_output_test.cpp
@@ -433,18 +393,14 @@ if(LIVEPLAY_BUILD_TESTS)
     target_include_directories(liveplay-audio-output-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${FFMPEG_INCLUDE_DIRS}
-        ${GME_INCLUDE_DIR}
-        ${VGMSTREAM_INCLUDE_DIR}
     )
     target_link_directories(liveplay-audio-output-tests PRIVATE ${FFMPEG_LIBRARY_DIRS})
     target_link_libraries(liveplay-audio-output-tests PRIVATE
         liveplay_miniaudio Threads::Threads ${FFMPEG_LIBRARIES}
-        FluidSynth::libfluidsynth ${GME_LIBRARY} ${VGMSTREAM_LIBRARY}
     )
     target_compile_definitions(liveplay-audio-output-tests PRIVATE
         LIVEPLAY_TEST_ACCESS=1
-        LIVEPLAY_TEST_HOOKS=1
-        LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
+        LIVEPLAY_TEST_HOOKS=1)
     add_test(NAME audio-output COMMAND liveplay-audio-output-tests)
     add_executable(liveplay-project-state-runtime-tests
         tests/project_state_runtime_test.cpp
@@ -466,8 +422,6 @@ if(LIVEPLAY_BUILD_TESTS)
     target_include_directories(liveplay-project-state-runtime-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${FFMPEG_INCLUDE_DIRS}
-        ${GME_INCLUDE_DIR}
-        ${VGMSTREAM_INCLUDE_DIR}
     )
     target_link_directories(liveplay-project-state-runtime-tests PRIVATE ${FFMPEG_LIBRARY_DIRS})
     target_link_libraries(liveplay-project-state-runtime-tests PRIVATE
@@ -475,9 +429,6 @@ if(LIVEPLAY_BUILD_TESTS)
         nlohmann_json::nlohmann_json
         liveplay_miniaudio
         ${FFMPEG_LIBRARIES}
-        FluidSynth::libfluidsynth
-        ${GME_LIBRARY}
-        ${VGMSTREAM_LIBRARY}
     )
     if(WIN32)
         target_link_libraries(liveplay-project-state-runtime-tests PRIVATE dbghelp)
@@ -492,8 +443,7 @@ if(LIVEPLAY_BUILD_TESTS)
     target_compile_definitions(liveplay-project-state-runtime-tests PRIVATE
         LIVEPLAY_TEST_ACCESS=1
         LIVEPLAY_TEST_NO_DEVICE_ROUTING=1
-        LIVEPLAY_TEST_HOOKS=1
-        LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
+        LIVEPLAY_TEST_HOOKS=1)
     add_test(NAME project-state-runtime COMMAND liveplay-project-state-runtime-tests)
 endif()
 
@@ -502,11 +452,6 @@ endif()
 # ---------------------------------------------------------------------------
 include(GNUInstallDirs)
 install(TARGETS liveplay-server RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES
-    assets/TimGM6mb.sf2
-    assets/TimGM6mb.NOTICE.md
-    assets/TimGM6mb.GPL-2.0.txt
-    DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 include(CTest)
 if(BUILD_TESTING)
@@ -517,14 +462,9 @@ if(BUILD_TESTING)
     target_include_directories(decoder-check PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${FFMPEG_INCLUDE_DIRS}
-        ${GME_INCLUDE_DIR}
-        ${VGMSTREAM_INCLUDE_DIR}
     )
     target_link_directories(decoder-check PRIVATE ${FFMPEG_LIBRARY_DIRS})
     target_link_libraries(decoder-check PRIVATE
-        liveplay_miniaudio ${FFMPEG_LIBRARIES} FluidSynth::libfluidsynth
-        ${GME_LIBRARY} ${VGMSTREAM_LIBRARY})
-    target_compile_definitions(decoder-check PRIVATE
-        LIVEPLAY_DEFAULT_SOUNDFONT="${CMAKE_CURRENT_SOURCE_DIR}/assets/TimGM6mb.sf2")
+        liveplay_miniaudio ${FFMPEG_LIBRARIES})
     add_test(NAME decoder COMMAND decoder-check --self-test)
 endif()

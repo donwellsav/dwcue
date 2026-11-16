@@ -456,7 +456,7 @@ async function probeServerReachable(url: string): Promise<void> {
 async function ensureLocalServer(): Promise<boolean> {
   const api = (window as any).electronAPI?.liveplayServer;
   if (!import.meta.client || !api?.setConfig || !api?.ensureRunning) {
-    connectionError.value = t('welcome.connectionFailed') + ' (local server controls unavailable)';
+    connectionError.value = t('welcome.engineUnavailable');
     return false;
   }
 
@@ -464,8 +464,8 @@ async function ensureLocalServer(): Promise<boolean> {
   const res = await api.ensureRunning();
   if (!res?.ok || !res.accessToken) {
     connectionError.value = res?.error
-      ? 'Local server failed to start: ' + res.error
-      : 'Local server failed to provide an access credential. Restart DonWells Cue and try again.';
+      ? t('welcome.engineStartFailed', { reason: res.error })
+      : t('welcome.engineNoAccess');
     return false;
   }
 

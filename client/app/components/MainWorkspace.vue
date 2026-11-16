@@ -215,7 +215,7 @@
 
     <div v-show="lowerPanelOpen" ref="lowerPanel" class="lower-workspace-panel"
       :class="{ 'lower-workspace-panel--deciding': decisionOpen, 'lower-workspace-panel--browsing-files': filePicker }"
-      :style="{ height: decisionOpen || panelHeight === null ? 'auto' : `${panelHeight}px`, maxHeight: `${MAX_PANEL_HEIGHT_PERCENT}%` }"
+      :style="{ height: lowerPanelHeight, maxHeight: `${panelMaxPercent}%` }"
       @keydown.capture="handlePanelKeydown($event, true)"
       @keydown="handlePanelKeydown">
       <div v-if="!autoSizeImportPanel" class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
@@ -230,6 +230,12 @@
       <section v-show="visibleImportPanel" class="workspace-import" :aria-label="importPanelTitle">
         <header class="workspace-panel-header">
           <h2 class="workspace-panel-header__title">{{ importPanelTitle }}</h2>
+          <button v-if="tallImportPanel" type="button" class="workspace-import-close workspace-import-resize"
+            :aria-label="t(importExpanded ? 'actions.panelSmaller' : 'actions.panelLarger')"
+            :title="t(importExpanded ? 'actions.panelSmaller' : 'actions.panelLarger')"
+            :aria-pressed="importExpanded" @click="toggleImportExpanded">
+            <span class="material-symbols-rounded" aria-hidden="true">{{ importExpanded ? 'collapse_content' : 'expand_content' }}</span>
+          </button>
           <button type="button" class="workspace-import-close" :aria-label="t('actions.close')" @click="closeImportPanel">
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
           </button>
@@ -292,6 +298,7 @@ const visibleImportPanel = computed(() => {
   return !showProjectSettings.value && (uiMode.value !== 'playback' || panel === 'quickplay' || panel?.startsWith('archive-')) ? panel : null;
 });
 const importPanelTitle = computed(() => {
+  if (visibleImportPanel.value === 'import-choice') return t('playlist.importMenu');
   if (visibleImportPanel.value === 'media') return t('importAudio.title');
   if (visibleImportPanel.value === 'youtube') return t('youtube.importFromYouTube');
   if (visibleImportPanel.value === 'spotify') return t('spotifyImport.title');
@@ -329,13 +336,33 @@ const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeigh
 
 const MIN_PANEL_HEIGHT = 120;
 const MAX_PANEL_HEIGHT_PERCENT = 60;
+// The importers show long lists (files, search results, tracks). They may
+// grow to most of the window, and the file browser opens tall; the transport
+// bar and Stop All Cues stay in view either way.
+const IMPORT_PANEL_HEIGHT_PERCENT = 58;
+const IMPORT_MAX_PANEL_HEIGHT_PERCENT = 84;
 const settingsHeight = useState<number | null>('ProjectSettingsPanel.height', () => null);
 const propertiesHeight = useState<number | null>('PropertiesPanel.height', () => null);
 const importHeight = useState<number | null>('ImportPanel.height', () => null);
-const autoSizeImportPanel = computed(() => visibleImportPanel.value === 'delete-selection' || visibleImportPanel.value === 'repair');
+const autoSizeImportPanel = computed(() => visibleImportPanel.value === 'delete-selection' || visibleImportPanel.value === 'repair'
+  || visibleImportPanel.value === 'import-choice');
 const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value
   : autoSizeImportPanel.value ? null
   : visibleImportPanel.value ? importHeight.value : propertiesHeight.value);
+const importExpanded = useState<boolean>('ImportPanel.expanded', () => false);
+const tallImportPanel = computed(() => !showProjectSettings.value && !!visibleImportPanel.value && !autoSizeImportPanel.value);
+const panelMaxPercent = computed(() => tallImportPanel.value ? IMPORT_MAX_PANEL_HEIGHT_PERCENT : MAX_PANEL_HEIGHT_PERCENT);
+const lowerPanelHeight = computed(() => {
+  if (decisionOpen) return 'auto';
+  if (tallImportPanel.value && importExpanded.value) return `${IMPORT_MAX_PANEL_HEIGHT_PERCENT}%`;
+  if (panelHeight.value !== null) return `${panelHeight.value}px`;
+  // Browsing files needs the room at once. Search and track lists start
+  // small and grow with their results, up to the same limit.
+  return tallImportPanel.value && visibleImportPanel.value === 'media' ? `${IMPORT_PANEL_HEIGHT_PERCENT}%` : 'auto';
+});
+function toggleImportExpanded() {
+  importExpanded.value = !importExpanded.value;
+}
 const workspaceContent = ref<HTMLElement | null>(null);
 const lowerPanel = ref<HTMLElement | null>(null);
 const importHost = ref<HTMLElement | null>(null);
@@ -356,12 +383,14 @@ function availablePanelHeight() {
   if (!content || !panel?.parentElement) return MIN_PANEL_HEIGHT;
   const reserved = parseFloat(getComputedStyle(content).minHeight);
   return Math.max(MIN_PANEL_HEIGHT, Math.floor(Math.min(
-    panel.parentElement.clientHeight * MAX_PANEL_HEIGHT_PERCENT / 100,
+    panel.parentElement.clientHeight * panelMaxPercent.value / 100,
     panel.offsetHeight + content.offsetHeight - reserved)));
 }
 
 function setPanelHeight(height: number, max: number) {
   const size = showProjectSettings.value ? settingsHeight : visibleImportPanel.value ? importHeight : propertiesHeight;
+  // Dragging the handle is a deliberate size; it replaces the expanded state.
+  if (size === importHeight) importExpanded.value = false;
   size.value = Math.round(Math.max(MIN_PANEL_HEIGHT, Math.min(max, height)));
 }
 
@@ -958,7 +987,7 @@ onUnmounted(() => {
 }
 
 .lower-workspace-panel--browsing-files :deep(.picker-dock) {
-  flex-basis: clamp(200px, 30vh, 300px);
+  flex: 1 1 clamp(200px, 30vh, 300px);
   overflow: auto;
 }
 
@@ -984,6 +1013,10 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
+.workspace-import-resize {
+  margin-left: auto;
+}
+
 .workspace-import-close:hover {
   background: var(--color-surface-hover);
 }
@@ -994,6 +1027,9 @@ onUnmounted(() => {
   overflow: auto;
   overscroll-behavior: contain;
   container-type: inline-size;
+  // A column, so an importer can give its list all the height the panel has.
+  display: flex;
+  flex-direction: column;
 }
 
 .workspace-import-host--archive {
