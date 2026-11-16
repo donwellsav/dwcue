@@ -2003,10 +2003,16 @@ assert.doesNotMatch(
   /importDownloadedFile|new Audio\(|DEFAULT_AUDIO_ITEM|addItem\(/,
   'YouTube imports must not bypass the shared metadata, waveform, color, or save path',
 );
-for (const mode of ['source', 'mp3', 'video']) {
-  assert.ok(youtubeImport.includes('<option value="' + mode + '">'),
-    'YouTube imports must retain the explicit ' + mode + ' format choice');
-}
+assert.match(
+  youtubeImport,
+  /const outputFormatOptions = computed\(\(\) => \(\['source', 'mp3', 'video'\] as const\)\.map\(value => \(\{\s*value, label: formatLabels\.value\[value\]/,
+  'YouTube imports must retain all three labelled format choices',
+);
+assert.match(
+  youtubeImport,
+  /<InlineChoicePicker[^>]*:value="outputMode"[^>]*:options="outputFormatOptions"[^>]*@change="outputMode = \$event"/,
+  'YouTube imports must bind their docked format selector to the download mode',
+);
 assert.match(
   youtubeImport,
   /v-if="video\.isLive"[\s\S]*:disabled="video\.isLive \|\| isDownloading\(video\.id\)"[\s\S]*v-if="download\.savedPath"[\s\S]*openDownloadFolder/,
@@ -2403,7 +2409,7 @@ assert.match(
 );
 assert.match(
   audioImportModal,
-  /copyFiles[\s\S]*linkFiles[\s\S]*retryFailed[\s\S]*result\.results[\s\S]*const fileMode[\s\S]*const duplicatePolicy[\s\S]*function retryFailed/,
+  /:value="fileMode" :options="fileModeOptions"[\s\S]*:value="duplicatePolicy" :options="duplicatePolicyOptions"[\s\S]*retryFailed[\s\S]*result\.results[\s\S]*const fileMode[\s\S]*const duplicatePolicy[\s\S]*copyFiles[\s\S]*linkFiles[\s\S]*function retryFailed/,
   'local import must preserve source controls while exposing Copy, Link, duplicates, and per-file results',
 );
 assert.match(
