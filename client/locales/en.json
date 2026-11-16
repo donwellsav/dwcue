@@ -183,6 +183,7 @@
     "videoOutputWarnSingleDisplay": "Only one display detected (or displays are mirrored). Connect a second display to use the video output; for now the window opens as a preview.",
     "videoOutputWarnMissing": "The assigned display is not connected. The output window will return automatically when it comes back.",
     "videoOutputWarnShared": "The video output and this control window are on the same display — check that displays are not mirrored and that the correct output display is selected.",
+    "videoOutputWarnNotCovered": "The video output is not filling its display and could not correct itself. Close and reopen the Video Output.",
     "videoOutputMachineNote": "These settings are stored on this machine, not in the project file — each computer running the show keeps its own display assignment.",
     "stopAllFade": "Stop All fade-out (seconds)",
     "stopAllFadeHelp": "Set to 0 for an instant stop.",

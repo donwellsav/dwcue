@@ -33,6 +33,7 @@ const { managedWebSocketHeaders } = require('./managed-websocket-origin');
 const { createOneShotMutationBroker, validateIdentity, sameIdentity } = require('./one-shot-mutation-broker');
 const { createStandbyCaptureStore, findCaptureCue, captureImageUrl } = require('./video-standby-capture');
 const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('./video-output-framing.mjs');
+const { planGeometryCorrection, readViewportReport } = require('./video-output-geometry');
 const { checkVideoFrame } = require('./video-frame-check');
 const { createAppLifecycleActions, createWillQuitHandler } = require('./terminal-action');
 const { createOperatorManual } = require('./operator-manual');
@@ -2254,6 +2255,28 @@ let displayIdentifierWindows = [];
 let displayIdentifierTimer = null;
 const videoOutputWindowsPreservingSession = new WeakSet();
 
+// Coverage check for a physical output (see video-output-geometry.js). The
+// output page reports what it really covers; on Windows main re-seats a window
+// that falls short of its display, and records what it measured and did in
+// <userData>/video-output-geometry.json so a fault on someone else's machine
+// can be read afterwards instead of guessed at.
+const VIDEO_OUTPUT_GEOMETRY_FILENAME = 'video-output-geometry.json';
+const newVideoOutputGeometry = (fullscreenWanted = false) => ({
+  report: null,          // latest measurement from the output page
+  corrections: 0,        // attempts made on this window
+  fullscreenWanted,      // the operator's last choice, not our own transitions
+  busy: false,           // a correction is being applied
+  settleTimer: null,
+  uncovered: false,      // gave up: the operator is warned
+  recorded: null,        // outcome last written to disk
+  actions: [],
+});
+let videoOutputGeometry = newVideoOutputGeometry();
+function resetVideoOutputGeometry(fullscreenWanted = false) {
+  clearTimeout(videoOutputGeometry.settleTimer);
+  videoOutputGeometry = newVideoOutputGeometry(fullscreenWanted);
+}
+
 let videoOutputTestCardConnection = null;
 const testCardPlayback = new TestCardPlayback({
   assetPath: (rate) => {
@@ -2467,6 +2490,9 @@ function videoOutputStatus() {
       // Output and control on the same screen = mirrored displays or a
       // mis-assignment; the operator must know before showtime.
       warning = 'display-shared-with-control';
+    } else if (videoOutputGeometry.uncovered) {
+      // The window could not be made to fill its display.
+      warning = 'display-not-covered';
     }
   }
   return {
@@ -2719,6 +2745,120 @@ async function restartVideoOutputWindow() {
   return videoOutputStatus();
 }
 
+function videoOutputTargetDisplay(outputWindow) {
+  const id = outputWindow?.videoOutputTargetDisplayId;
+  return id == null ? null : screen.getAllDisplays().find(display => display.id === id) ?? null;
+}
+
+// Evidence for a fault that only shows on someone else's machine. Display
+// labels and sizes only; nothing about the show.
+function recordVideoOutputGeometry(outputWindow, target, outcome) {
+  const geometry = videoOutputGeometry;
+  if (geometry.recorded === outcome) return;
+  geometry.recorded = outcome;
+  try {
+    const primaryId = screen.getPrimaryDisplay().id;
+    fs.writeFileSync(path.join(app.getPath('userData'), VIDEO_OUTPUT_GEOMETRY_FILENAME), JSON.stringify({
+      recordedAt: new Date().toISOString(),
+      outcome,
+      app: app.getVersion(),
+      electron: process.versions.electron,
+      platform: process.platform,
+      targetDisplayId: target.id,
+      displays: screen.getAllDisplays().map(display => ({
+        id: display.id, label: display.label || '', primary: display.id === primaryId,
+        bounds: display.bounds, size: display.size, workArea: display.workArea,
+        scaleFactor: display.scaleFactor, rotation: display.rotation, internal: display.internal === true,
+      })),
+      window: {
+        bounds: outputWindow.getBounds(),
+        contentSize: outputWindow.getContentSize(),
+        fullscreen: outputWindow.isFullScreen(),
+        onDisplayId: screen.getDisplayMatching(outputWindow.getBounds()).id,
+      },
+      viewport: geometry.report,
+      fullscreenWanted: geometry.fullscreenWanted,
+      corrections: geometry.actions,
+    }, null, 2));
+  } catch (error) {
+    console.warn('[video-output] could not record output geometry:', error.message);
+  }
+}
+
+function evaluateVideoOutputGeometry(outputWindow) {
+  const geometry = videoOutputGeometry;
+  if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed() || geometry.busy || !geometry.report) return;
+  // A preview window is an ordinary window; a vanished display is the watchdog's.
+  const target = videoOutputTargetDisplay(outputWindow);
+  if (!target) return;
+  const windowBounds = outputWindow.getBounds();
+  const plan = planGeometryCorrection({
+    platform: process.platform,
+    report: geometry.report,
+    corrections: geometry.corrections,
+    fullscreenWanted: geometry.fullscreenWanted,
+    onTargetDisplay: screen.getDisplayMatching(windowBounds).id === target.id,
+    windowBounds,
+    targetBounds: target.bounds,
+  });
+
+  if (plan.action === 'none' || plan.action === 'give-up') {
+    const uncovered = plan.action === 'give-up';
+    const outcome = plan.covered ? (geometry.corrections ? 'covered-after-correction' : 'covered')
+      : uncovered ? 'not-covered' : 'short-not-corrected-on-this-platform';
+    recordVideoOutputGeometry(outputWindow, target, outcome);
+    if (geometry.uncovered !== uncovered) {
+      geometry.uncovered = uncovered;
+      if (uncovered) {
+        console.error('[video-output] output still does not cover its display after corrections:',
+          JSON.stringify({ viewport: geometry.report, windowBounds, target: target.bounds }));
+      }
+      broadcastVideoOutputStatus();
+    }
+    return;
+  }
+
+  geometry.corrections += 1;
+  geometry.busy = true;
+  geometry.actions.push({
+    action: plan.action, bounds: plan.bounds, fullscreen: plan.fullscreen === true,
+    viewport: geometry.report, windowBounds, wasFullscreen: outputWindow.isFullScreen(),
+  });
+  console.warn('[video-output] output does not cover its display; applying', plan.action,
+    JSON.stringify({ viewport: geometry.report, windowBounds, target: target.bounds }));
+  const current = () => videoOutputWindow === outputWindow && !outputWindow.isDestroyed()
+    && videoOutputGeometry === geometry;
+  if (outputWindow.isFullScreen()) outputWindow.setFullScreen(false);
+  outputWindow.setBounds(plan.bounds);
+  setTimeout(() => {
+    if (!current()) return;
+    // A move between displays with different scaling needs a second
+    // placement, once the window is on the display, for the size to stick.
+    outputWindow.setBounds(plan.bounds);
+    if (plan.fullscreen) outputWindow.setFullScreen(true);
+    setTimeout(() => {
+      // The page reports again within two seconds and is judged afresh.
+      if (current()) geometry.busy = false;
+    }, 300);
+  }, 120);
+}
+
+function reportVideoOutputViewport(event, payload) {
+  requireVideoOutputIpc(event);
+  const report = readViewportReport(payload);
+  if (!report) throw new TypeError('Invalid viewport report.');
+  const outputWindow = videoOutputWindow;
+  const geometry = videoOutputGeometry;
+  geometry.report = report;
+  // Sizes arrive in a burst while a window settles; judge only the last one.
+  clearTimeout(geometry.settleTimer);
+  geometry.settleTimer = setTimeout(() => {
+    geometry.settleTimer = null;
+    if (videoOutputGeometry === geometry) evaluateVideoOutputGeometry(outputWindow);
+  }, 400);
+  return true;
+}
+
 function createVideoOutputWindow() {
   if (videoOutputWindow && !videoOutputWindow.isDestroyed()) return;
   videoOutputPlaybackError = null;
@@ -2782,6 +2922,9 @@ function createVideoOutputWindow() {
 
   const outputWindow = new BrowserWindow(options);
   videoOutputWindow = outputWindow;
+  // Only a physical output must cover its display; the preview is a normal window.
+  resetVideoOutputGeometry(realOutput);
+  if (realOutput) outputWindow.videoOutputTargetDisplayId = target.id;
   // Native coverage survives renderer loss and hides the control page during hydration.
   const cover = new View();
   cover.setBackgroundColor('#000000');
@@ -2836,7 +2979,11 @@ function createVideoOutputWindow() {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
     if (!shouldForwardVideoOutputShortcut(input, process.platform)) return;
     const shortcut = toRendererShortcut(input);
-    if (shortcut.key === 'Escape' && outputWindow.isFullScreen()) {
+    // Escape is Stop All. On the preview window it also leaves fullscreen, as
+    // in any app. An audience display must never drop out of fullscreen
+    // because the operator stopped the show while it had keyboard focus.
+    if (shortcut.key === 'Escape' && outputWindow.isFullScreen() &&
+        outputWindow.videoOutputTargetDisplayId == null) {
       outputWindow.setFullScreen(false);
     }
     mainWindow.webContents.send('video-output:shortcut', shortcut);
@@ -2848,8 +2995,16 @@ function createVideoOutputWindow() {
     showVideoOutputContextMenu(outputWindow);
   });
 
-  outputWindow.on('enter-full-screen', broadcastVideoOutputStatus);
-  outputWindow.on('leave-full-screen', broadcastVideoOutputStatus);
+  // Remember the operator's own choice. Transitions made while re-seating the
+  // window are ours and must not be mistaken for it.
+  const rememberFullscreenChoice = (wanted) => {
+    if (videoOutputWindow === outputWindow && !videoOutputGeometry.busy) {
+      videoOutputGeometry.fullscreenWanted = wanted;
+    }
+    broadcastVideoOutputStatus();
+  };
+  outputWindow.on('enter-full-screen', () => rememberFullscreenChoice(true));
+  outputWindow.on('leave-full-screen', () => rememberFullscreenChoice(false));
 
   outputWindow.on('closed', () => {
     const preserveSession = videoOutputWindowsPreservingSession.delete(outputWindow);
@@ -2879,6 +3034,7 @@ function closeVideoOutputWindow({ preserveSession = false, playbackError = null 
   videoOutputRecoveryRequired = false;
   videoOutputRestarting = false;
   videoOutputPictureHealth = null;
+  resetVideoOutputGeometry();
   const connection = videoOutputTestCardConnection;
   videoOutputTestCardConnection = null;
   void testCardPlayback.update(null, connection);
@@ -2923,7 +3079,13 @@ function installVideoOutputWatchdog() {
         // Windows for the move to stick.)
         const wBounds = videoOutputWindow.getBounds();
         const tBounds = target.bounds;
-        if (JSON.stringify(wBounds) !== JSON.stringify(tBounds)) {
+        // On Windows a fullscreen window is sized by the OS: its logical
+        // bounds can differ from the display's by a rounding pixel under
+        // fractional scaling, and resizing it by hand takes it out of the
+        // fullscreen rectangle. The coverage check owns that case there.
+        const seated = process.platform === 'win32' && videoOutputWindow.isFullScreen() &&
+          screen.getDisplayMatching(wBounds).id === target.id;
+        if (!seated && JSON.stringify(wBounds) !== JSON.stringify(tBounds)) {
           videoOutputWindow.setBounds(tBounds);
           setTimeout(() => {
             if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
@@ -2965,6 +3127,7 @@ ipcMain.handle('video-output:restart', (event) => {
 });
 ipcMain.handle('video-output:renderer-ready', markVideoOutputReady);
 ipcMain.handle('video-output:picture-health', reportVideoPictureHealth);
+ipcMain.handle('video-output:viewport', reportVideoOutputViewport);
 ipcMain.handle('video-output:diagnostics', (event) => {
   requireTrustedIpc(event);
   return { runtime: { electron: process.versions.electron, chromium: process.versions.chrome,
@@ -3216,7 +3379,14 @@ ipcMain.handle('video-output:set-display', (event, displayId) => {
 ipcMain.handle('video-output:set-fullscreen', (event, on) => {
   requireTrustedIpc(event);
   if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
-    videoOutputWindow.setFullScreen(on === true);
+    // The output page only ever asks to leave fullscreen for its Escape key.
+    // That stays a preview-window convenience; an audience display leaves
+    // fullscreen only when the operator chooses it from the control window
+    // or the output's own menu.
+    const escapeOnAudienceDisplay = on !== true &&
+      event.sender === videoOutputWindow.webContents &&
+      videoOutputWindow.videoOutputTargetDisplayId != null;
+    if (!escapeOnAudienceDisplay) videoOutputWindow.setFullScreen(on === true);
   }
   return broadcastVideoOutputStatus();
 });

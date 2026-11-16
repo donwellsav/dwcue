@@ -32,8 +32,9 @@ test('mounted audience view reports DOM readiness without waiting for an animati
   vm.runInNewContext(source.slice(start, end), {
     onMounted: callback => { mounted = callback; },
     window: { electronAPI: { videoOutput: api }, addEventListener() {} },
-    offStatus: null, healthTimer: null,
+    offStatus: null, healthTimer: null, viewportTimer: null,
     refreshStatus: async () => {}, syncConnection() {}, onKeydown() {}, onDblClick() {}, updatePixelScale() {},
+    reportViewport() {},
     nextTick: async () => { committed = true; },
     requestAnimationFrame() {}, // A minimized/covered renderer may never receive it.
     setInterval: () => 1,
@@ -353,7 +354,13 @@ function createVideoWindowHarness() {
   };
   const closeStart = mainSource.indexOf('function closeVideoOutputWindow(');
   const closeEnd = mainSource.indexOf('// Watchdog: when the display topology changes', closeStart);
+  // The output window owns its coverage-check state; opening and closing reset it.
+  const geometryStart = mainSource.indexOf('const newVideoOutputGeometry');
+  const geometryEnd = mainSource.indexOf('function resetVideoOutputGeometry(', geometryStart);
+  assert.ok(geometryStart >= 0 && geometryEnd > geometryStart, 'missing output coverage state in Electron main process');
   vm.runInNewContext([
+    mainSource.slice(geometryStart, geometryEnd),
+    productionFunctionSource('resetVideoOutputGeometry'),
     ...['sanitizeVideoPlaybackErrorMessage', 'loadVideoOutputWindow', 'failVideoOutputRenderer', 'markVideoOutputReady', 'restartVideoOutputWindow', 'requireVideoOutputIpc']
       .filter(name => mainSource.includes('function ' + name + '(')).map(productionFunctionSource),
     productionFunctionSource('startVideoOutputFrames'),

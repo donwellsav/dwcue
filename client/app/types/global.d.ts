@@ -239,6 +239,10 @@ declare global {
         restart: () => Promise<VideoOutputStatus>;
         rendererReady: () => Promise<VideoOutputStatus>;
         reportPictureHealth: (health: VideoPictureHealth) => Promise<void>;
+        // What the output page really covers, in CSS pixels of its own screen.
+        reportViewport: (viewport: {
+          innerWidth: number; innerHeight: number; screenWidth: number; screenHeight: number; pixelScale: number;
+        }) => Promise<boolean>;
         diagnostics: () => Promise<unknown>;
         onFrame: (callback: (frame: { jpeg: string; at: number }) => void) => () => void;
         listDisplays: () => Promise<VideoOutputDisplay[]>;
@@ -307,7 +311,7 @@ declare global {
     targetId: string | null;
     targetLabel: string | null;
     displays: VideoOutputDisplay[];
-    warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | null;
+    warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | 'display-not-covered' | null;
     playbackError: VideoPlaybackError | null;
     rendererReady: boolean;
     rendererResponsive: boolean;

@@ -974,6 +974,7 @@ const voWarningText = computed(() => {
   if (w === 'single-display') return t('settings.videoOutputWarnSingleDisplay');
   if (w === 'display-missing') return t('settings.videoOutputWarnMissing');
   if (w === 'display-shared-with-control') return t('settings.videoOutputWarnShared');
+  if (w === 'display-not-covered') return t('settings.videoOutputWarnNotCovered');
   return '';
 });
 

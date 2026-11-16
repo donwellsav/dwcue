@@ -278,6 +278,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     restart:      ()           => ipcRenderer.invoke('video-output:restart'),
     rendererReady: ()          => ipcRenderer.invoke('video-output:renderer-ready'),
     reportPictureHealth: (health) => ipcRenderer.invoke('video-output:picture-health', health),
+    reportViewport: (viewport) => ipcRenderer.invoke('video-output:viewport', viewport),
     diagnostics: () => ipcRenderer.invoke('video-output:diagnostics'),
     listDisplays: ()           => ipcRenderer.invoke('video-output:list-displays'),
     identifyDisplays: ()       => ipcRenderer.invoke('video-output:identify-displays'),
