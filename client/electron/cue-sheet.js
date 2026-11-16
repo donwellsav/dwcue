@@ -308,16 +308,25 @@ function endText(endBehavior, labels, sheet, known) {
 
 const cell = (className, text) => `<td class="${className}">${escapeHtml(text)}</td>`;
 
-const SHEET_FONT = "-apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif";
+// Chinese and Japanese text needs fonts named here: on current macOS the
+// system's own fallback for it (PingFang) comes out of Chromium's PDF writer
+// as blank glyphs, while these print. They are tried per character after the
+// Latin fonts and do not exist on Windows, where the system fallback is used.
+function sheetFont(locale) {
+  const han = /^ja\b/i.test(typeof locale === 'string' ? locale : '')
+    ? "'Hiragino Sans', 'Hiragino Sans GB'"
+    : "'Hiragino Sans GB', 'Hiragino Sans'";
+  return `'Helvetica Neue', 'Segoe UI', Arial, ${han}, 'Heiti SC', 'Heiti TC', sans-serif`;
+}
 
 // Page margins in inches, shared by the print options and the page footer.
 const PAGE_MARGIN_INCHES = Object.freeze({ top: 0.55, bottom: 0.75, left: 0.55, right: 0.55 });
 
-const SHEET_STYLE = `
+const sheetStyle = (font) => `
   @page { size: A4 portrait; }
   * { box-sizing: border-box; }
   html { background: #fff; }
-  body { margin: 0; background: #fff; color: #111; font: 11pt/1.35 ${SHEET_FONT};
+  body { margin: 0; background: #fff; color: #111; font: 11pt/1.35 ${font};
     -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .sheet-header { border-bottom: 1.5pt solid #111; padding-bottom: 8pt; margin-bottom: 14pt; }
   .sheet-kind { margin: 0 0 2pt; font-size: 10pt; font-weight: 700; letter-spacing: 0.08em;
@@ -346,8 +355,9 @@ const SHEET_STYLE = `
   .empty, .notice { margin: 6pt 0 0; color: #444; }
 `;
 
-const PLAYLIST_COLUMNS = [8, 31, 25, 12, 12, 12];
-const QUICK_PLAY_COLUMNS = [8, 56, 12, 12, 12];
+// Column widths in percent of the printable width.
+const PLAYLIST_COLUMNS = [8, 31, 25, 11.5, 12, 12.5];
+const QUICK_PLAY_COLUMNS = [8, 56, 11.5, 12, 12.5];
 
 const colgroup = (widths) =>
   `<colgroup>${widths.map((width) => `<col style="width:${width}%">`).join('')}</colgroup>`;
@@ -377,7 +387,7 @@ function buildCueSheetHtml(data, labels, options = {}) {
     '<meta charset="utf-8">',
     '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">',
     `<title>${escapeHtml(`${showName} – ${text.title}`)}</title>`,
-    `<style>${SHEET_STYLE}</style>`,
+    `<style>${sheetStyle(sheetFont(options.locale))}</style>`,
     '</head>',
     '<body>',
     '<header class="sheet-header">',
@@ -475,7 +485,7 @@ function buildCueSheetFooter(showName, labels, options = {}) {
   const direction = options.direction === 'rtl' ? 'rtl' : 'ltr';
   return `<div dir="${direction}" style="width:100%;box-sizing:border-box;` +
     `padding:0 ${PAGE_MARGIN_INCHES.right}in 0 ${PAGE_MARGIN_INCHES.left}in;display:flex;` +
-    `justify-content:space-between;gap:12pt;font-family:${SHEET_FONT};font-size:8pt;color:#444;">` +
+    `justify-content:space-between;gap:12pt;font-family:${sheetFont(options.locale)};font-size:8pt;color:#444;">` +
     `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(name)}</span>` +
     `<span style="white-space:nowrap;">${page}</span></div>`;
 }

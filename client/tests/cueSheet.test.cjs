@@ -272,6 +272,16 @@ test('the header carries the show name, the date, the cue count and the running 
   // An unknown locale tag falls back instead of throwing.
   assert.match(build({ items: [] }, undefined, { locale: 'not a locale!' }), /<html lang="en" dir="ltr">/);
   assert.match(build({ items: [] }, undefined, { locale: 'ar', direction: 'rtl' }), /<html lang="ar" dir="rtl">/);
+  // Chinese and Japanese text is given fonts that survive printing on macOS,
+  // Japanese shapes first for a Japanese interface; the footer matches.
+  const hanFonts = (text) => text.match(/'Hiragino Sans(?: GB)?', 'Hiragino Sans(?: GB)?', 'Heiti SC', 'Heiti TC', sans-serif/g);
+  assert.deepEqual(hanFonts(html), ["'Hiragino Sans GB', 'Hiragino Sans', 'Heiti SC', 'Heiti TC', sans-serif"]);
+  assert.deepEqual(hanFonts(build({ items: [] }, undefined, { locale: 'ja' })),
+    ["'Hiragino Sans', 'Hiragino Sans GB', 'Heiti SC', 'Heiti TC', sans-serif"]);
+  assert.deepEqual(hanFonts(buildCueSheetFooter('Show', undefined, { locale: 'ja' })),
+    ["'Hiragino Sans', 'Hiragino Sans GB', 'Heiti SC', 'Heiti TC', sans-serif"]);
+  assert.deepEqual(hanFonts(buildCueSheetFooter('Show', undefined, { locale: 42 })),
+    ["'Hiragino Sans GB', 'Hiragino Sans', 'Heiti SC', 'Heiti TC', sans-serif"]);
   // The table header repeats on every printed page.
   assert.match(html, /thead \{ display: table-header-group; \}/);
   assert.equal(html.match(/<thead>/g).length, 2);
