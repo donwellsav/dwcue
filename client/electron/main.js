@@ -3059,8 +3059,11 @@ ipcMain.handle('video-output:check-frame', async (event, request) => {
   const uuid = requireIpcString(request.uuid, 'itemUuid', 256);
   const fileRevision = request.fileRevision === null ? null
     : requireIpcString(request.fileRevision, 'fileRevision', 1024);
-  const { inPoint, accessToken } = request;
+  const { inPoint, outPoint = null, accessToken } = request;
   if (!Number.isFinite(inPoint) || inPoint < 0) throw new TypeError('Invalid video cue in point.');
+  if (outPoint !== null && (!Number.isFinite(outPoint) || outPoint <= inPoint)) {
+    throw new TypeError('Invalid video cue out point.');
+  }
   if (typeof accessToken !== 'string' || accessToken.length > 8192 || /[\0\r\n]/.test(accessToken)) {
     throw new TypeError('Invalid server credential.');
   }
@@ -3092,7 +3095,7 @@ ipcMain.handle('video-output:check-frame', async (event, request) => {
   owner.once('render-process-gone', cancel);
   owner.on('did-start-navigation', onNavigate);
   try {
-    return await checkVideoFrame(`${base}/api/media?${params}`, inPoint, controller.signal);
+    return await checkVideoFrame(`${base}/api/media?${params}`, { inPoint, outPoint }, controller.signal);
   } finally {
     videoFrameProbe = null;
     if (!owner.isDestroyed()) {

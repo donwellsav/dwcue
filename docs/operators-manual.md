@@ -622,11 +622,11 @@ Use H.264 or HEVC media for this source edition. ProRes and other production cod
 
 ### Check videos before the show
 
-1. With playback and Preview stopped, open **Settings → Video Output** and choose **Check Videos**. The check silently loads a picture at each video cue's **In** point. It includes cues inside groups and video QuickPlays. Video Output can stay closed.
+1. With playback and Preview stopped, open **Settings → Video Output** and choose **Check Videos**. The check silently samples each video cue at its **In** point, midpoint, and just before its **Out** point. It uses the end of the video if there’s no valid Out point. It includes cues inside groups and video QuickPlays. Video Output can stay closed.
 2. Read the count and cue names in the dock. Cues that need attention are marked **VIDEO !** on the playlist or QuickPlay tile. For a missing or unreadable clip, check the media location and replace or restore the file. For a decode failure, verify the source or use a compatible copy, then run **Check Videos** again.
 3. Use **Cancel Check** to end the scan. Playback, Stop All, or leaving the panel also ends it. If a clip times out, the scan flags it and ends the run. The status shows how many cues were checked.
 
-The check is advisory and keeps the playlist and transport available. Run it again after editing a video cue or replacing its file. A pass covers the picture at the In point. Rehearse the entire clip, its soundtrack, and the physical display chain on the show machine.
+The check is advisory and keeps the playlist and transport available. Run it again after changing the In or Out point or replacing a video. A pass covers the sampled pictures. Decode errors between those samples can still occur.
 
 ### Set picture framing
 

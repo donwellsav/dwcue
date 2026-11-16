@@ -400,7 +400,7 @@
     "title": "Pre-show video check",
     "start": "Check Videos",
     "cancel": "Cancel Check",
-    "help": "Checks for a decoded picture at each video cue’s In point.",
+    "help": "Checks each video cue at its In point, midpoint, and near its end.",
     "waitForIdle": "Available when playback and Preview are stopped.",
     "running": "Checking videos · {checked}/{total}",
     "empty": "No video cues in this show.",
@@ -417,7 +417,8 @@
     "decode": "Video could not be opened or decoded.",
     "no-frame": "No decodable video picture.",
     "in-point": "Cue In point is beyond the video.",
-    "timeout": "No picture within 8 seconds.",
+    "duration": "Could not determine the video’s end.",
+    "timeout": "Video check timed out after 8 seconds.",
     "probe-error": "Video check renderer stopped."
   },
   "shuffle": {

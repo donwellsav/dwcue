@@ -19,11 +19,32 @@ if (process.versions.electron) {
     const operator = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
     await operator.loadURL('data:text/html,<!doctype html><title>Operator</title>');
     const base = process.env.DWCUE_PREFLIGHT_URL;
-    const check = (name, inPoint = 0, signal = new AbortController().signal, timeout = 5000) =>
-      checkVideoFrame(base + '/' + name, inPoint, signal, timeout);
+    const check = (name, inPoint = 0, signal = new AbortController().signal, timeout = 5000, outPoint = null) =>
+      checkVideoFrame(base + '/' + name, { inPoint, outPoint }, signal, timeout);
 
     assert.equal(await check('good'), 'ok');
     assert.equal(await check('good', 1.25), 'ok');
+    const lateFailure = check('good', 0.2, undefined, 5000, 1.6);
+    const lateProbe = BrowserWindow.getAllWindows().find(win => win !== operator);
+    const exec = lateProbe.webContents.executeJavaScript.bind(lateProbe.webContents);
+    let sampled;
+    lateProbe.webContents.executeJavaScript = async script => {
+      const result = await exec(`(async () => {
+        const sampled = [];
+        const bitmap = window.createImageBitmap.bind(window);
+        window.createImageBitmap = (video, options) => {
+          sampled.push(video.currentTime);
+          return video.currentTime > 1.35 ? Promise.reject(new Error('frame error')) : bitmap(video, options);
+        };
+        return { status: await (${script}), sampled };
+      })()`);
+      sampled = result.sampled;
+      return result.status;
+    };
+    assert.equal(await lateFailure, 'no-frame');
+    assert.equal(sampled.length, 3);
+    for (const [index, expected] of [0.2, 0.9, 1.56].entries())
+      assert.ok(Math.abs(sampled[index] - expected) < 0.005, JSON.stringify(sampled));
     assert.equal(await check('good', 5), 'in-point');
     assert.equal(await check('audio'), 'no-frame');
     assert.equal(await check('corrupt'), 'decode');
@@ -48,7 +69,7 @@ if (process.versions.electron) {
     app.exit(0);
   })().catch(error => { console.error(error); app.exit(1); });
 } else {
-  require('node:test')('video preflight decodes the In point and releases failed, stalled and canceled probes', { timeout: 30000 }, async t => {
+  require('node:test')('video preflight samples the cue range and releases failed, stalled and canceled probes', { timeout: 30000 }, async t => {
     const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'dwcue-video-preflight-'));
     t.after(() => fs.rm(folder, { recursive: true, force: true }));
     const ffmpeg = require('@ffmpeg-installer/ffmpeg').path;

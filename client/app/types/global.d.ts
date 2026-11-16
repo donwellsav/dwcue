@@ -247,7 +247,7 @@ declare global {
         setFraming: (framing: VideoFraming) => Promise<VideoOutputStatus>;
         checkFrame: (request: {
           id: string; serverUrl: string; accessToken: string; sessionId: string;
-          uuid: string; fileRevision: string | null; inPoint: number;
+          uuid: string; fileRevision: string | null; inPoint: number; outPoint: number | null;
         }) => Promise<VideoFrameCheckResult | 'canceled'>;
         cancelFrameCheck: (id: string) => void;
         setCaptureSettings: (displayId: string | null, target: VideoStandbyDestination) => Promise<VideoOutputStatus>;
@@ -266,7 +266,7 @@ declare global {
       };
     };
   }
-  type VideoFrameCheckResult = 'ok' | 'unreadable' | 'decode' | 'no-frame' | 'in-point' | 'timeout' | 'probe-error';
+  type VideoFrameCheckResult = 'ok' | 'unreadable' | 'decode' | 'no-frame' | 'in-point' | 'duration' | 'timeout' | 'probe-error';
   interface VideoOutputShortcut {
     key: string;
     code: string;
