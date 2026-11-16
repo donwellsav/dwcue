@@ -1445,14 +1445,14 @@ function close() {
   container-type: inline-size;
 }
 
+/* Title, tabs and Close sit on top, where every other panel has them. */
 .settings-header {
-  order: 1;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) var(--panel-control-height);
   gap: var(--spacing-md);
   padding-block: 0;
-  border-top: 1px solid var(--color-border);
-  border-bottom: 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .close-x {
@@ -1516,7 +1516,7 @@ function close() {
   background-color: var(--color-surface-hover);
 }
 .tab-btn[data-state='active'] {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   background: var(--color-accent-soft);
   border-bottom-color: var(--color-accent);
 }
@@ -2034,7 +2034,7 @@ function close() {
 .help-link:hover {
   background-color: var(--color-surface-hover);
   border-color: var(--color-accent);
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .help-link .material-symbols-rounded {

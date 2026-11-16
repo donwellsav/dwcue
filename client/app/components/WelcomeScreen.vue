@@ -799,7 +799,7 @@ defineExpose({ handleNewProject, handleOpenProject, projectPickerReady, queueSta
 .link-button {
   background: none;
   border: none;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   text-underline-offset: 3px;
   cursor: pointer;
   font-size: inherit;
@@ -865,7 +865,7 @@ defineExpose({ handleNewProject, handleOpenProject, projectPickerReady, queueSta
   flex: 0 0 36px;
   border-radius: var(--border-radius-sm);
   background: var(--color-control);
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .button-label {
@@ -958,7 +958,7 @@ defineExpose({ handleNewProject, handleOpenProject, projectPickerReady, queueSta
   border-color: var(--color-accent);
 }
 .discovered-row:disabled { opacity: 0.5; cursor: default; }
-.discovered-icon { color: var(--color-accent); }
+.discovered-icon { color: var(--color-accent-text); }
 .discovered-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .discovered-name { font-weight: 600; }
 .discovered-meta {
@@ -968,7 +968,7 @@ defineExpose({ handleNewProject, handleOpenProject, projectPickerReady, queueSta
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.discovered-project { color: var(--color-accent); }
+.discovered-project { color: var(--color-accent-text); }
 .discovered-arrow { color: var(--color-text-secondary); }
 .discovered-rescan {
   margin-left: auto;
@@ -982,7 +982,7 @@ defineExpose({ handleNewProject, handleOpenProject, projectPickerReady, queueSta
   cursor: pointer;
   border-radius: 4px;
 }
-.discovered-rescan:hover:not(:disabled) { color: var(--color-accent); background: var(--color-surface-hover); }
+.discovered-rescan:hover:not(:disabled) { color: var(--color-accent-text); background: var(--color-surface-hover); }
 .discovered-rescan:disabled { opacity: 0.5; cursor: default; }
 .discovered-rescan .material-symbols-rounded { font-size: 18px; }
 .discovered-forget {

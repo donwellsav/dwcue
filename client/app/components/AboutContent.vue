@@ -264,7 +264,7 @@ const openExternal = (url: string) => {
 }
 
 .about-notices a {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .about-content--docked { max-width: none; }

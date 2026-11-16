@@ -349,6 +349,7 @@ const autoSizeImportPanel = computed(() => visibleImportPanel.value === 'delete-
 const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value
   : autoSizeImportPanel.value ? null
   : visibleImportPanel.value ? importHeight.value : propertiesHeight.value);
+const noteEditRequest = useState<string | null>('playlistNoteEditRequest', () => null);
 const importExpanded = useState<boolean>('ImportPanel.expanded', () => false);
 const tallImportPanel = computed(() => !showProjectSettings.value && !!visibleImportPanel.value && !autoSizeImportPanel.value);
 const panelMaxPercent = computed(() => tallImportPanel.value ? IMPORT_MAX_PANEL_HEIGHT_PERCENT : MAX_PANEL_HEIGHT_PERCENT);
@@ -841,6 +842,15 @@ const handleKeydown = (e: KeyboardEvent) => {
     if (selectedItem.value && selectedItem.value.type === 'audio') {
       const { playCue } = useAudioEngine();
       void playCue(selectedItem.value as any);
+    }
+    return;
+  }
+
+  // F2 writes a playlist note on the one selected cue or group, in Edit Mode.
+  if (e.key === 'F2') {
+    if (uiMode.value !== 'playback' && !isTextInputFocused() && selectedItems.value.size === 1) {
+      e.preventDefault();
+      noteEditRequest.value = Array.from(selectedItems.value)[0] ?? null;
     }
     return;
   }
@@ -1456,12 +1466,12 @@ onUnmounted(() => {
     white-space: nowrap;
   }
   &.cart-toggle--open {
-    color: var(--color-accent);
+    color: var(--color-accent-text);
     border-color: var(--color-accent);
   }
 
   &:hover {
-    color: var(--color-accent);
+    color: var(--color-accent-text);
     border-color: var(--color-accent);
     background: var(--color-surface-hover);
   }

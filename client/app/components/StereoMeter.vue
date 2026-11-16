@@ -386,7 +386,7 @@ const shortTermLabel = computed(() => {
 
   &__label {
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     color: var(--color-text-secondary);
     text-transform: uppercase;
@@ -445,11 +445,11 @@ const shortTermLabel = computed(() => {
   &__scale::before {
     content: 'GAIN';
     position: absolute;
-    top: -9px;
+    top: -12px;
     left: 4px;
     color: var(--color-text-tertiary);
     font-family: var(--font-mono);
-    font-size: 7px;
+    font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.08em;
     line-height: 1;
@@ -517,7 +517,7 @@ const shortTermLabel = computed(() => {
     right: 0;
     color: var(--color-text-tertiary);
     font-family: var(--font-mono);
-    font-size: 7px;
+    font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.08em;
     line-height: 1;
@@ -539,12 +539,12 @@ const shortTermLabel = computed(() => {
   &--strip &__gr-lane::before {
     content: 'GR';
     position: absolute;
-    top: -9px;
+    top: -12px;
     left: 50%;
     transform: translateX(-50%);
     color: var(--color-text-tertiary);
     font-family: var(--font-mono);
-    font-size: 7px;
+    font-size: 10px;
     font-weight: 600;
     line-height: 1;
   }

@@ -69,7 +69,7 @@
       <section v-if="workspaceImportPanel === 'import-choice'" class="import-choice"
         :aria-label="t('playlist.importMenu')">
         <Btn type="button" icon="audio_file" :text="t('playlist.importFiles')" @click="openImport('media')" />
-        <Btn v-if="canOnlineImport" type="button" icon="youtube_activity" :text="t('youtube.importFromYouTube')" @click="openImport('youtube')" />
+        <Btn v-if="canOnlineImport" type="button" icon="youtube_activity" :text="t('playlist.importYouTube')" @click="openImport('youtube')" />
         <Btn v-if="canOnlineImport" type="button" icon="library_music" :text="t('spotifyImport.button')" @click="openImport('spotify')" />
       </section>
       <YouTubeImportModal

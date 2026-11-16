@@ -406,7 +406,7 @@ watch([() => props.startPath, () => props.fallbackStartPath, () => String(server
       &.drive .name,
       &.home .name { font-weight: 600; }
       .icon { font-size: 18px; text-align: center; color: var(--color-text-primary); }
-      &.file .icon { color: var(--color-accent); }
+      &.file .icon { color: var(--color-accent-text); }
 
       &.unsupported-file {
         cursor: not-allowed;
@@ -420,7 +420,7 @@ watch([() => props.startPath, () => props.fallbackStartPath, () => String(server
       &.unknown-file .icon { color: var(--color-text-secondary); }
 
       .file-type-note {
-        font-size: 10px;
+        font-size: 11px;
         font-style: italic;
       }
 

@@ -702,7 +702,7 @@ onBeforeUnmount(() => {
 
 .plan-label {
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -843,7 +843,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--color-danger);
   border-radius: 3px;
   color: var(--color-danger);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
 }

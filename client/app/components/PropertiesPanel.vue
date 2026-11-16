@@ -1432,14 +1432,14 @@ const formatTime = (seconds: number): string => {
   box-shadow: inset 0 1px color-mix(in srgb, var(--color-text-primary) 4%, transparent);
 }
 
+/* Title, tabs and Close sit on top, where every other panel has them. */
 .properties-header {
-  order: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) var(--panel-control-height);
   justify-content: stretch;
   gap: var(--spacing-sm);
-  border-top: 1px solid var(--color-border);
-  border-bottom: 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .properties-panel--group .properties-header {
@@ -1527,7 +1527,7 @@ const formatTime = (seconds: number): string => {
   }
 
   &.active {
-    color: var(--color-accent);
+    color: var(--color-accent-text);
     background-color: var(--color-accent-soft);
     border-bottom-color: var(--color-accent);
   }

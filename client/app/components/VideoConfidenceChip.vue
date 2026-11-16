@@ -130,6 +130,6 @@ onUnmounted(() => {
   display: block;
 }
 
-.confidence-chip__health { max-width: 110px; font-size: 10px; }
+.confidence-chip__health { max-width: 110px; font-size: 11px; }
 
 </style>

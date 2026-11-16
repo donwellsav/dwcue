@@ -733,7 +733,7 @@ const handlePlayNext = async () => {
   gap: 7px;
   overflow: hidden;
   color: currentColor;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1;
@@ -963,7 +963,7 @@ const handlePlayNext = async () => {
   border: 1px solid var(--color-border-strong);
   border-radius: var(--pill-radius);
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   text-transform: uppercase;
   flex-shrink: 0;
@@ -1228,7 +1228,7 @@ const handlePlayNext = async () => {
   border-bottom: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--state-preview) 22%, var(--color-control));
   color: color-mix(in srgb, var(--state-preview) 72%, white);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
   text-transform: uppercase;
   cursor: ew-resize;

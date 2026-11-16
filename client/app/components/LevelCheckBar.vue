@@ -117,7 +117,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown, { capture: tr
 }
 
 .level-check-bar__icon {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-size: 18px;
 }
 

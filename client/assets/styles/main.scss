@@ -131,6 +131,10 @@ button > .material-symbols-rounded {
   --signal-blue-hover: #507f99;
   --signal-blue-soft: rgba(65, 108, 134, 0.16);
   --color-accent: var(--color-accent-custom, var(--signal-blue));
+  // Accent used as text or icon colour. The accent itself can be too dark
+  // (or too light) to read on the surface behind it, so it is tinted toward
+  // the text colour of the theme.
+  --color-accent-text: color-mix(in srgb, var(--color-accent) 50%, #ffffff);
   --color-accent-hover: var(--signal-blue-hover);
   --color-accent-soft: var(--signal-blue-soft);
   --color-accent-bg: var(--signal-blue-soft);
@@ -158,6 +162,7 @@ button > .material-symbols-rounded {
   --color-text-tertiary: #5c707c;
   --color-text-disabled: #84939b;
   --color-accent: var(--color-accent-custom, var(--signal-blue));
+  --color-accent-text: color-mix(in srgb, var(--color-accent) 72%, #000000);
   --color-accent-hover: var(--signal-blue-hover);
   --color-focus-ring: #345d76;
   --color-danger: #b62f3e;
@@ -181,10 +186,18 @@ button > .material-symbols-rounded {
   --color-text-tertiary: #9898ab;
   --color-text-disabled: #666678;
   --color-accent: var(--color-accent-custom, var(--signal-blue));
+  --color-accent-text: color-mix(in srgb, var(--color-accent) 50%, #ffffff);
   --color-accent-hover: var(--signal-blue-hover);
   --color-danger: #ed6c78;
   --color-success: #64c49b;
   --color-warning: #e2b65e;
+}
+
+// Show Mode is operated by touch in a dark room: panel header controls
+// (hide, detach, locate, close) become 44px targets like the transport.
+.main-workspace.show-mode {
+  --panel-control-height: 44px;
+  --panel-header-height: 54px;
 }
 
 // Base styles

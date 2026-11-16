@@ -847,7 +847,7 @@ function formatBytes(n: number): string {
   .plan-grid {
     display: grid; gap: 8px; margin: 0;
     > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; align-items: baseline; }
-    dt { color: var(--color-text-tertiary); font-size: 10px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+    dt { color: var(--color-text-tertiary); font-size: 11px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
     dd { min-width: 0; margin: 0; }
     .destination {
       display: block;
@@ -857,7 +857,7 @@ function formatBytes(n: number): string {
   }
   .settings-summary { display: flex; flex-wrap: wrap; gap: 5px; }
   .setting-pill {
-    color: var(--color-text-secondary); font-size: 10px; line-height: 1.4; white-space: nowrap;
+    color: var(--color-text-secondary); font-size: 11px; line-height: 1.4; white-space: nowrap;
     & + &::before { content: '•'; margin-right: 5px; color: var(--color-border-strong); }
     strong { margin-left: 3px; font-weight: 700; &.on { color: var(--color-success); } &.off { color: var(--color-text-tertiary); } }
   }
@@ -868,14 +868,14 @@ function formatBytes(n: number): string {
     .result-actions { display: flex; gap: 6px; }
     ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
     li { display: grid; grid-template-columns: 58px minmax(120px, 1fr) auto; gap: 6px 10px; align-items: center; padding: 7px 8px; background: var(--color-background); border-radius: var(--control-radius); }
-    .result-status { font-size: 10px; font-weight: 750; text-transform: uppercase; }
+    .result-status { font-size: 11px; font-weight: 750; text-transform: uppercase; }
     .ready .result-status { color: var(--color-success); }
     .warning .result-status { color: var(--color-warning); }
     .failed .result-status { color: var(--color-danger); }
     .skipped .result-status { color: var(--color-text-tertiary); }
     .result-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-primary); font-size: 12px; }
-    .result-details { color: var(--color-text-tertiary); font-size: 10px; white-space: nowrap; }
-    .result-reason { grid-column: 2 / -1; color: var(--color-text-secondary); font-size: 10px; line-height: 1.35; }
+    .result-details { color: var(--color-text-tertiary); font-size: 11px; white-space: nowrap; }
+    .result-reason { grid-column: 2 / -1; color: var(--color-text-secondary); font-size: 11px; line-height: 1.35; }
   }
 }
 

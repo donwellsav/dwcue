@@ -3,6 +3,9 @@ export interface BaseItem {
   uuid: string;
   index: number[];
   displayName: string;
+  // Optional operator note shown beside the title on the playlist only. It is
+  // not the cue's name and is never sent to the transport or video output.
+  note?: string;
   color: string;
   type: 'audio' | 'group' | 'action'; // Extensible for future item types
 }

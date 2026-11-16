@@ -739,7 +739,7 @@ onUnmounted(() => {
 
 .one-shot-actions .one-shot-control {
   width: 100%;
-  height: 29px;
+  height: 32px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -780,8 +780,10 @@ onUnmounted(() => {
   font-variation-settings: 'FILL' 0, 'wght' 520, 'GRAD' 0, 'opsz' 20;
 }
 .show-mode .one-shot-actions { width: 100%; grid-auto-columns: minmax(0, 1fr); }
-.show-mode .one-shot-control { width: 34px; height: 34px; }
-.show-mode .one-shot-actions .one-shot-control { width: 100%; height: 34px; }
+/* Touch targets: 44px is the smallest a finger hits reliably in a dark room. */
+.show-mode .one-shot-control { width: 44px; height: 44px; }
+.show-mode .one-shot-actions .one-shot-control { width: 100%; height: 44px; }
+.show-mode .one-shot-actions .material-symbols-rounded { font-size: 24px; }
 .one-shot-control:hover,
 .one-shot-control.is-active { background: var(--color-surface-hover); border-color: var(--color-text-tertiary); }
 .one-shot-control:focus-visible {

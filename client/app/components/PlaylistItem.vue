@@ -51,7 +51,7 @@
     <div
       class="item-content"
       @click="handleSelect"
-      :draggable="!showMode"
+      :draggable="!showMode && !editingNote"
       @dragstart="handleDragStart"
       @dragend="handleDragEnd"
     >
@@ -109,16 +109,35 @@
             <span class="material-symbols-rounded" aria-hidden="true">folder</span>
           </span>
 
+          <!-- A note rides with the title on the playlist only: it is not the
+               cue's name, is not shown on the transport, QuickPlays or the
+               video output, and never touches the media file. Double-click
+               the title (or F2) to write one in Edit Mode. -->
+          <input
+            v-if="editingNote"
+            ref="noteInput"
+            v-model="noteDraft"
+            class="item-name item-name--editing"
+            type="text"
+            maxlength="120"
+            :placeholder="t('playlist.notePlaceholder', { name: item.displayName })"
+            :aria-label="t('playlist.notePlaceholder', { name: item.displayName })"
+            @click.stop @dblclick.stop @pointerdown.stop @mousedown.stop
+            @keydown.stop="onNoteKeydown" @keyup.stop
+            @blur="commitNote"
+          />
           <button
-            v-if="mediaFileName && mediaFileName !== item.displayName"
+            v-else-if="mediaFileName && mediaFileName !== item.displayName"
             type="button"
             class="item-name"
             :aria-pressed="showFileName"
-            :title="[visibleTitle, t(showFileName ? 'actions.showCueTitle' : 'actions.showMediaFilename')].join('\n')"
+            :title="[visibleTitle, item.note, t(showFileName ? 'actions.showCueTitle' : 'actions.showMediaFilename'), showMode ? '' : t('playlist.noteHint')].filter(Boolean).join('\n')"
             :style="{ color: durationColor ?? undefined }"
             @click="toggleFileName"
-          >{{ visibleTitle }}</button>
-          <span v-else class="item-name" :title="item.displayName" :style="{ color: durationColor ?? undefined }">{{ item.displayName }}</span>
+            @dblclick.stop="startNote"
+          >{{ visibleTitle }}<span v-if="item.note" class="item-note">{{ item.note }}</span></button>
+          <span v-else class="item-name" :title="[item.displayName, item.note, showMode ? '' : t('playlist.noteHint')].filter(Boolean).join('\n')"
+            :style="{ color: durationColor ?? undefined }" @dblclick.stop="startNote">{{ item.displayName }}<span v-if="item.note" class="item-note">{{ item.note }}</span></span>
           <span
             v-if="isPeaking"
             class="material-symbols-rounded peak-warning-icon"
@@ -128,33 +147,6 @@
             draggable="false"
             @click.stop
           >bomb</span>
-          <!-- The group's level, the same value as Group level in Properties.
-               It rides here so a whole group can be trimmed without opening a
-               panel; in Show Mode the number is display-only and the steppers
-               stay, so no text field can take the keyboard from GO. -->
-          <span v-if="item.type === 'group'" class="group-level" draggable="false"
-            @click.stop @dblclick.stop @pointerdown.stop @mousedown.stop>
-            <button type="button" class="group-level__step" draggable="false"
-              :aria-label="t('playlist.groupLevelDown', { name: item.displayName })"
-              :title="t('playlist.groupLevelDown', { name: item.displayName })"
-              :disabled="!projectControlsReady || groupLevel <= GROUP_LEVEL_MIN"
-              @click.stop="nudgeGroupLevel(-1, $event)">−</button>
-            <output v-if="showMode" class="group-level__value group-level__value--readout"
-              :aria-label="t('playlist.groupLevelFor', { name: item.displayName })">{{ groupLevel.toFixed(1) }}</output>
-            <input v-else class="group-level__value" type="number" inputmode="decimal" draggable="false"
-              :min="GROUP_LEVEL_MIN" max="0" step="0.5" :value="groupLevel.toFixed(1)"
-              :aria-label="t('playlist.groupLevelFor', { name: item.displayName })"
-              :title="t('playlist.groupLevelFor', { name: item.displayName })"
-              :disabled="!projectControlsReady"
-              @keydown.stop @keyup.stop @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
-              @change="setGroupLevel(($event.target as HTMLInputElement).valueAsNumber, $event)" />
-            <span class="group-level__unit" aria-hidden="true">dB</span>
-            <button type="button" class="group-level__step" draggable="false"
-              :aria-label="t('playlist.groupLevelUp', { name: item.displayName })"
-              :title="t('playlist.groupLevelUp', { name: item.displayName })"
-              :disabled="!projectControlsReady || groupLevel >= 0"
-              @click.stop="nudgeGroupLevel(1, $event)">+</button>
-          </span>
         </div>
 
         <div class="item-state">
@@ -212,6 +204,33 @@
               :title="t('behaviors.endLoop')"
             >replay</span>
           </div>
+          <!-- Level, on every row: a cue's Volume or a group's Group level,
+               the same values Properties edits. In Show Mode the number is
+               display-only and the steppers stay, so no text field can take
+               the keyboard from GO. -->
+          <span class="row-level" draggable="false"
+            @click.stop @dblclick.stop @pointerdown.stop @mousedown.stop>
+            <button type="button" class="row-level__step" draggable="false"
+              :aria-label="t('playlist.groupLevelDown', { name: item.displayName })"
+              :title="t('playlist.groupLevelDown', { name: item.displayName })"
+              :disabled="!projectControlsReady || rowLevel <= rowLevelRange.min"
+              @click.stop="nudgeRowLevel(-1, $event)">−</button>
+            <output v-if="showMode" class="row-level__value row-level__value--readout"
+              :aria-label="t(rowLevelLabel, { name: item.displayName })">{{ rowLevel.toFixed(1) }}</output>
+            <input v-else class="row-level__value" type="number" inputmode="decimal" draggable="false"
+              :min="rowLevelRange.min" :max="rowLevelRange.max" :step="rowLevelRange.step" :value="rowLevel.toFixed(1)"
+              :aria-label="t(rowLevelLabel, { name: item.displayName })"
+              :title="t(rowLevelLabel, { name: item.displayName })"
+              :disabled="!projectControlsReady"
+              @keydown.stop @keyup.stop @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+              @change="setRowLevel(($event.target as HTMLInputElement).valueAsNumber, $event)" />
+            <span class="row-level__unit" aria-hidden="true">dB</span>
+            <button type="button" class="row-level__step" draggable="false"
+              :aria-label="t('playlist.groupLevelUp', { name: item.displayName })"
+              :title="t('playlist.groupLevelUp', { name: item.displayName })"
+              :disabled="!projectControlsReady || rowLevel >= rowLevelRange.max"
+              @click.stop="nudgeRowLevel(1, $event)">+</button>
+          </span>
         </div>
 
         <span v-if="item.type === 'audio'" class="item-duration" :style="{ color: durationColor ?? undefined }">{{ durationDisplay }}</span>
@@ -287,6 +306,7 @@
           />
           <ActionButton
             class="delete-action"
+            :class="{ 'delete-action--parked': !isSelected }"
             icon="delete"
             highlight-color="var(--color-danger)"
             context="Playlist"
@@ -312,7 +332,7 @@
 import { countdownColorForSeconds, type AudioItem, type GroupItem, type BaseItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
-import { exceedsTruePeakCeiling } from '~/utils/audio';
+import { dbToLinear, exceedsTruePeakCeiling, linearToDb } from '~/utils/audio';
 import { cloneAsPlaylistItem } from '~/utils/oneShots';
 
 const props = defineProps<{
@@ -375,27 +395,72 @@ const { uiMode } = useUiMode();
 const showMode = computed(() => uiMode.value === 'playback');
 const projectControlsReady = computed(() => projectHydrationStatus.value === 'ready');
 
-// Group level: one value, also edited by the Group level slider in Properties.
-const GROUP_LEVEL_MIN = -60;
-const groupLevel = computed(() => {
-  const db = props.item.type === 'group' ? props.item.groupGainDb : 0;
-  return typeof db === 'number' && Number.isFinite(db) ? Math.min(0, Math.max(GROUP_LEVEL_MIN, db)) : 0;
+// Playlist note: an optional line beside the title. It is its own field, so
+// the cue's title and the media file's name stay exactly as they are.
+const editingNote = ref(false);
+const noteDraft = ref('');
+const noteInput = ref<HTMLInputElement | null>(null);
+const noteEditRequest = useState<string | null>('playlistNoteEditRequest', () => null);
+function startNote() {
+  if (showMode.value || !projectControlsReady.value || editingNote.value) return;
+  noteDraft.value = props.item.note ?? '';
+  editingNote.value = true;
+  void nextTick(() => { noteInput.value?.focus(); noteInput.value?.select(); });
+}
+function commitNote() {
+  if (!editingNote.value) return;
+  editingNote.value = false;
+  const note = noteDraft.value.trim();
+  if (note === (props.item.note ?? '')) return;
+  if (note) props.item.note = note;
+  else delete props.item.note;          // clearing the field removes the note
+  void saveProject();
+}
+function onNoteKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') { event.preventDefault(); commitNote(); }
+  // Escape only abandons the edit here; it is not Stop All while a note is open.
+  else if (event.key === 'Escape') { event.preventDefault(); editingNote.value = false; }
+}
+// F2 on the selected row (see MainWorkspace).
+watch(noteEditRequest, (uuid) => {
+  if (uuid !== props.item.uuid) return;
+  noteEditRequest.value = null;
+  startNote();
 });
-let groupLevelSave: ReturnType<typeof setTimeout> | undefined;
-function setGroupLevel(value: number, event?: Event) {
-  if (props.item.type !== 'group' || !projectControlsReady.value) return;
-  const next = Number.isFinite(value) ? Math.min(0, Math.max(GROUP_LEVEL_MIN, Math.round(value * 2) / 2)) : groupLevel.value;
+
+// Row level. It edits the values Properties already owns, nothing new:
+// a cue's `volume` (stored linear, shown in dB, -60 to +10 like the Volume
+// field) and a group's `groupGainDb` (-60 to 0 like the Group level slider).
+const rowLevelRange = computed(() => props.item.type === 'group'
+  ? { min: -60, max: 0, step: 0.5 }
+  : { min: -60, max: 10, step: 0.1 });
+const rowLevelLabel = computed(() => props.item.type === 'group' ? 'playlist.groupLevelFor' : 'playlist.cueLevelFor');
+const rowLevel = computed(() => {
+  const { min, max } = rowLevelRange.value;
+  const db = props.item.type === 'group' ? props.item.groupGainDb : linearToDb(props.item.volume ?? 1);
+  return typeof db === 'number' && Number.isFinite(db) ? Math.min(max, Math.max(min, db)) : 0;
+});
+let rowLevelSave: ReturnType<typeof setTimeout> | undefined;
+function setRowLevel(value: number, event?: Event) {
+  if (!projectControlsReady.value) return;
+  const { min, max, step } = rowLevelRange.value;
+  const next = Number.isFinite(value)
+    ? Math.min(max, Math.max(min, Math.round(value / step) * step))
+    : rowLevel.value;
   // Show what was accepted, even when it equals the old value (out-of-range entry).
   const field = event?.target as HTMLInputElement | undefined;
   if (field?.tagName === 'INPUT') field.value = next.toFixed(1);
-  if (next === groupLevel.value) return;
-  props.item.groupGainDb = next;     // reaches the engine at once, like any cue edit
+  if (Math.abs(next - rowLevel.value) < 0.001) return;
+  // Reaches the engine at once, like the same edit made in Properties.
+  if (props.item.type === 'group') props.item.groupGainDb = next;
+  else props.item.volume = dbToLinear(next);
   // Several presses in a row become one save of the show file.
-  clearTimeout(groupLevelSave);
-  groupLevelSave = setTimeout(() => { void saveProject(); }, 400);
+  clearTimeout(rowLevelSave);
+  rowLevelSave = setTimeout(() => { void saveProject(); }, 400);
 }
-function nudgeGroupLevel(step: number, event: Event) {
-  setGroupLevel(groupLevel.value + step);
+function nudgeRowLevel(step: number, event: Event) {
+  // To the next whole dB in that direction.
+  setRowLevel(step > 0 ? Math.floor(rowLevel.value + 1e-6) + 1 : Math.ceil(rowLevel.value - 1e-6) - 1);
   // Leave the keyboard with the transport: Space must stay GO, not this button.
   (event.currentTarget as HTMLElement | null)?.blur();
 }
@@ -1307,16 +1372,14 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item.is-group > .item-content .item-identity {
-  grid-template-columns: var(--cue-number-width, 36px) max-content minmax(0, max-content) max-content;
-  justify-content: start;
+  grid-template-columns: var(--cue-number-width, 36px) max-content minmax(0, 1fr);
 }
 
-.group-level {
-  grid-column: 4;
+.row-level {
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin-left: var(--spacing-sm);
   padding: 1px;
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
@@ -1326,7 +1389,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   cursor: default;
 }
 
-.group-level__step {
+.row-level__step {
   display: grid;
   place-items: center;
   width: 28px;
@@ -1345,7 +1408,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   &:disabled { color: var(--color-text-tertiary); cursor: default; }
 }
 
-.group-level__value {
+.row-level__value {
   width: 5.2ch;
   padding: 0;
   border: 0;
@@ -1362,21 +1425,21 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   &:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; border-radius: 2px; }
 }
 
-.group-level__value--readout { display: inline-block; }
+.row-level__value--readout { display: inline-block; }
 
-.group-level__unit {
+.row-level__unit {
   margin-right: 2px;
   color: var(--color-text-secondary);
   font-size: 11px;
 }
 
-.playlist-item.show-mode .group-level__step {
+.playlist-item.show-mode .row-level__step {
   width: 44px;
   height: 44px;
   font-size: 22px;
 }
 
-.playlist-item.show-mode .group-level__value { font-size: 16px; }
+.playlist-item.show-mode .row-level__value { font-size: 16px; }
 
 .item-index {
   grid-column: 1;
@@ -1644,7 +1707,7 @@ button.item-name {
 
 .item-left :deep(.action-btn--playlist) {
   height: var(--cue-cell-height);
-  min-height: 26px;
+  min-height: 32px;
 }
 
 .item-left :deep(.set-next-action.action-btn--playlist) {
@@ -1685,8 +1748,41 @@ button.item-name {
 
 .play-action,
 .group-music-toggle { flex-shrink: 0; }
-.edit-action { grid-column: 1; }
-.delete-action { grid-column: 2; }
+/* Delete sits away from Play, with Edit between them, and is offered only on
+   a selected row: the row a stray click lands on is rarely the selected one. */
+.delete-action { grid-column: 1; grid-row: 1; }
+.edit-action { grid-column: 2; grid-row: 1; }
+.delete-action--parked { visibility: hidden; }
+
+/* The note reads as an aside to the title, not as part of the name. */
+.item-note {
+  margin-inline-start: 0.6em;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  font-size: 0.86em;
+}
+
+.item-note::before {
+  content: '— ';
+  color: var(--color-text-tertiary);
+}
+
+.item-name--editing {
+  width: 100%;
+  min-width: 12ch;
+  padding: 2px 6px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--control-radius);
+  background: var(--color-control);
+  color: var(--color-text-primary);
+  font: inherit;
+  cursor: text;
+}
+
+.item-name--editing:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
 
 .playlist-item:not(.show-mode) .item-actions,
 .playlist-item:not(.show-mode) .item-arm {

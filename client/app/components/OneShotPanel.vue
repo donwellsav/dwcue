@@ -172,18 +172,34 @@ const oneShotSlots = computed(() => {
     Math.ceil(slots.length / layout.columns) * layout.columns,
   );
   while (slots.length < roundedLength) slots.push(null);
+  // In Show Mode the rows after the last QuickPlay are only empty outlines.
+  // Leave them out so the QuickPlays in use get the room. Every QuickPlay
+  // keeps its place and number; only trailing empty rows go.
+  if (showMode.value) {
+    let lastUsed = slots.length - 1;
+    while (lastUsed >= 0 && !slots[lastUsed]) lastUsed -= 1;
+    slots.length = Math.ceil((lastUsed + 1) / layout.columns) * layout.columns;
+  }
   return slots;
 });
+// Tallest a Show Mode tile grows when few rows share the panel.
+const SHOW_MODE_MAX_ROW_HEIGHT = 220;
 const oneShotGridStyle = computed(() => {
   const layout = gridLayout.value;
-  const rowPercent = 100 / layout.rows;
-  const rowGapOffset = GRID_GAP_PX * (layout.rows - 1) / layout.rows;
-  // Allow the metadata row, two title lines, status, and the Show Mode controls.
-  const contentMinHeight = Math.ceil(80 + 48 * oneShotFontScale.value / 100);
+  // Show Mode shares the height between the rows in use, up to the layout's rows.
+  const rows = showMode.value
+    ? Math.max(1, Math.min(layout.rows, Math.ceil(oneShotSlots.value.length / layout.columns)))
+    : layout.rows;
+  const rowPercent = 100 / rows;
+  const rowGapOffset = GRID_GAP_PX * (rows - 1) / rows;
+  // Allow the metadata row, two title lines, status, and the action strip
+  // (32px in Edit Mode, 44px touch targets in Show Mode).
+  const contentMinHeight = Math.ceil((showMode.value ? 95 : 83) + 48 * oneShotFontScale.value / 100);
   const minHeight = Math.max(layout.minHeight, contentMinHeight);
+  const rowHeight = `max(${minHeight}px, calc(${rowPercent}% - ${rowGapOffset}px))`;
   return {
     '--one-shot-columns': String(layout.columns),
-    '--one-shot-row-height': `max(${minHeight}px, calc(${rowPercent}% - ${rowGapOffset}px))`,
+    '--one-shot-row-height': showMode.value ? `min(${Math.max(SHOW_MODE_MAX_ROW_HEIGHT, minHeight)}px, ${rowHeight})` : rowHeight,
   };
 });
 
@@ -642,7 +658,7 @@ button.one-shot-empty-cell {
   cursor: pointer;
 }
 
-button.one-shot-empty-cell .one-shot-empty-cell__icon { color: var(--color-accent); }
+button.one-shot-empty-cell .one-shot-empty-cell__icon { color: var(--color-accent-text); }
 
 button.one-shot-empty-cell:hover,
 button.one-shot-empty-cell:focus-visible {

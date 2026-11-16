@@ -75,7 +75,11 @@ export const PLAYLIST_ROW_HEIGHTS = {
 export const WAVEFORM_OPACITY = { min: 0, max: 100, default: 10 } as const;
 // Percentages: 100 = the original interface text size. Defaults sit below
 // 100 — both were introduced as "smaller than before" preferences.
-export const UI_FONT_SCALE = { min: 80, max: 110, default: 90 } as const;
+// 100% draws the interface at its designed sizes (44px touch targets in Show
+// Mode, 11px smallest text). It used to default to 90%, which shrank both.
+// A saved preference is kept; the range lets a laptop go denser or a touch
+// screen go larger.
+export const UI_FONT_SCALE = { min: 80, max: 125, default: 100 } as const;
 export const ONE_SHOT_FONT_SCALE = { min: 70, max: 130, default: 85 } as const;
 
 export type PlaylistRowMode = keyof typeof PLAYLIST_ROW_HEIGHTS;

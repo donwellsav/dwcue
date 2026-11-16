@@ -337,7 +337,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<button[\s\S]*?class="item-name"[\s\S]*?@click="toggleFileName"[\s\S]*?\{\{ visibleTitle \}\}<\/button>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"/,
+  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<button[\s\S]*?class="item-name"[\s\S]*?@click="toggleFileName"[\s\S]*?\{\{ visibleTitle \}\}<span v-if="item\.note" class="item-note">\{\{ item\.note \}\}<\/span><\/button>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"/,
   'cue colour must remain an independent rail while paused and playing states retain explicit priority',
 );
 assert.match(playlistItem, /'is-up-next': isQueuedNext/, 'queued-next state must remain on the playlist row');
@@ -912,7 +912,7 @@ assert.match(
 );
 assert.match(
   volumeSlider,
-  /volume-slider--inline \.volume-slider__label\s*\{[\s\S]{0,160}width:\s*64px;[\s\S]{0,100}padding:\s*2px 4px;[\s\S]*volume-slider--inline \.volume-slider__input\s*\{[\s\S]{0,220}right:\s*0;[\s\S]{0,260}width:\s*64px;[\s\S]{0,120}padding:\s*0 4px;[\s\S]{0,80}text-align:\s*right;[\s\S]*\.volume-slider__label\s*\{[\s\S]{0,160}display:\s*grid;[\s\S]{0,100}grid-template-columns:\s*minmax\(0, 1fr\) auto;[\s\S]{0,80}gap:\s*3px;[\s\S]{0,180}min-width:\s*64px;[\s\S]{0,100}padding:\s*3px 4px;[\s\S]{0,260}font-size:\s*12px;[\s\S]*\.volume-slider__value\s*\{[\s\S]{0,100}text-align:\s*right;[\s\S]*\.volume-slider__unit\s*\{[\s\S]{0,140}font-size:\s*9px;[\s\S]{0,120}text-transform:\s*none;/,
+  /volume-slider--inline \.volume-slider__label\s*\{[\s\S]{0,160}width:\s*64px;[\s\S]{0,100}padding:\s*2px 4px;[\s\S]*volume-slider--inline \.volume-slider__input\s*\{[\s\S]{0,220}right:\s*0;[\s\S]{0,260}width:\s*64px;[\s\S]{0,120}padding:\s*0 4px;[\s\S]{0,80}text-align:\s*right;[\s\S]*\.volume-slider__label\s*\{[\s\S]{0,160}display:\s*grid;[\s\S]{0,100}grid-template-columns:\s*minmax\(0, 1fr\) auto;[\s\S]{0,80}gap:\s*3px;[\s\S]{0,180}min-width:\s*64px;[\s\S]{0,100}padding:\s*3px 4px;[\s\S]{0,260}font-size:\s*12px;[\s\S]*\.volume-slider__value\s*\{[\s\S]{0,100}text-align:\s*right;[\s\S]*\.volume-slider__unit\s*\{[\s\S]{0,140}font-size:\s*11px;[\s\S]{0,120}text-transform:\s*none;/,
   'the displayed and edited fader values must fit one legible 64-pixel console column',
 );
 assert.match(
@@ -1983,7 +1983,7 @@ assert.doesNotMatch(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.is-group > \.item-content \.item-identity\s*\{\s*grid-template-columns:\s*var\(--cue-number-width, 36px\) max-content minmax\(0, max-content\) max-content;[\s\S]*\.group-level\s*\{\s*grid-column:\s*4;[\s\S]*\.item-index\s*\{\s*grid-column:\s*1;[\s\S]*\.item-icon\s*\{\s*grid-column:\s*2;[\s\S]*\.playlist-item\.is-group \.item-name\s*\{\s*grid-column:\s*3;/,
+  /\.playlist-item\.is-group > \.item-content \.item-identity\s*\{\s*grid-template-columns:\s*var\(--cue-number-width, 36px\) max-content minmax\(0, 1fr\);[\s\S]*\.item-index\s*\{\s*grid-column:\s*1;[\s\S]*\.item-icon\s*\{\s*grid-column:\s*2;[\s\S]*\.playlist-item\.is-group \.item-name\s*\{\s*grid-column:\s*3;/,
   'a folder number, icon and title must have separate columns in the same row',
 );
 assert.match(
@@ -2384,7 +2384,7 @@ assert.match(playlistView,
   /<Btn icon="add" :text="t\('playlist\.importMenu'\)"[^>]*@click="handleImportButton" \/>/,
   'the playlist must offer one Import button, not one per source');
 assert.doesNotMatch(playlistView.slice(0, playlistView.indexOf('<Teleport defer to="#workspace-import-host">')),
-  /youtube\.importFromYouTube|spotifyImport\.button/,
+  /youtube\.importFromYouTube|playlist\.importYouTube|spotifyImport\.button/,
   'YouTube and Spotify belong in the Import chooser, not on the playlist bar');
 assert.match(playlistView,
   /handleImportButton = \(\) => \{\s*if \(!currentProject\.value\) return;\s*if \(!canOnlineImport\.value\) return handleImport\(\);/,
@@ -2399,11 +2399,19 @@ assert.match(read('client/app/components/ServerFileBrowser.vue'),
   /&--staging &__content \{\s*flex: 1 1 clamp\(128px, 24vh, 192px\);/,
   'the staged file list must grow with its panel instead of being capped at a few rows');
 assert.match(playlistItem,
-  /<span v-if="item\.type === 'group'" class="group-level"[\s\S]*nudgeGroupLevel\(-1, \$event\)[\s\S]*<output v-if="showMode" class="group-level__value group-level__value--readout"[\s\S]*<input v-else class="group-level__value" type="number"[\s\S]*nudgeGroupLevel\(1, \$event\)/,
-  'a group row must show its level with steppers, and must not offer a text field in Show Mode');
+  /<div class="item-state">[\s\S]*<span class="row-level"[\s\S]*nudgeRowLevel\(-1, \$event\)[\s\S]*<output v-if="showMode" class="row-level__value row-level__value--readout"[\s\S]*<input v-else class="row-level__value" type="number"[\s\S]*nudgeRowLevel\(1, \$event\)[\s\S]*<\/span>\s*<\/div>\s*<span v-if="item\.type === 'audio'" class="item-duration"/,
+  'every row must show its level at the right of the state lane, and must not offer a text field in Show Mode');
 assert.match(playlistItem,
-  /props\.item\.groupGainDb = next;[\s\S]{0,200}groupLevelSave = setTimeout\(\(\) => \{ void saveProject\(\); \}, 400\);[\s\S]*function nudgeGroupLevel[\s\S]{0,260}\.blur\(\);/,
-  'the row level control must set the same groupGainDb as Properties and give the keyboard back to the transport');
+  /function commitNote\(\) \{[\s\S]{0,260}if \(note\) props\.item\.note = note;\s*else delete props\.item\.note;[\s\S]{0,120}void saveProject\(\);/,
+  'a playlist note must be its own field: writing one must never change the cue title or the media file name');
+assert.doesNotMatch(playlistItem, /props\.item\.displayName\s*=/,
+  'the playlist row must not rename a cue; titles are edited in Properties');
+assert.match(playlistItem,
+  /\.delete-action \{ grid-column: 1; grid-row: 1; \}\s*\.edit-action \{ grid-column: 2; grid-row: 1; \}\s*\.delete-action--parked \{ visibility: hidden; \}/,
+  'Delete must sit away from Play with Edit between them, and appear only on a selected row');
+assert.match(playlistItem,
+  /if \(props\.item\.type === 'group'\) props\.item\.groupGainDb = next;\s*else props\.item\.volume = dbToLinear\(next\);[\s\S]{0,200}rowLevelSave = setTimeout\(\(\) => \{ void saveProject\(\); \}, 400\);[\s\S]*function nudgeRowLevel[\s\S]{0,360}\.blur\(\);/,
+  'the row level must edit the same volume and groupGainDb values as Properties, and give the keyboard back to the transport');
 assert.doesNotMatch(spotifyImportModal + youtubeImportModal, /aria-modal|--dialog-backdrop|<Teleport to="body"/,
   'online imports must not block the playlist or transport with a modal');
 
@@ -2512,7 +2520,7 @@ assert.match(
 );
 assert.match(
   oneShotPanel,
-  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*const contentMinHeight = Math\.ceil\(80 \+ 48 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,220}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
+  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*const contentMinHeight = Math\.ceil\(\(showMode\.value \? 95 : 83\) \+ 48 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,260}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
   'One Shots must preserve exact profile columns while reserving a measured safe width and font-scaled two-line row height',
 );
 assert.doesNotMatch(
@@ -2537,13 +2545,18 @@ assert.match(
 );
 assert.match(
   oneShotTile,
-  /\.show-mode \.one-shot-actions\s*\{\s*width:\s*100%;\s*grid-auto-columns:\s*minmax\(0, 1fr\);\s*\}[\s\S]*\.show-mode \.one-shot-control\s*\{\s*width:\s*34px;\s*height:\s*34px;\s*\}/,
+  /\.show-mode \.one-shot-actions\s*\{\s*width:\s*100%;\s*grid-auto-columns:\s*minmax\(0, 1fr\);\s*\}[\s\S]*\.show-mode \.one-shot-control\s*\{\s*width:\s*44px;\s*height:\s*44px;\s*\}/,
   'Show Mode One Shot cells must use a full-width bottom action strip with clear transport targets',
 );
 assert.match(
   oneShotPanel,
   /buildOneShotSlots\([\s\S]*layout\.rows \* layout\.columns[\s\S]*roundedLength[\s\S]*slots\.push\(null\)/,
   'One Shot cells must remain a permanent grid sized by the active layout rather than playlist contents',
+);
+assert.match(
+  oneShotPanel,
+  /if \(showMode\.value\) \{\s*let lastUsed = slots\.length - 1;\s*while \(lastUsed >= 0 && !slots\[lastUsed\]\) lastUsed -= 1;\s*slots\.length = Math\.ceil\(\(lastUsed \+ 1\) \/ layout\.columns\) \* layout\.columns;/,
+  'Show Mode must drop only the empty rows after the last QuickPlay, so every QuickPlay keeps its place',
 );
 assert.doesNotMatch(oneShotPanel, /v-for="slot in 16"/, 'One Shots must not return to a fixed 16-cell grid');
 assert.match(

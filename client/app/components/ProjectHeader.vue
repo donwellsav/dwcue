@@ -53,6 +53,7 @@
         :text="t('levelCheck.title')"
         :class="{ 'level-check-toggle--active': levelCheckActive }"
         :disabled="levelCheckCount === 0"
+        :title="levelCheckCount === 0 ? t('levelCheck.unavailable') : t('levelCheck.hint')"
         @click="toggleLevelCheck"
       />
 
@@ -433,20 +434,21 @@ onMounted(() => {
 }
 
 /* Settings and shortcuts are useful, but the live clocks and transport own
-   this band. Keep these secondary controls quiet until the operator hovers. */
+   this band. Keep these secondary controls quiet: a hairline outline says
+   "button" without competing with the clocks. */
 .header-right :deep(.btn) {
   min-height: 32px;
   padding: 5px 8px;
   color: var(--color-text-secondary);
   background-color: transparent;
-  border-color: transparent;
+  border-color: var(--color-border);
   border-radius: var(--control-radius);
   box-shadow: none;
 }
 
 .header-right :deep(.video-toggle--active),
 .header-right :deep(.level-check-toggle--active) {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .header-right :deep(.update-indicator) {
@@ -485,6 +487,13 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+/* Show Mode is used by touch in the dark: every control here is a 44px target. */
+.show-mode .header-right :deep(.btn),
+.show-mode .autosave-toggle {
+  min-height: 44px;
+  padding-inline: 12px;
 }
 
 /* Autosave toggle switch */
@@ -598,9 +607,9 @@ onMounted(() => {
   align-items: center;
   gap: 3px;
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   line-height: 1;
   margin-bottom: 3px;
@@ -617,7 +626,7 @@ onMounted(() => {
 }
 
 .clock--large .clock-label {
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .clock--large .clock-value {

@@ -104,7 +104,7 @@ const openEditor = () => {
   flex: none;
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   background: none;
   border: none;
   padding: 2px 4px;

@@ -1260,7 +1260,7 @@ onMounted(() => {
 }
 
 .cart-brand-wordmark {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.16em;
   color: var(--color-text-secondary);
@@ -1268,7 +1268,7 @@ onMounted(() => {
 
 .cart-brand-url {
   margin-left: auto;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--color-text-secondary);
   opacity: 0.7;
 }

@@ -2142,7 +2142,7 @@ onUnmounted(() => {
 
 .audition-btn--primary {
   border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .audition-btn--stop {
@@ -2746,7 +2746,7 @@ onUnmounted(() => {
   height: 20px;
   min-height: 20px;
   padding: 0 6px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .time-input-with-buttons {
