@@ -132,13 +132,11 @@ A cue is one line at every window size. On a narrow playlist a long cue name is 
 
 ### Show Mode
 
-Switch to **Show Mode** for performance after preparation is complete. It is Edit Mode with the editing taken out: the same rows, QuickPlays and transport, at the same size and in the same places, without Import, Add Group, Shuffle, the settings and delete buttons on rows and tiles, drag and drop, or typed levels. Nothing moves or changes size when you switch, and the row height and QuickPlays layout in **Settings → User Interface** apply to both modes. GO and assigned controls remain live. The QuickPlay Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
-
-In Show Mode the top bar keeps only what a show needs in view: warnings, the **Show Mode** switch and the clocks. **Settings**, **Video Output** and **Autosave** fold into one **Setup** button; press it to reach them. The menu closes when you choose something or press anywhere else.
+Switch to **Show Mode** for performance after preparation is complete. It is Edit Mode with the editing taken out: the same rows, QuickPlays and transport, at the same size and in the same places, without Import, Add Group, Shuffle, the settings and delete buttons on rows and tiles, drag and drop, or typed levels. The places of those buttons stay empty, and the top bar and transport are unchanged. Nothing moves or changes size when you switch, and the row height and QuickPlays layout in **Settings → User Interface** apply to both modes. GO and assigned controls remain live. The QuickPlay Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
 Rehearse at the actual display size and app zoom. Settings, Properties, and imports share the lower panel. It fits the content up to 60% of the window, with room reserved for the playlist. On a short window the panel may scroll sooner. Tabs stay along the bottom while the controls scroll. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its adjusted height while the app is open. GO and Stop All stay at the top and the shortcut bar shows a compact reference. **Customize Shortcuts…** opens the full editor. Settings choices for default transition, language, meter display and meter ballistics expand in the panel.
 
-![Show Mode at a small window size: the same layout as Edit Mode without the editing controls, with the silence countdown, the playing cue edged in red, Up Next in green, the Setup button, and the one-line shortcut reference.](manual-assets/show-mode.png)
+![Show Mode at the same window size as the Edit Mode picture above: the same screen without the editing controls, with the silence countdown, the playing cue edged in red, and Up Next in green.](manual-assets/show-mode.png)
 
 ### Selection is not arming
 
@@ -541,7 +539,7 @@ Drop a file from the controller directly onto a slot, including for a remote eng
 
 In Edit Mode, the tile gear opens the same **Properties** panel a playlist cue uses, with one extra **QuickPlay** column. **Basic Info** holds the name, color, file, **Ducking**, **Start Behavior**, and **End Behavior**. **Playback** has the waveform with trim points, gain, normalizing, fade handles, **Fade Settings**, and **Transitions**. **Output** has the device and timecode. The **QuickPlay** column holds what only a QuickPlay has: **When triggered again**, its **Keyboard Shortcut**, and, with Duck Others selected, **Duck Time** and **Release Time**. The remove control is on the tile.
 
-Show Mode hides the gear and the remove control, so a tile shows only **Play/Stop** and the **Cue to Continue** toggle. Switch to Edit Mode to change a QuickPlay.
+A tile shows its number and time on the top line, its name, and one row of controls: the level, **Play/Stop** and the **Cue to Continue** toggle. The key appears beside the number only when it is not the number itself, as with **⇧1** on QuickPlay 11. In Edit Mode the gear and the remove control sit at the end of the top line; Show Mode takes those two out and changes nothing else. Switch to Edit Mode to change a QuickPlay.
 
 The detached QuickPlays window has no Properties panel. There the gear opens a compact **QuickPlay Settings** panel below the tiles in Edit Mode, with **Playback**, **When triggered again**, **Ending**, gain, fades, **Output**, the shortcut, and **Replace audio**. Its **Ending** list offers Stop, Loop, and Play Next; a Go to ending is set in the main window.
 
