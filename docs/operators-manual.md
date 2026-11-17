@@ -815,7 +815,7 @@ A failed autosave or manual save leaves **Save failed** and **Retry** in the hea
 
 Saves run in order. Each captures one document and destination, then writes through a sibling temporary file before atomically replacing the saved show. Slow storage can delay a save or another save behind it. GO and Stop All remain available while the write waits. A failed Save As leaves the active path unchanged. If another controller switches shows during a write, the old save cannot change the new show's path or clear its pending edits. Wait for a save to finish before opening the file you just saved.
 
-**Shows and earlier versions.** Shows saved by earlier versions open here with nothing lost, and are saved in the current form from then on. An earlier version of DonWells Cue opens a show saved by this version with its playlist, but without its QuickPlays. The QuickPlays stay in the file, and they return when the show is opened in this version again. Keep every computer that will open the show on the same version.
+**Shows and earlier versions.** Shows saved by earlier versions open here with nothing lost, and are saved in the current form from then on. An earlier version of DonWells Cue opens a show saved by this version with its playlist, but without its QuickPlays. The QuickPlays stay in the file, and they return when the show is opened in this version again. QuickPlays added in the earlier version meanwhile are kept as well; where two want the same cell, the returning one takes the next free cell. Keep every computer that will open the show on the same version.
 
 ### Show backups
 

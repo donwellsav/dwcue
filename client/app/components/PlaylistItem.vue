@@ -872,48 +872,6 @@ const handleDrop = (e: DragEvent) => {
     return;
   }
 
-  // A QuickPlay slot dragged onto the playlist → promote it to an independent
-  // playlist item (fresh uuid) and free the QuickPlay slot. A QuickPlay cue is a
-  // self-contained copy, so this mirrors the playlist→QuickPlay clone in reverse
-  // (rather than sharing one identity across both lists). Detected via the
-  // 'quickplay-slot-promote' payload, which no current component sets.
-  if (e.dataTransfer.getData('quickplay-slot-promote')) {
-    const promotedUuid = e.dataTransfer.getData('item-uuid');
-    const promotedSource = findItemByUuid(promotedUuid);
-    if (!promotedSource || promotedSource.type !== 'audio') return;
-
-    const clone: AudioItem = { ...(promotedSource as AudioItem), uuid: crypto.randomUUID() } as AudioItem;
-
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const height = rect.height;
-    const { updateIndices, deleteQuickPlays } = useProject();
-
-    if (props.item.type === 'group' && y > height * 0.3 && y < height * 0.7) {
-      const groupItem = props.item as GroupItem;
-      groupItem.children.push(clone);
-      updateIndices(groupItem.children, groupItem.index);
-    } else {
-      const insertAfter = y >= height / 2;
-      let parentArray = currentProject.value.items;
-      let parentIndex: number[] = [];
-      if (props.item.index.length > 1) {
-        const parentGroup = findItemByIndex(props.item.index.slice(0, -1));
-        if (parentGroup && parentGroup.type === 'group') {
-          parentArray = (parentGroup as GroupItem).children;
-          parentIndex = (parentGroup as GroupItem).index;
-        }
-      }
-      const pos = parentArray.findIndex(i => i.uuid === props.item.uuid);
-      parentArray.splice(insertAfter ? pos + 1 : pos, 0, clone);
-      updateIndices(parentArray, parentIndex);
-    }
-
-    // Unassign the originating QuickPlay slot (also persists via saveProject).
-    deleteQuickPlays([promotedUuid]);
-    return;
-  }
-
   const draggedUuid = e.dataTransfer.getData('item-uuid');
   if (!draggedUuid || draggedUuid === props.item.uuid) return;
   

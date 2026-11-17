@@ -157,11 +157,56 @@ void current_name_wins_when_a_document_has_both() {
     assert(liveplay::core::convert_legacy_quick_play_names(doc));
     assert(!has_old_name(doc));
     assert(doc["items"][0]["quickPlay"]["order"] == 2);
-    assert(doc["quickPlayItems"].size() == 1);
-    assert(doc["quickPlayItems"][0]["uuid"] == "new-list");
+    // The two lists of cues are the exception: nothing in either is dropped.
+    assert(doc["quickPlayItems"].size() == 2);
+    assert(doc["quickPlayItems"][0]["uuid"] == "old-list");
+    assert(doc["quickPlayItems"][1]["uuid"] == "new-list");
     assert(doc["quickPlaySlots"].empty());
     assert(doc["quickPlaySlotKeys"].size() == 1 && doc["quickPlaySlotKeys"].contains("2"));
     assert(doc["settings"]["quickPlaySlotCount"] == 32);
+}
+
+// An older version opens a show this version saved: it cannot see our list,
+// keeps it in the file, and writes its own beside it. Coming back, every
+// QuickPlay made on either side is still there.
+void quick_plays_made_in_an_older_version_are_kept_beside_ours() {
+    auto made_in_old = audio("made-in-old", "Made in the older version");
+    made_in_old["oneShot"] = json{{"order", 0}};
+    auto ours_a = audio("ours-a", "Ours A");
+    ours_a["quickPlay"] = json{{"order", 0}};
+    auto ours_b = audio("ours-b", "Ours B");
+    ours_b["quickPlay"] = json{{"order", 1}};
+    auto seen_by_both = audio("ours-b", "Ours B as the older version kept it");
+    seen_by_both["oneShot"] = json{{"order", 4}};
+    json doc{
+        {"items", json::array()},
+        {"cartOnlyItems", json::array({made_in_old, seen_by_both})},
+        {"quickPlayItems", json::array({ours_a, ours_b})},
+    };
+
+    assert(liveplay::core::convert_legacy_quick_play_names(doc));
+    assert(!has_old_name(doc));
+    const auto& list = doc["quickPlayItems"];
+    assert(list.size() == 3);
+    // The older version's arrangement comes first; a cue in both is not doubled.
+    assert(list[0]["uuid"] == "made-in-old" && list[0]["quickPlay"]["order"] == 0);
+    assert(list[1]["uuid"] == "ours-b" && list[1]["quickPlay"]["order"] == 4);
+    // Ours wanted cell 0, which the older version's cue now has: first free cell.
+    assert(list[2]["uuid"] == "ours-a" && list[2]["quickPlay"]["order"] == 1);
+    assert(list[2]["index"] == json::array({-1, 1}));
+
+    // The usual case: the older version made none, so it wrote an empty list.
+    json untouched{
+        {"cartOnlyItems", json::array()},
+        {"quickPlayItems", json::array({ours_a, ours_b})},
+    };
+    assert(liveplay::core::convert_legacy_quick_play_names(untouched));
+    assert(untouched == json({{"quickPlayItems", json::array({ours_a, ours_b})}}));
+
+    // A list that is not a list is not merged: the current name wins.
+    json broken{{"cartOnlyItems", "not a list"}, {"quickPlayItems", json::array({ours_a})}};
+    assert(liveplay::core::convert_legacy_quick_play_names(broken));
+    assert(broken == json({{"quickPlayItems", json::array({ours_a})}}));
 }
 
 void conversion_ignores_documents_it_does_not_understand() {
@@ -277,6 +322,7 @@ void slot_era_shows_become_independent_quick_plays() {
 int main() {
     legacy_names_become_current_names_with_the_same_content();
     current_name_wins_when_a_document_has_both();
+    quick_plays_made_in_an_older_version_are_kept_beside_ours();
     conversion_ignores_documents_it_does_not_understand();
     slot_era_shows_become_independent_quick_plays();
 }

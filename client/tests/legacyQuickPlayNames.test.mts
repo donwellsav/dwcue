@@ -49,12 +49,36 @@ test('when a document has both names for one thing the current name wins', () =>
     items: [{ uuid: 'a', oneShot: { order: 4 }, quickPlay: { order: 0 } }],
   }) as any;
   assert.deepEqual(converted, {
-    quickPlayItems: [{ uuid: 'new', quickPlay: { order: 1 } }],
+    // The two lists of cues are the exception: nothing in either is dropped.
+    quickPlayItems: [{ uuid: 'old' }, { uuid: 'new', quickPlay: { order: 1 } }],
     quickPlaySlots: [{ slot: 2 }],
     quickPlaySlotKeys: { 2: {} },
     settings: { quickPlaySlotCount: 32 },
     items: [{ uuid: 'a', quickPlay: { order: 0 } }],
   });
+});
+
+// An older version opens a show this version saved: it cannot see our list,
+// keeps it in the file, and writes its own beside it.
+test('QuickPlays made in an older version are kept beside ours', () => {
+  const ours = [{ uuid: 'ours-a', quickPlay: { order: 0 } }, { uuid: 'ours-b', quickPlay: { order: 1 } }];
+  assert.deepEqual(convertLegacyQuickPlayNames({
+    cartOnlyItems: [{ uuid: 'made-in-old', oneShot: { order: 0 } }, { uuid: 'ours-b', oneShot: { order: 4 } }],
+    quickPlayItems: structuredClone(ours),
+  }), {
+    // The older version's arrangement comes first; a cue in both is not doubled.
+    quickPlayItems: [
+      { uuid: 'made-in-old', quickPlay: { order: 0 } }, { uuid: 'ours-b', quickPlay: { order: 4 } },
+      // Ours wanted cell 0, which the older version's cue now has: first free cell.
+      { uuid: 'ours-a', quickPlay: { order: 1 }, index: [-1, 1] },
+    ],
+  });
+  // The usual case: the older version made none, so it wrote an empty list.
+  assert.deepEqual(convertLegacyQuickPlayNames({ cartOnlyItems: [], quickPlayItems: structuredClone(ours) }),
+    { quickPlayItems: ours });
+  // A list that is not a list is not merged: the current name wins.
+  assert.deepEqual(convertLegacyQuickPlayNames({ cartOnlyItems: 'not a list', quickPlayItems: structuredClone(ours) }),
+    { quickPlayItems: ours });
 });
 
 test('a current document is left exactly as it is, however often it is converted', () => {

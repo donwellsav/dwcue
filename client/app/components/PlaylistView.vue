@@ -1292,24 +1292,6 @@ const handleDrop = async (e: DragEvent) => {
     return;
   }
 
-  // QuickPlay slot dropped onto empty playlist space → promote it to a standalone
-  // playlist item (fresh uuid) appended at the end, and free the QuickPlay slot.
-  // (Drops landing on an existing row are handled by PlaylistItem.)
-  if (e.dataTransfer.getData('quickplay-slot-promote') && currentProject.value) {
-    const promotedUuid = e.dataTransfer.getData('item-uuid');
-    const { findItemByUuid, deleteQuickPlays } = useProject();
-    const promotedSource = findItemByUuid(promotedUuid);
-    if (!promotedSource || promotedSource.type !== 'audio') return;
-    const clone: AudioItem = {
-      ...(promotedSource as AudioItem),
-      uuid: crypto.randomUUID(),
-      index: [currentProject.value.items.length],
-    } as AudioItem;
-    addItem(clone);
-    deleteQuickPlays([promotedUuid]);
-    return;
-  }
-
   // Dropping a playlist row into empty space appends it to the playlist. Row
   // targets handle before/after/group insertion; this closes the trailing
   // empty-space gap without changing the existing reorder semantics.

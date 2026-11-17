@@ -87,10 +87,13 @@ test('saturated media storage rejects excess work while auth and controls stay r
     assert.equal((await f.request('/api/health')).status, 200);
     assert.equal(f.child.exitCode ?? f.child.signalCode, null);
   });
-test('graceful shutdown safely drains the already executing file read', {timeout:15000, skip: process.platform !== 'darwin'}, async t=>{
+// The engine gives a clean stop 1.5 seconds, then ends the process itself
+// (server/src/main.cpp), so a read stuck on slow storage cannot keep it alive
+// while the app waits to start it again. A forced end reports exit code 1.
+test('shutdown is bounded while a file read is stuck on slow storage', {timeout:15000, skip: process.platform !== 'darwin'}, async t=>{
  const f=await fixture(t,true);
  const request=http.get({host:'127.0.0.1',port:f.port,path:`/api/media?path=${encodeURIComponent(f.media)}`,headers:{Authorization:`Bearer ${token}`,Range:'bytes=0-16777215',Connection:'close'}},res=>res.resume());request.on('error',()=>{});t.after(()=>request.destroy());
  let entered=false;for(let i=0;i<300;i++){try{await access(f.marker);entered=true;break;}catch{}await sleep(5);}assert.ok(entered);
  const start=performance.now();f.child.kill('SIGTERM');await once(f.child,'exit');const delay=performance.now()-start;
- assert.equal(f.child.exitCode,0);assert.equal(f.child.signalCode,null);console.log(JSON.stringify({case:'shutdown_during_read',injected_read_delay_ms:2500,shutdown_ms:delay,exit_code:f.child.exitCode,exit_signal:f.child.signalCode}));
+ assert.equal(f.child.signalCode,null,'the engine ends itself; nothing has to kill it');assert.ok(delay<2300,`ended after ${Math.round(delay)} ms, before the 2500 ms read came back`);assert.ok(f.child.exitCode===0||f.child.exitCode===1,`exit code ${f.child.exitCode}`);console.log(JSON.stringify({case:'shutdown_during_read',injected_read_delay_ms:2500,shutdown_ms:delay,exit_code:f.child.exitCode,exit_signal:f.child.signalCode}));
 });

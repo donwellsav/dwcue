@@ -358,7 +358,6 @@ const handleDragStart = (event: DragEvent) => {
   event.dataTransfer.effectAllowed = 'copyMove';
   event.dataTransfer.setData('quickplay-uuid', props.item.uuid);
   event.dataTransfer.setData('quickplay-slot', String(props.position));
-  event.dataTransfer.setData('quickplay-to-playlist', 'copy');
   isDragging.value = true;
 };
 

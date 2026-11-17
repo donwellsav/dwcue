@@ -101,9 +101,13 @@ function releaseOutputFullscreen(outputWindow, platform) {
 // the output must never do. Nothing should leave a second one behind, and if
 // anything does, it is closed before the new one shows a frame.
 const liveOutputWindows = new Set();
-function claimSoleOutput(outputWindow) {
+function claimSoleOutput(outputWindow, platform = process.platform) {
   for (const other of liveOutputWindows) {
-    if (other !== outputWindow && !other.isDestroyed()) other.destroy();
+    if (other === outputWindow || other.isDestroyed()) continue;
+    // destroy() skips the window's close handler, so the menu bar and Dock a
+    // covering preview took are handed back here first.
+    releaseOutputFullscreen(other, platform);
+    other.destroy();
   }
   liveOutputWindows.clear();
   liveOutputWindows.add(outputWindow);

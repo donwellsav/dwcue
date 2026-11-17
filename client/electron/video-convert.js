@@ -61,7 +61,9 @@ function pickH264Encoder(encodersText) {
 /** What the converter prints about a file when asked to open it. */
 function parseSourceInfo(text) {
   const duration = /Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(text);
-  const video = /Stream #\d+:\d+[^\n]*?: Video: (\w+)[^\n]*?\b(\d{2,5})x(\d{2,5})\b/.exec(text);
+  // A cover picture or thumbnail is listed as a video stream too; it is not the film.
+  const film = String(text).split(/\r?\n/).filter(line => !/\(attached pic\)/.test(line)).join('\n');
+  const video = /Stream #\d+:\d+[^\n]*?: Video: (\w+)[^\n]*?\b(\d{2,5})x(\d{2,5})\b/.exec(film);
   const audio = /Stream #\d+:\d+[^\n]*?: Audio: (\w+)/.exec(text);
   return {
     durationSeconds: duration ? Number(duration[1]) * 3600 + Number(duration[2]) * 60 + Number(duration[3]) : null,
@@ -84,7 +86,8 @@ function conversionArgs({ input, output, encoder, info, threads }) {
     '-hide_banner', '-nostdin', '-y', '-nostats', '-progress', 'pipe:1',
     '-fflags', '+genpts', '-i', input,
     // The first picture and the first sound track, as the cue already plays.
-    '-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn',
+    // 'V' leaves out cover pictures and thumbnails, which are video streams too.
+    '-map', '0:V:0', '-map', '0:a:0?', '-sn', '-dn',
     // Interlaced pictures are woven into whole frames; Chromium needs 8-bit
     // 4:2:0 with even dimensions.
     '-vf', 'yadif=deint=interlaced,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
@@ -102,6 +105,25 @@ function run(file, args, options = {}) {
     execFile(file, args, { windowsHide: true, timeout: 20_000, maxBuffer: 4 * 1024 * 1024, ...options },
       (error, stdout, stderr) => resolve({ error, stdout: String(stdout), stderr: String(stderr) }));
   });
+}
+
+// On Windows a file cannot be replaced while a virus scanner, the indexer or a
+// player has it open, which is often true for a moment after a long write. The
+// finished copy is worth a few tries. The copy it replaces is never removed
+// first: a rename swaps it in one step, so the cue's file is never missing.
+const BUSY = new Set(['EBUSY', 'EPERM', 'EACCES']);
+async function publishCopy(partial, output, {
+  rename = fs.renameSync, wait = ms => new Promise(resolve => setTimeout(resolve, ms)), tries = 10,
+} = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      rename(partial, output);
+      return;
+    } catch (error) {
+      if (attempt >= tries || !BUSY.has(error?.code)) throw error;
+      await wait(250);
+    }
+  }
 }
 
 const sameOrNewer = (candidate, source) => {
@@ -185,16 +207,16 @@ async function convertVideoForOutput({ ffmpegPath, sourcePath, signal, onProgres
     });
     child.stderr.on('data', chunk => { lastWord = (lastWord + chunk).slice(-600); });
     child.on('error', () => finish({ status: 'failed', reason: 'converter' }));
-    child.on('close', code => {
+    child.on('close', async code => {
       if (settled) return;
       if (code !== 0) return finish({ status: 'failed', reason: 'converter', detail: lastWord.trim().split(/\r?\n/).pop() });
       try {
         if (fs.statSync(partial).size === 0) throw new Error('empty');
-        fs.rmSync(output, { force: true });
-        fs.renameSync(partial, output);
+        await publishCopy(partial, output);
       } catch {
         return finish({ status: 'failed', reason: 'write' });
       }
+      if (settled) return;   // cancelled while waiting for the file to come free
       onProgress(1);
       finish({ status: 'converted', path: output });
     });
@@ -203,5 +225,5 @@ async function convertVideoForOutput({ ffmpegPath, sourcePath, signal, onProgres
 
 module.exports = {
   CONVERTED_SUFFIX, conversionArgs, convertVideoForOutput, convertedPathFor, cueSourcePath, parseSourceInfo,
-  pickH264Encoder,
+  pickH264Encoder, publishCopy,
 };

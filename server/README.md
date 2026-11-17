@@ -637,7 +637,7 @@ Unknown `type` values get a `{ "type": "error", "message": "unknown type" }` rep
    and meters each final hardware-channel sum → hardware DAC.
 7. Render thread also updates source and mixer meters.
 8. Broadcast thread, ~33 ms later at the default cadence: snapshot all meters → JSON → fan out to every WS client.
-9. Client's LiveMeterBar.vue reflects the new levels in the next frame paint.
+9. Client's StereoMeter.vue reflects the new levels in the next frame paint.
 ```
 
 End-to-end transport latency depends on the configured render-block size and the target device's buffering; validate those settings on the deployment hardware.
@@ -658,7 +658,7 @@ The document schema is **v2**. Older native documents with 1.x content are upgra
 - Synthesises stereo master assignments: master channel 0 → default device hw ch 0, master channel 1 → default device hw ch 1.
 - Auto-creates one per-cue mixer channel so each cue still has independent gain/fade.
 
-The upgrade reconstructs cues and baseline routes for older native shows. Verify an upgraded show before live use. The server exposes the full routing API, but the current client does not mount `RoutingMatrixPanel.vue` as an operator screen; the available UI is Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** for a cue.
+The upgrade reconstructs cues and baseline routes for older native shows. Verify an upgraded show before live use. The server exposes the full routing API, but the current client has no routing-matrix screen; the available UI is Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** for a cue.
 
 ### Backups
 

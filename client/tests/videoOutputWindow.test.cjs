@@ -164,7 +164,13 @@ test('there is never more than one output window', () => {
   // A picture on two screens is the one thing the output must never do.
   const made = [];
   const output = (name) => {
-    const window = { name, destroyed: false, isDestroyed: () => window.destroyed, destroy() { window.destroyed = true; made.push(`destroyed ${name}`); } };
+    const window = {
+      name, destroyed: false, simple: false, isDestroyed: () => window.destroyed,
+      isSimpleFullScreen: () => window.simple,
+      hide() { made.push(`hid ${name}`); },
+      setSimpleFullScreen(on) { window.simple = on; made.push(`${name} left simple fullscreen`); },
+      destroy() { window.destroyed = true; made.push(`destroyed ${name}`); },
+    };
     return window;
   };
   const first = output('first');
@@ -180,6 +186,14 @@ test('there is never more than one output window', () => {
   assert.deepEqual(made, ['destroyed first'], 'a window already gone is not touched again');
   claimSoleOutput(third);
   assert.equal(third.destroyed, false, 'claiming twice is harmless');
+
+  // A Mac preview left covering its screen holds the menu bar and Dock for the
+  // whole app, and destroying it does not give them back: they are released first.
+  made.length = 0;
+  third.simple = true;
+  claimSoleOutput(output('fourth'), 'darwin');
+  assert.deepEqual(made, ['hid third', 'third left simple fullscreen', 'destroyed third']);
+  assert.equal(third.simple, false);
 });
 
 // ---- Which display is the assigned one --------------------------------------

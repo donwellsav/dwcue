@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const test = require('node:test');
 const {
-  conversionArgs, convertedPathFor, cueSourcePath, parseSourceInfo, pickH264Encoder,
+  conversionArgs, convertedPathFor, cueSourcePath, parseSourceInfo, pickH264Encoder, publishCopy,
 } = require('../electron/video-convert');
 
 test('the copy goes beside the original, and a copy is not copied again', () => {
@@ -39,6 +39,39 @@ test('what is in the source is read from the converter\'s description of it', ()
     { durationSeconds: 62.5, videoCodec: 'prores', width: 1920, height: 1080, audioCodec: 'pcm_s24le' });
   assert.deepEqual(parseSourceInfo('  Duration: N/A\n  Stream #0:0: Audio: mp3, 44100 Hz'),
     { durationSeconds: null, videoCodec: null, width: null, height: null, audioCodec: 'mp3' });
+
+  // A cover picture is listed as a video stream; the film is the one that is not.
+  const withCover = [
+    '  Duration: 00:00:02.00, start: 0.000000, bitrate: 364 kb/s',
+    '  Stream #0:0: Video: mjpeg (Baseline), yuvj420p(pc), 600x600 [SAR 1:1 DAR 1:1], 90k tbr, 90k tbn, 90k tbc (attached pic)',
+    '  Stream #0:1(und): Video: prores (HQ) (apch / 0x68637061), yuv422p10le, 1920x1080, 25 fps',
+  ].join('\r\n');
+  assert.deepEqual(parseSourceInfo(withCover),
+    { durationSeconds: 2, videoCodec: 'prores', width: 1920, height: 1080, audioCodec: null });
+  // A sound file with artwork has no picture to convert.
+  assert.equal(parseSourceInfo(withCover.split('\r\n').slice(0, 2).join('\n')).videoCodec, null);
+});
+
+test('the finished copy is put in place in one step, waiting out a file that is briefly busy', async () => {
+  const busy = code => Object.assign(new Error(code), { code });
+  const calls = [];
+  let waits = 0;
+  const wait = async () => { waits += 1; };
+  // Free on the third try: nothing is deleted first, the rename itself replaces.
+  let failures = 2;
+  await publishCopy('copy.part', 'copy.mp4', {
+    wait, rename: (from, to) => { calls.push([from, to]); if (failures-- > 0) throw busy('EBUSY'); },
+  });
+  assert.deepEqual(calls, [['copy.part', 'copy.mp4'], ['copy.part', 'copy.mp4'], ['copy.part', 'copy.mp4']]);
+  assert.equal(waits, 2);
+
+  // Still busy after every try, or a fault that waiting cannot cure: reported.
+  let tries = 0;
+  await assert.rejects(publishCopy('a', 'b', { wait, tries: 4, rename: () => { tries += 1; throw busy('EPERM'); } }), /EPERM/);
+  assert.equal(tries, 4);
+  tries = 0;
+  await assert.rejects(publishCopy('a', 'b', { wait, rename: () => { tries += 1; throw busy('ENOSPC'); } }), /ENOSPC/);
+  assert.equal(tries, 1);
 });
 
 test('the conversion keeps the first picture and sound, and writes what Chromium plays', () => {
@@ -48,7 +81,8 @@ test('the conversion keeps the first picture and sound, and writes what Chromium
   assert.equal(after('-i'), 'in.mov');
   assert.equal(args.at(-1), 'out.mp4.part');
   assert.equal(after('-f'), 'mp4');
-  assert.deepEqual(args.filter((value, index) => args[index - 1] === '-map'), ['0:v:0', '0:a:0?']);
+  // 'V', not 'v': a cover picture is never taken for the film.
+  assert.deepEqual(args.filter((value, index) => args[index - 1] === '-map'), ['0:V:0', '0:a:0?']);
   assert.match(after('-vf'), /yadif=deint=interlaced.*scale=trunc\(iw\/2\)\*2:trunc\(ih\/2\)\*2.*format=yuv420p/);
   assert.equal(after('-c:v'), 'libx264');
   assert.equal(after('-crf'), '18');

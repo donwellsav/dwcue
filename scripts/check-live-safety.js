@@ -489,9 +489,18 @@ assert.match(
 );
 assert.match(
   videoConvert,
-  /if \(!parsed\.name \|\| parsed\.name\.endsWith\(CONVERTED_SUFFIX\)\) return null;[\s\S]*const partial = `\$\{output\}\.part`;[\s\S]*PRIORITY_BELOW_NORMAL[\s\S]*if \(result\.status !== 'converted'\) fs\.rmSync\(partial, \{ force: true \}\);[\s\S]*fs\.renameSync\(partial, output\);/,
+  /if \(!parsed\.name \|\| parsed\.name\.endsWith\(CONVERTED_SUFFIX\)\) return null;[\s\S]*const partial = `\$\{output\}\.part`;[\s\S]*PRIORITY_BELOW_NORMAL[\s\S]*if \(result\.status !== 'converted'\) fs\.rmSync\(partial, \{ force: true \}\);[\s\S]*await publishCopy\(partial, output\);/,
   'a conversion writes a new copy beside the original at low priority, leaves nothing half-made, and never converts a copy again',
 );
+assert.match(
+  videoConvert,
+  /const BUSY = new Set\(\['EBUSY', 'EPERM', 'EACCES'\]\);[\s\S]*rename\(partial, output\);\s*return;\s*\} catch \(error\) \{\s*if \(attempt >= tries \|\| !BUSY\.has\(error\?\.code\)\) throw error;\s*await wait\(250\);/,
+  'the finished copy is swapped in by one rename, tried again while Windows has the file briefly open',
+);
+assert.doesNotMatch(videoConvert, /rmSync\(output/,
+  'the copy a cue is using is never deleted to make room for its replacement');
+assert.match(videoConvert, /'-map', '0:V:0', '-map', '0:a:0\?'/,
+  'a conversion takes the film, never a cover picture or thumbnail listed as a video stream');
 assert.doesNotMatch(
   videoConvert,
   /fs\.(?:rmSync|unlinkSync|writeFileSync|renameSync)\(\s*sourcePath|'-avoid_negative_ts'/,
