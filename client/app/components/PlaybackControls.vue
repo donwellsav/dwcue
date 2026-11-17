@@ -65,8 +65,8 @@
             >
               {{ t('actions.setAsNext') }}
             </button>
+            <!-- In both modes, so the preview card is the same in both. -->
             <button
-              v-if="showMode"
               type="button"
               class="preview-action-btn"
               @click="handleOpenPreviewProperties"

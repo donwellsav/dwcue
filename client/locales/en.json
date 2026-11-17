@@ -1350,7 +1350,6 @@
   "showMode": {
     "toggle": "Show Mode",
     "toggleHint": "Switch to a simplified playback view for shows.",
-    "setup": "Setup",
     "exit": "Exit",
     "exitHint": "Hold to exit Show Mode",
     "noItems": "No items in this project",

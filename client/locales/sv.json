@@ -1350,7 +1350,6 @@
   "showMode": {
     "toggle": "Föreställningsläge",
     "toggleHint": "Växla till en förenklad uppspelningsvy för föreställningar.",
-    "setup": "Inställning",
     "exit": "Avsluta",
     "exitHint": "Håll intryckt för att avsluta föreställningsläget",
     "noItems": "Inga objekt i det här projektet",

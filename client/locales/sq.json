@@ -1350,7 +1350,6 @@
   "showMode": {
     "toggle": "Modaliteti Shfaqje",
     "toggleHint": "Kalo në një pamje riprodhimi të thjeshtuar gjatë shfaqjeve.",
-    "setup": "Konfigurimi",
     "exit": "Dil",
     "exitHint": "Mbaje shtypur për të dalë nga Modaliteti Shfaqje",
     "noItems": "Nuk ka asnjë artikull në këtë projekt",

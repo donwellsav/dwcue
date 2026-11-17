@@ -1350,7 +1350,6 @@
   "showMode": {
     "toggle": "Modalità Show",
     "toggleHint": "Passa a una vista di riproduzione semplificata, pensata per gli show.",
-    "setup": "Configurazione",
     "exit": "Esci",
     "exitHint": "Tieni premuto per uscire dalla Modalità Show",
     "noItems": "Nessun elemento in questo progetto",

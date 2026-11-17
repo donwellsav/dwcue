@@ -232,6 +232,8 @@
           :disabled="item.children.length < 2 || shufflePending || !projectControlsReady || server.cueStartsBlocked"
           @click.stop="shuffleItems(item, status => showHeaderWarning(t(`shuffle.${status}`)))"
         />
+        <!-- Show Mode: the shuffle button's place, kept empty. -->
+        <span v-else-if="item.type === 'group'" class="group-shuffle-action group-shuffle-action--place" aria-hidden="true"></span>
 
         <div class="item-transport">
           <ActionButton
@@ -274,8 +276,11 @@
         <!-- Keep transport beside the clock, with Play Next in the far-right
              arm lane; preview remains beside the cue number and edit/delete
              stay hidden in Show Mode. -->
-        <div v-if="!showMode" class="item-actions" :class="{ 'item-actions--single': !isSelected }">
+        <!-- The lane is always there, so nothing beside it moves when Show
+             Mode takes the two buttons out. -->
+        <div class="item-actions" :class="{ 'item-actions--single': !isSelected }">
           <ActionButton
+            v-if="!showMode"
             class="edit-action"
             icon="settings"
             highlight-color="var(--color-accent)"
@@ -284,6 +289,7 @@
             :title="t('actions.edit')"
           />
           <ActionButton
+            v-if="!showMode"
             class="delete-action"
             :class="{ 'delete-action--parked': !isSelected }"
             icon="delete"
@@ -1679,6 +1685,12 @@ button.item-name {
 .group-shuffle-action {
   grid-area: video;
   justify-self: end;
+}
+
+/* Show Mode: the button's place without the button. */
+.group-shuffle-action--place {
+  width: 32px;
+  height: 32px;
 }
 
 .group-shuffle-action:disabled {

@@ -2521,15 +2521,24 @@ assert.doesNotMatch(spotifyImportModal + youtubeImportModal, /aria-modal|--dialo
   'online imports must not block the playlist or transport with a modal');
 
 const electronMain = read('client/electron/main.js');
+// Show Mode takes the edit buttons out of a row and keeps their places, so
+// the level, Play, the time and Up Next stay exactly where Edit Mode has them.
 assert.match(
-  read('client/app/components/ProjectHeader.vue'),
-  /class="header-setup"\s+:class="\{ 'header-setup--folded': showMode, 'header-setup--open': showMode && setupOpen \}"[\s\S]*id="header-setup-items" class="header-setup__items" @click="setupOpen = false"[\s\S]*t\('settings\.title'\)[\s\S]*t\('settings\.tabVideoOutput'\)[\s\S]*class="autosave-toggle"[\s\S]*<\/div>\s*<\/div>\s*<!-- Show Mode toggle:[\s\S]*\.header-setup,\s*\.header-setup__items \{\s*display: contents;/,
-  'Show Mode folds the setup controls into one menu and keeps the Show Mode switch out of it; Edit Mode lays them out as before',
+  read('client/app/components/PlaylistItem.vue'),
+  /<div class="item-actions" :class="\{ 'item-actions--single': !isSelected \}">\s*<ActionButton\s+v-if="!showMode"\s+class="edit-action"[\s\S]*<ActionButton\s+v-if="!showMode"\s+class="delete-action"/,
+  'the edit lane of a row must stay in place in Show Mode, with its buttons taken out',
 );
+assert.match(
+  read('client/app/components/PlaylistItem.vue'),
+  /<span v-else-if="item\.type === 'group'" class="group-shuffle-action group-shuffle-action--place" aria-hidden="true"><\/span>[\s\S]*\.group-shuffle-action--place \{\s*width: 32px;\s*height: 32px;/,
+  'a group row must keep the place of its shuffle button in Show Mode',
+);
+// The top bar is the same in Edit Mode and Show Mode: no folded menu, no
+// rule that depends on the mode.
 assert.doesNotMatch(
   read('client/app/components/ProjectHeader.vue'),
-  /setupOpen[^\n]*Escape|Escape[^\n]*setupOpen/,
-  'the Setup menu never takes Escape: it is Stop All',
+  /header-setup|project-header--show|setupOpen|\.show-mode /,
+  'the top bar must not change with the mode',
 );
 // Every small Stop All button wears the shared striped edge; none is red.
 for (const file of [
@@ -2710,7 +2719,7 @@ assert.match(
 );
 assert.match(
   oneShotPanel,
-  /props\.isDetachedWindow \? 'detachedRegular' : 'attachedRegular'[\s\S]*const rows = layout\.rows;[\s\S]*const contentMinHeight = Math\.ceil\(99 \+ 17\.25 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,260}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
+  /props\.isDetachedWindow \? 'detachedRegular' : 'attachedRegular'[\s\S]*const rows = layout\.rows;[\s\S]*const contentMinHeight = Math\.ceil\(68 \+ 17\.25 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,260}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
   'One Shots must preserve exact profile columns while reserving a measured safe width and a font-scaled row height that fits ten on the default window',
 );
 assert.doesNotMatch(
@@ -2845,8 +2854,19 @@ assert.match(
 );
 assert.match(
   oneShotTile,
-  /class="one-shot-bottomline"[\s\S]{0,100}class="one-shot-actions"\s*>\s*<button\s+type="button"\s+class="one-shot-control one-shot-transport"[\s\S]{0,280}@click\.stop="handleTransport"/,
-  'One Shots must use the same Play/Stop button in the bottom action strip in both modes',
+  /class="one-shot-bottomline">\s*<ItemLevel :item="item" :read-only="showMode" :max-db="12"[\s\S]{0,120}<div class="one-shot-actions">\s*<button\s+type="button"\s+class="one-shot-control one-shot-transport"[\s\S]{0,280}@click\.stop="handleTransport"/,
+  'a QuickPlay must keep its level, Play/Stop and Cue to Continue in one control row, the same in both modes',
+);
+// One number on a tile: the key shows only when it is not the slot's own number.
+assert.match(
+  oneShotTile,
+  /<b class="one-shot-index">\{\{ position \+ 1 \}\}<\/b>\s*<kbd v-if="hotkeyLabel && hotkeyLabel !== String\(position \+ 1\)" class="one-shot-hotkey"[\s\S]{0,200}class="one-shot-duration"[\s\S]{0,80}<span class="one-shot-edit">/,
+  'a QuickPlay must show its number, then its time, without repeating the number as its key',
+);
+assert.match(
+  oneShotTile,
+  /\.one-shot-edit \{[^}]*width: 42px;[\s\S]*\.one-shot-actions \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
+  'the control row and the place of the edit buttons must be the same size in both modes',
 );
 assert.match(
   oneShotTile,

@@ -1350,7 +1350,6 @@
   "showMode": {
     "toggle": "Mode Spectacle",
     "toggleHint": "Passer à une vue de lecture simplifiée pour les spectacles.",
-    "setup": "Réglages",
     "exit": "Quitter",
     "exitHint": "Maintenez appuyé pour quitter le Mode Spectacle",
     "noItems": "Aucun élément dans ce projet",

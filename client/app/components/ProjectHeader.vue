@@ -1,5 +1,5 @@
 <template>
-  <div class="project-header" :class="{ 'project-header--show': uiMode === 'playback' }">
+  <div class="project-header">
     <div class="header-left">
       <img
         :src="isDark ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
@@ -39,15 +39,8 @@
       <!-- Appears the moment the socket drops; spins for as long as we retry. -->
       <ConnectionStatusPill />
 
-      <!-- In Show Mode the setup controls fold into one button, so the bar
-           keeps its room for warnings and clocks. In Edit Mode this wrapper is
-           invisible to the layout and the controls sit in the bar as before. -->
-      <div ref="setupEl" class="header-setup"
-        :class="{ 'header-setup--folded': showMode, 'header-setup--open': showMode && setupOpen }">
-      <Btn v-if="showMode" type="button" class="header-setup__toggle" icon="tune" :text="t('showMode.setup')"
-        :title="setupHint" :aria-expanded="setupOpen" aria-controls="header-setup-items"
-        @click="setupOpen = !setupOpen" />
-      <div id="header-setup-items" class="header-setup__items" @click="setupOpen = false">
+      <!-- The same controls in Edit Mode and Show Mode: nothing here changes
+           size, place or shape when the mode does. -->
       <Btn :text="t('settings.title')" :aria-expanded="showProjectSettings"
         @click="showProjectSettings = !showProjectSettings" />
       <Btn v-if="update.version" class="update-indicator" :text="t('update.updateAvailable')"
@@ -76,8 +69,6 @@
           <span class="autosave-toggle__thumb"></span>
         </span>
       </button>
-      </div>
-      </div>
 
       <!-- Show Mode toggle: takes the editing controls out of the workspace and
            puts them back. Nothing changes size or place.
@@ -138,18 +129,6 @@ const { currentProject, findItemByUuid, findItemByIndex, getAllItemsFlat, autoSa
 const { t } = useLocalization();
 const { activeCues, effectiveNextUuid } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
-const showMode = computed(() => uiMode.value === 'playback');
-// The folded setup menu of Show Mode: closed by choosing something in it, by
-// a press anywhere else, and by leaving Show Mode. Escape is left alone: it
-// is Stop All.
-const setupOpen = ref(false);
-const setupEl = ref<HTMLElement | null>(null);
-const closeSetupOutside = (event: PointerEvent) => {
-  if (setupOpen.value && !setupEl.value?.contains(event.target as Node)) setupOpen.value = false;
-};
-watch(showMode, () => { setupOpen.value = false; });
-onMounted(() => document.addEventListener('pointerdown', closeSetupOutside, true));
-onUnmounted(() => document.removeEventListener('pointerdown', closeSetupOutside, true));
 const { warning, silenceRemaining } = useHeaderWarnings();
 
 const { update } = useAppUpdate();
@@ -353,10 +332,6 @@ let stopVideoStatus: (() => void) | null = null;
 
 const toggleVideoOutput = useVideoOutputToggle();
 
-// What the Setup button holds, said with the names of the controls themselves.
-const setupHint = computed(() =>
-  [t('settings.title'), t('settings.tabVideoOutput'), t('project.autosave')].join(' · '));
-
 onMounted(async () => {
   if (!import.meta.client || !(window as any).electronAPI?.videoOutput) return;
   const api = (window as any).electronAPI.videoOutput;
@@ -458,49 +433,6 @@ onMounted(() => {
 /* Settings and shortcuts are useful, but the live clocks and transport own
    this band. Keep these secondary controls quiet: a hairline outline says
    "button" without competing with the clocks. */
-/* Edit Mode: the wrappers take no part in the layout. */
-.header-setup,
-.header-setup__items {
-  display: contents;
-}
-
-/* Show Mode: one Setup button, with the controls in a menu under it. */
-.header-setup--folded {
-  position: relative;
-  display: block;
-}
-
-.header-setup--folded .header-setup__items {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 40;
-  display: none;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  min-width: 230px;
-  padding: var(--spacing-sm);
-  border: 1px solid var(--color-border-strong);
-  border-radius: var(--control-radius);
-  background-color: var(--color-surface-raised);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
-}
-
-.header-setup--open .header-setup__items {
-  display: flex;
-}
-
-.header-setup--folded .header-setup__items :deep(.btn) {
-  justify-content: flex-start;
-  width: 100%;
-}
-
-.header-setup--folded .header-setup__items .autosave-toggle {
-  justify-content: space-between;
-  width: 100%;
-}
-
 .header-right :deep(.btn) {
   min-height: 32px;
   padding: 5px 8px;
@@ -742,23 +674,16 @@ onMounted(() => {
   }
 }
 
-/* Edit Mode: the Video Output thumbnail takes the room List Left would have
-   had, and a narrow window keeps only the clocks a show cannot run without. */
+/* The Video Output thumbnail takes the room List Left would have had, and a
+   narrow window keeps only the clocks a show cannot run without. Both modes. */
 @media (max-width: 1340px) {
-  .project-header:not(.project-header--show) .clock-pair:has(.confidence-chip) .clock--list-left {
+  .clock-pair:has(.confidence-chip) .clock--list-left {
     display: none;
   }
 }
 
 @media (max-width: 1200px) {
-  .project-header:not(.project-header--show) .clock--list-left {
-    display: none;
-  }
-}
-
-/* Show Mode folds its setup buttons away, so List Left fits on far narrower windows. */
-@media (max-width: 1150px) {
-  .project-header--show .clock--list-left {
+  .clock--list-left {
     display: none;
   }
 }

@@ -1350,7 +1350,6 @@
   "showMode": {
     "toggle": "Mod Spectacol",
     "toggleHint": "Comută la o vizualizare de redare simplificată pentru spectacole.",
-    "setup": "Configurare",
     "exit": "Ieșire",
     "exitHint": "Țineți apăsat pentru a ieși din Modul Spectacol",
     "noItems": "Niciun element în acest proiect",

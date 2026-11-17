@@ -16,10 +16,40 @@
     <canvas ref="waveformCanvas" class="one-shot-waveform" aria-hidden="true"></canvas>
     <span class="one-shot-color-rail" aria-hidden="true"></span>
     <span v-if="isPlaying" class="one-shot-progress" :style="progressStyle" aria-hidden="true"></span>
+    <!-- Number, then time. The key shows only when it is not the slot's own
+         number (1 to 9 are their own keys), so a number never appears twice.
+         Settings and Remove sit at the end of this line in Edit Mode; Show
+         Mode takes them out and nothing else moves. -->
     <div class="one-shot-topline">
       <b class="one-shot-index">{{ position + 1 }}</b>
-      <kbd v-if="hotkeyLabel" class="one-shot-hotkey" :title="hotkeyLabel" dir="ltr">{{ hotkeyLabel.replace(/^Shift\+([0-9])$/, '⇧$1') }}</kbd>
+      <kbd v-if="hotkeyLabel && hotkeyLabel !== String(position + 1)" class="one-shot-hotkey" :title="hotkeyLabel" dir="ltr">{{ hotkeyLabel.replace(/^Shift\+([0-9])$/, '⇧$1') }}</kbd>
       <span class="one-shot-duration" dir="ltr">{{ currentTimeLabel }}</span>
+      <span class="one-shot-edit">
+      <button
+        v-if="!showMode"
+        type="button"
+        class="one-shot-control one-shot-settings"
+        :class="{ 'is-active': settingsOpen }"
+        :aria-label="t('oneShots.settingsFor', { name: item.displayName })"
+        :title="t('oneShots.settings')"
+        :aria-expanded="settingsOpen"
+        @click.stop="toggleMenu"
+      >
+        <span class="material-symbols-rounded" aria-hidden="true">settings</span>
+      </button>
+      <button
+        v-if="!showMode"
+        type="button"
+        class="one-shot-control one-shot-remove"
+        :class="{ 'is-active': removeOpen }"
+        :aria-label="t('oneShots.removeFor', { name: item.displayName })"
+        :title="t('oneShots.remove')"
+        :aria-expanded="removeOpen"
+        @click.stop="toggleRemove"
+      >
+        <span class="material-symbols-rounded" aria-hidden="true">close</span>
+      </button>
+      </span>
     </div>
 
     <div class="one-shot-body">
@@ -31,14 +61,12 @@
       </span>
     </div>
 
-    <!-- The QuickPlay's level: the same control as a playlist row, on the
-         same value as Gain in its settings. -->
-    <div class="one-shot-levelline">
+    <!-- One row of controls, the same in both modes: the level (the same
+         control as a playlist row, on the same value as Gain in its
+         settings), then Play and Cue to Continue. -->
+    <div class="one-shot-bottomline">
       <ItemLevel :item="item" :read-only="showMode" :max-db="12"
         :persist="() => persist({ volume: item.volume })" />
-    </div>
-
-    <div class="one-shot-bottomline">
       <div class="one-shot-actions">
         <button
           type="button"
@@ -63,30 +91,6 @@
           @keydown.enter.space.stop
         >
           <span class="material-symbols-rounded" aria-hidden="true">subdirectory_arrow_right</span>
-        </button>
-        <button
-          v-if="!showMode"
-          type="button"
-          class="one-shot-control one-shot-settings"
-          :class="{ 'is-active': settingsOpen }"
-          :aria-label="t('oneShots.settingsFor', { name: item.displayName })"
-          :title="t('oneShots.settings')"
-          :aria-expanded="settingsOpen"
-          @click.stop="toggleMenu"
-        >
-          <span class="material-symbols-rounded" aria-hidden="true">settings</span>
-        </button>
-        <button
-          v-if="!showMode"
-          type="button"
-          class="one-shot-control one-shot-remove"
-          :class="{ 'is-active': removeOpen }"
-          :aria-label="t('oneShots.removeFor', { name: item.displayName })"
-          :title="t('oneShots.remove')"
-          :aria-expanded="removeOpen"
-          @click.stop="toggleRemove"
-        >
-          <span class="material-symbols-rounded" aria-hidden="true">close</span>
         </button>
       </div>
     </div>
@@ -547,7 +551,7 @@ onUnmounted(() => {
   min-width: 0;
   isolation: isolate;
   display: grid;
-  grid-template-rows: 22px minmax(0, 1fr) auto 31px;
+  grid-template-rows: 22px minmax(0, 1fr) 28px;
   gap: var(--spacing-xs);
   padding: var(--spacing-xs) var(--spacing-sm);
   overflow: hidden;
@@ -619,9 +623,7 @@ onUnmounted(() => {
 .one-shot-topline {
   min-width: 0;
   min-height: 22px;
-  display: grid;
-  grid-template-columns: 3ch minmax(0, 1fr) 7ch;
-  grid-template-areas: 'index hotkey time';
+  display: flex;
   align-items: center;
   gap: var(--spacing-xs);
   color: var(--color-text-secondary);
@@ -633,7 +635,7 @@ onUnmounted(() => {
 }
 
 .one-shot-index {
-  grid-area: index;
+  flex: none;
   min-width: 0;
   overflow: hidden;
   color: var(--color-text-primary);
@@ -643,22 +645,45 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.one-shot-levelline {
+/* The control row: level, then the two buttons, 28px high. */
+.one-shot-bottomline {
   min-width: 0;
   display: flex;
   align-items: center;
+  gap: var(--spacing-xs);
   z-index: 1;
 }
 
-.one-shot-levelline :deep(.item-level) { height: 24px; }
-
-.one-shot-bottomline {
-  min-width: 0;
-  min-height: 31px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* The level control, trimmed to fit beside the buttons. */
+.one-shot-bottomline :deep(.item-level) {
+  flex: none;
+  height: 28px;
+  padding-left: 4px;
 }
+.one-shot-bottomline :deep(.item-level__value) { width: 3.4ch; }
+/* No room for the unit here; the number with its arrows is the level. */
+.one-shot-bottomline :deep(.item-level__unit) { display: none; }
+
+/* Settings and Remove, at the end of the top line. Their place is kept in
+   Show Mode, where the buttons are taken out, so the number, key and time
+   beside it have the same room in both modes. */
+.one-shot-edit {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  width: 42px;
+  height: 20px;
+  margin-inline-start: auto;
+}
+.one-shot-edit .one-shot-control {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.one-shot-edit .material-symbols-rounded { font-size: 16px; }
 
 .one-shot-runtime-state {
   min-width: 0;
@@ -689,8 +714,7 @@ onUnmounted(() => {
 }
 
 .one-shot-hotkey {
-  grid-area: hotkey;
-  justify-self: end;
+  flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
   padding: 2px 4px;
@@ -755,8 +779,7 @@ onUnmounted(() => {
 }
 
 .one-shot-duration {
-  grid-area: time;
-  justify-self: end;
+  flex: none;
   min-width: 0;
   overflow: hidden;
   color: var(--color-text-secondary);
@@ -770,10 +793,11 @@ onUnmounted(() => {
 .one-shot-actions {
   position: relative;
   z-index: 2;
-  width: 100%;
+  flex: 1 1 0;
+  min-width: 0;
+  /* Play and Cue to Continue, in both modes. */
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid var(--color-border-strong);
   border-radius: var(--control-radius);
@@ -797,7 +821,7 @@ onUnmounted(() => {
 
 .one-shot-actions .one-shot-control {
   width: 100%;
-  height: 32px;
+  height: 26px;
   border: 0;
   border-radius: 0;
   background: transparent;

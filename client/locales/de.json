@@ -1350,7 +1350,6 @@
   "showMode": {
     "toggle": "Show-Modus",
     "toggleHint": "Zu einer vereinfachten Wiedergabeansicht für Shows wechseln.",
-    "setup": "Einrichtung",
     "exit": "Beenden",
     "exitHint": "Gedrückt halten, um den Show-Modus zu verlassen",
     "noItems": "Keine Elemente in diesem Projekt",

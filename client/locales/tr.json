@@ -1350,7 +1350,6 @@
   "showMode": {
     "toggle": "Gösteri Modu",
     "toggleHint": "Gösteriler için basitleştirilmiş bir oynatma görünümüne geçin.",
-    "setup": "Kurulum",
     "exit": "Çıkış",
     "exitHint": "Gösteri Modundan çıkmak için basılı tutun",
     "noItems": "Bu projede öğe yok",

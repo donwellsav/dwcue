@@ -1350,7 +1350,6 @@
   "showMode": {
     "toggle": "演出模式",
     "toggleHint": "切换到简化的播放界面，适用于演出。",
-    "setup": "设置面板",
     "exit": "退出",
     "exitHint": "长按以退出演出模式",
     "noItems": "此项目中没有项目",
