@@ -272,11 +272,31 @@ assert.match(
 );
 // Show Mode is Edit Mode with the editing taken out. It has no sizes of its
 // own: the same rows, tiles and transport, at the same size, in both modes.
-assert.doesNotMatch(
-  playlistItem,
-  /\.playlist-item\.show-mode[^{]*\{[^}]*(?:font-size|width|height|grid-template|padding|margin)/,
-  'Show Mode rows must be drawn at the same size and in the same places as Edit Mode rows',
-);
+// Show Mode is Edit Mode with controls taken out. scripts/mode-layout.test.cjs
+// proves it in the packaged app by measuring every element in both modes; this
+// is the cheap guard that runs everywhere: no style rule keyed to Show Mode
+// may set anything that sizes or moves a box.
+{
+  const styleFiles = ['client/assets/styles/main.scss'];
+  const collect = (dir) => {
+    for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+      if (entry.isDirectory()) collect(`${dir}/${entry.name}`);
+      else if (entry.name.endsWith('.vue')) styleFiles.push(`${dir}/${entry.name}`);
+    }
+  };
+  collect('client/app');
+  const BOX = /(?:^|[;{\s])(?:width|height|min-width|min-height|max-width|max-height|font-size|line-height|padding|margin|gap|inset|top|right|bottom|left|flex|flex-basis|grid-template[a-z-]*|grid-auto[a-z-]*|grid-area|grid-column|grid-row|display|position|transform|--[a-z-]*(?:width|height|size))[a-z-]*\s*:/;
+  const offenders = [];
+  for (const file of styleFiles) {
+    const source = read(file);
+    const styles = file.endsWith('.vue') ? (source.match(/<style[^>]*>[\s\S]*?<\/style>/g) ?? []).join('\n') : source;
+    for (const [, selector, body] of styles.matchAll(/([^{};]+)\{([^{}]*)\}/g)) {
+      const keyed = selector.replace(/:not\([^)]*\)/g, '');
+      if (/\.show-mode\b|--show\b/.test(keyed) && BOX.test(body)) offenders.push(`${file}: ${selector.trim().replace(/\s+/g, ' ')}`);
+    }
+  }
+  assert.deepEqual(offenders, [], 'style rules keyed to Show Mode must not size or move anything');
+}
 assert.match(
   playlistItem,
   /\.playlist-item\.show-mode \.item-content\s*\{\s*cursor:\s*default;\s*\}/,
@@ -1962,11 +1982,6 @@ assert.doesNotMatch(
   /\{ id: '(?:media|ducking)', label:/,
   'media and ducking must not return as separate audio-property tabs',
 );
-assert.doesNotMatch(
-  playbackControls + mainWorkspace + read('client/assets/styles/main.scss'),
-  /\.(?:playback-controls|main-workspace)\.show-mode[^{]*\{/,
-  'the transport, panel headers and split view must be drawn the same in Show Mode as in Edit Mode',
-);
 assert.match(
   globalStyles,
   /--modal-width:\s*560px;[\s\S]{0,80}--modal-max-height:\s*90vh;/,
@@ -2057,11 +2072,6 @@ assert.doesNotMatch(
   /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[^}]*(?:padding|margin-left|background|color:\s*var\(--color-danger\))/,
   'playing state must not turn the cue title into a shifted or coloured contrast chip',
 );
-assert.match(
-  playlistItem,
-  /const depthOffset = props\.depth > 0 \? 24 : 0;[\s\S]{0,80}marginLeft:\s*`\$\{depthOffset\}px`/,
-  'nested rows must be indented the same way in both modes',
-);
 // A row is one line at every width. It never rearranges onto a second line
 // when the side panels take room: the title is cut short and the row keeps
 // the same look in a small window as in a large one.
@@ -2069,16 +2079,6 @@ assert.doesNotMatch(
   playlistItem,
   /@container \(max-width: \d+px\)|'\. \. shuffle actions transport duration arm'/,
   'playlist rows must stay on one line at every width',
-);
-assert.match(
-  playlistItem,
-  /\.playlist-item > \.group-children\s*\{[\s\S]{0,80}padding-left:\s*var\(--spacing-md\);/,
-  'both modes must keep the nested-folder offset',
-);
-assert.match(
-  playlistItem,
-  /\.playlist-item\.is-group > \.item-content \.expand-btn\s*\{[^}]*translateX\(min\(10px, calc\(2px \+ var\(--folder-column-gap, var\(--spacing-sm\)\)\)\)\)/,
-  'folder arrows must align with their child accent rail in both modes',
 );
 assert.match(
   playlistView,
@@ -2497,8 +2497,6 @@ assert.match(itemLevel,
 assert.match(itemLevel,
   /\.item-level__spin \{[\s\S]{0,120}grid-template-rows: 1fr 1fr;\s*width: 16px;/,
   'the level arrows must stay stacked and slim');
-assert.doesNotMatch(itemLevel + playlistItem + read('client/app/components/OneShotTile.vue'), /item-level--large|:large=/,
-  'the level control has one size, used in both modes');
 assert.doesNotMatch(itemLevel + playlistItem, /row-level__step|levelArrowsOpen|v-if="[^"]*" class="item-level__spin"/,
   'the level arrows must not depend on selection or a tap, and must not return to side-by-side buttons');
 assert.match(itemLevel,
@@ -2521,18 +2519,6 @@ assert.doesNotMatch(spotifyImportModal + youtubeImportModal, /aria-modal|--dialo
   'online imports must not block the playlist or transport with a modal');
 
 const electronMain = read('client/electron/main.js');
-// Show Mode takes the edit buttons out of a row and keeps their places, so
-// the level, Play, the time and Up Next stay exactly where Edit Mode has them.
-assert.match(
-  read('client/app/components/PlaylistItem.vue'),
-  /<div class="item-actions" :class="\{ 'item-actions--single': !isSelected \}">\s*<ActionButton\s+v-if="!showMode"\s+class="edit-action"[\s\S]*<ActionButton\s+v-if="!showMode"\s+class="delete-action"/,
-  'the edit lane of a row must stay in place in Show Mode, with its buttons taken out',
-);
-assert.match(
-  read('client/app/components/PlaylistItem.vue'),
-  /<span v-else-if="item\.type === 'group'" class="group-shuffle-action group-shuffle-action--place" aria-hidden="true"><\/span>[\s\S]*\.group-shuffle-action--place \{\s*width: 32px;\s*height: 32px;/,
-  'a group row must keep the place of its shuffle button in Show Mode',
-);
 // The icon font is cut down to the icons the app names. Any icon name that
 // appears in the client source must be in it, or the icon would show as its
 // name in letters: run scripts/subset-icon-font.py after using a new icon.
@@ -2561,15 +2547,6 @@ assert.match(
   read('client/app/components/ShortcutsBar.vue'),
   /const runningActions = RUNNING\.map\(byId\);[\s\S]*PLAYBACK_ACTIONS\.filter\(\(\{ id \}\) => !RUNNING\.includes\(id\) && !LATER\.includes\(id\)\)[\s\S]*\.shortcuts-bar__items \{[^}]*flex-wrap: wrap;[^}]*height: calc\(2 \* var\(--shortcut-line\) \+ 3px\);[^}]*overflow: hidden;/,
   'the shortcut bar must show two lines of shortcuts and drop none of the actions from its list',
-);
-assert.doesNotMatch(read('client/app/components/ShortcutsBar.vue'), /showMode|uiMode|show-mode/,
-  'the shortcut bar must be the same in both modes');
-// The top bar is the same in Edit Mode and Show Mode: no folded menu, no
-// rule that depends on the mode.
-assert.doesNotMatch(
-  read('client/app/components/ProjectHeader.vue'),
-  /header-setup|project-header--show|setupOpen|\.show-mode /,
-  'the top bar must not change with the mode',
 );
 // Every small Stop All button wears the shared striped edge; none is red.
 for (const file of [
@@ -2773,11 +2750,6 @@ assert.doesNotMatch(
   /attachedShow|detachedShow|showPlaylistRowHeight|SHOW_MODE_MAX_ROW_HEIGHT/,
   'Show Mode has no row height or QuickPlays layout of its own',
 );
-assert.doesNotMatch(
-  oneShotTile,
-  /\.show-mode[^{]*\{[^}]*(?:width|height|font-size|grid-template|grid-auto)/,
-  'a QuickPlay tile must be drawn at the same size in Show Mode as in Edit Mode',
-);
 assert.match(
   oneShotPanel,
   /buildOneShotSlots\([\s\S]*layout\.rows \* layout\.columns[\s\S]*roundedLength[\s\S]*slots\.push\(null\)/,
@@ -2893,11 +2865,6 @@ assert.match(
   oneShotTile,
   /<b class="one-shot-index">\{\{ position \+ 1 \}\}<\/b>\s*<kbd v-if="hotkeyLabel && hotkeyLabel !== String\(position \+ 1\)" class="one-shot-hotkey"[\s\S]{0,200}class="one-shot-duration"[\s\S]{0,80}<span class="one-shot-edit">/,
   'a QuickPlay must show its number, then its time, without repeating the number as its key',
-);
-assert.match(
-  oneShotTile,
-  /\.one-shot-edit \{[^}]*width: 42px;[\s\S]*\.one-shot-actions \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
-  'the control row and the place of the edit buttons must be the same size in both modes',
 );
 assert.match(
   oneShotTile,
