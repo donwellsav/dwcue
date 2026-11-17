@@ -63,7 +63,7 @@ Connect the audio interface before opening the show. Confirm the correct outputs
 
 On launch, the desktop normally starts its managed local server automatically. The welcome screen indicates **Using the audio engine on this computer** once connected. If the engine is starting, wait for connection rather than repeatedly reopening the app. The **Connect to a server on the network…** option reveals remote setup; see chapter 10 before using it.
 
-![Welcome screen connected to the isolated software engine, showing version 2.6.17.](manual-assets/welcome-current.png)
+![Welcome screen using the audio engine on this computer, showing version 2.6.24.](manual-assets/welcome-current.png)
 
 **Procedure — establish a known starting state**
 
@@ -108,9 +108,9 @@ DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; po
 
 ### Edit Mode
 
-Use Edit Mode to import, organize, and configure the show. The top bar contains Settings, Video Output, Level Check, Pre-show check, Autosave, and the Show Mode switch. Open **Settings → Shortcuts** for the keyboard reference and editor. While a Settings tab has focus, Left and Right move between tabs and Enter opens the focused tab. Transport sits below the top bar with **Stop All Cues** in its yellow-and-black striped frame, the active-cue area, and the green **Play Next**. The button shows the cue name on multiple lines, its number, and the playable duration. A wider window has room for cue type, group, and loop or group start behavior where applicable. Hover for the full name. The output strip shows the selected device, main level, meters, and true-peak limiter. The clocks at the right of the top bar are **Time Left** for the cue that is playing, **List Left**, and the time of day. **List Left** is the running time from here to the end of the playlist: the rest of the playing cue, then **Up Next** and every cue after it. Time spent waiting for GO is not counted. A narrow window hides List Left to keep the other two clocks.
+Use Edit Mode to import, organize, and configure the show. The top bar contains Settings, Video Output, Autosave, and the Show Mode switch. **Pre-show check** and **Level Check** open from the top row of **Settings → Audio Routing**. Open **Settings → Shortcuts** for the keyboard reference and editor. While a Settings tab has focus, Left and Right move between tabs and Enter opens the focused tab. Transport sits below the top bar with **Stop All Cues** in its yellow-and-black striped frame, the active-cue area, and the green **Play Next**. The button shows the cue name on multiple lines, its number, and the playable duration. A wider window has room for cue type, group, and loop or group start behavior where applicable. Hover for the full name. The output strip shows the selected device, main level, meters, and true-peak limiter. The clocks at the right of the top bar are **Time Left** for the cue that is playing, **List Left**, and the time of day. **List Left** is the running time from here to the end of the playlist: the rest of the playing cue, then **Up Next** and every cue after it. Time spent waiting for GO is not counted. A narrow window hides List Left to keep the other two clocks.
 
-![Current Edit Mode with the playlist, acknowledged Up Next target, Basic Info and output console.](manual-assets/edit-workspace.png)
+![Edit Mode with the playlist, the Up Next cue edged in green, Basic Info and the output console.](manual-assets/edit-workspace.png)
 
 ![Basic Info with aligned cue details, media, identifiers, and cueing controls.](manual-assets/cue-basic-current.png)
 
@@ -134,11 +134,11 @@ On narrow playlists, cue names appear above the row controls and the toolbar use
 
 Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The QuickPlay Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
-In Show Mode the top bar keeps only what a show needs in view: warnings, the **Show Mode** switch and the clocks. **Settings**, **Video Output**, **Level Check**, **Pre-show check** and **Autosave** fold into one **Setup** button; press it to reach them. The menu closes when you choose something or press anywhere else.
+In Show Mode the top bar keeps only what a show needs in view: warnings, the **Show Mode** switch and the clocks. **Settings**, **Video Output** and **Autosave** fold into one **Setup** button; press it to reach them. The menu closes when you choose something or press anywhere else.
 
 Rehearse at the actual display size and app zoom. Settings, Properties, and imports share the lower panel. It fits the content up to 60% of the window, with room reserved for the playlist. On a short window the panel may scroll sooner. Tabs stay along the bottom while the controls scroll. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its adjusted height while the app is open. GO and Stop All stay at the top and the shortcut bar shows a compact reference. **Customize Shortcuts…** opens the full editor. Settings choices for default transition, language, meter display and meter ballistics expand in the panel.
 
-![Show Mode at a small window size with the silence countdown, cue names, and one-line QuickPlays shortcut reference.](manual-assets/show-mode.png)
+![Show Mode at a small window size: the silence countdown, the playing cue edged in red, Up Next in green, the Setup button, and the one-line shortcut reference.](manual-assets/show-mode.png)
 
 ### Selection is not arming
 
@@ -240,7 +240,7 @@ In **Properties → Basic Info**, use **Replace or relink media** beside **File*
 
 Open **Properties → Playback** for the waveform and the aligned **Cue Timing**, **Fade Settings**, and **Transitions** columns. Set **In Point** and **Out Point** around the part you want to use. Listen to the entrance and exit; a visually quiet waveform may contain room tone, a breath, or an intentional pause. Leave enough material for any fade or transition you configure.
 
-![Playback controls and waveform for the generated practice cue; In/Out and explicit preparation controls are visible.](manual-assets/cue-playback-current.png)
+![Playback controls and waveform for a cue; In and Out points, fades, Trim Silence and Reduce peaks are visible.](manual-assets/cue-playback-current.png)
 
 **Procedure — trim and rehearse one cue**
 
@@ -379,7 +379,7 @@ Open **Settings** and choose **Audio Device** for the show. Check the device nam
 
 ![Rear-panel audio-interface connector reference. Use it to discuss labelled outputs, cable seating, and strain relief; the photograph does not certify pinout, signal continuity, gain, or a particular show setup.](manual-assets/audio-connector-photo.jpg)
 
-![The docked Audio Routing tab. Choose the actual show interface on the performance computer.](manual-assets/audio-settings-current.png)
+![The docked Audio Routing tab, with Pre-show check and Level Check in its top row. Choose the actual show interface on the performance computer.](manual-assets/audio-settings-current.png)
 
 **Procedure — prove the Main route end to end**
 
@@ -428,9 +428,9 @@ The selected output target influences meter presentation, loudness targets, and 
 
 The limiter is a maximum, not a measurement target. Signals below its ceiling keep their gain. It only attenuates overs, with continuous lookahead through a ceiling change or an explicit bypass. It does not normalize the show or lift a quiet cue. When Main and Preview share a physical channel, their combined signal receives the final protection; the mapped meters and gain-reduction display report that physical sum.
 
-A limiter reduces digital peaks; it does not protect against an inappropriate acoustic level, a badly balanced cue, a wrong output patch, or downstream console gain. Persistent large gain reduction is a reason to lower and rebalance the source, not to raise the ceiling until the warning disappears. Use **Level Check** during preparation and resolve problems before switching to Show Mode.
+A limiter reduces digital peaks; it does not protect against an inappropriate acoustic level, a badly balanced cue, a wrong output patch, or downstream console gain. Persistent large gain reduction is a reason to lower and rebalance the source, not to raise the ceiling until the warning disappears. Use **Level Check** (**Settings → Audio Routing**) during preparation and resolve problems before switching to Show Mode.
 
-![Output console with its existing output fader, meters and attenuation-only TP Limiter on the virtual output.](manual-assets/output-console-current.png)
+![Output console with the output fader, meters and the attenuation-only TP Limiter.](manual-assets/output-console-current.png)
 
 **Procedure — set a repeatable operating level**
 
@@ -454,7 +454,7 @@ Keep the LTC destination separate from the audience audio path. Do not enable ti
 
 ### Pre-show check
 
-Choose **Pre-show check** in the top bar before doors and after any change to the rig. It reads the state of the system and starts nothing: no cue plays and no output is opened. Each line reports **OK**, **Needs attention** or **Not checked**.
+Open **Settings → Audio Routing** and choose **Pre-show check** before doors and after any change to the rig. The report takes the place of Settings in the lower panel. It reads the state of the system and starts nothing: no cue plays and no output is opened. Each line reports **OK**, **Needs attention** or **Not checked**.
 
 - **Audio engine:** running, answering, and the same version as the app.
 - **Output device:** the main output is connected and its audio is running, and so are the Preview, LTC and per-cue outputs the show uses.
@@ -472,7 +472,7 @@ The line at the top reads **Ready** when nothing needs attention. If the show ch
 4. On the cue call, press **Play Next** or its assigned shortcut once.
 5. Confirm the expected active cue and progress, then prepare the next target.
 
-![Transport controls during the generated looping practice cue; the native virtual clock drives its timing.](manual-assets/transport-detail-current.png)
+![Transport during the looping practice cue: Stop All Cues in its striped frame, the playing cue with its own controls, and the green Play Next.](manual-assets/transport-detail-current.png)
 
 ![Production digital-mixer control surface as an operator-position reference. Use it to discuss sightlines and disciplined access to controls; the photograph does not certify the venue, equipment configuration, or show readiness.](manual-assets/stage-operator-photo.jpg)
 
@@ -547,7 +547,7 @@ The detached QuickPlays window has no Properties panel. There the gear opens a c
 
 Choice lists expand inside the panel. The playlist and **GO** stay available in the main window. With a choice list open, **Escape** runs Stop All even if the shortcut was remapped. The detached settings header also has its own **Stop All** button. Both stop actions leave the choices open.
 
-![The compact QuickPlay Settings panel of the detached window, with playback, retrigger, ending, gain and fade controls.](manual-assets/one-shot-settings-current.png)
+![The compact QuickPlay Settings panel of the detached window, with playback, retrigger, ending, gain and fade controls, and its own Stop All.](manual-assets/one-shot-settings-current.png)
 
 | Setting | Operator decision |
 | --- | --- |
@@ -612,7 +612,7 @@ In the playlist workspace, Enter, Space, and Escape keep their assigned show act
 
 ### Map a MIDI controller
 
-![MIDI configuration with fixture MIDI access and no detected hardware; assign and rehearse physical controls separately.](manual-assets/midi-current.png)
+![MIDI configuration with no hardware detected; assign and rehearse physical controls separately.](manual-assets/midi-current.png)
 
 1. Connect the controller before the show and open **Settings → MIDI**.
 2. Select the intended **MIDI Device**. **All Devices** listens broadly; choosing a particular controller reduces accidental input from other connected equipment.
@@ -992,7 +992,7 @@ First protect the audience using the rehearsed stop/mute procedure. Then identif
 
 **Level Check** is a soundcheck tool, not a silent analysis report or headphone preview. It chooses an approximately 5-second window near a cue's loudest available waveform peak and plays it through the normal program transport. Cues with no usable waveform or a fully silent region may be absent from the check.
 
-Entering the mode does not immediately play the first cue. Use its replay/play control, then Previous/Next to move through eligible cues. Previous and Next start playback automatically. While the bar is active, **R** replays, **[** goes to the previous cue, **]** to the next cue, and **Q** exits. These keys do not take over text fields; the normal Space/Stop All pathways remain available.
+Start it with **Level Check** in **Settings → Audio Routing**; the same button stops it. Entering the mode does not immediately play the first cue. Use its replay/play control, then Previous/Next to move through eligible cues. Previous and Next start playback automatically. While the bar is active, **R** replays, **[** goes to the previous cue, **]** to the next cue, and **Q** exits. These keys do not take over text fields; the normal Space/Stop All pathways remain available.
 
 Perform this only during soundcheck with the console operator ready. Normal cue routing, ducking, and sequencing still matter; it is not an isolated substitute for rehearsing a show. Exit and verify that soundcheck playback has stopped before opening the house.
 
