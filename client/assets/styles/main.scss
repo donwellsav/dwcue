@@ -177,6 +177,19 @@ button > .material-symbols-rounded {
     repeating-linear-gradient(-45deg, var(--stop-ink) 0 5px, var(--stop-ground) 5px 10px) border-box;
 }
 
+// Every small Stop All button (panel headers, the recovery and reconnect
+// panels, the detached QuickPlays window) wears the striped edge of a cue's
+// own Stop, and keeps it while the pointer is over it. None of them is red.
+.stop-all-btn.stop-all-btn.stop-all-btn,
+.stop-all-btn.stop-all-btn.stop-all-btn:hover:not(:disabled) {
+  // The striped edge is thicker than a plain border; the padding gives way so
+  // the button stays the height of its neighbours.
+  padding-block: 1px;
+  border: var(--stop-button-border);
+  background: var(--stop-button-background);
+  color: var(--color-text-primary);
+}
+
 // Light console: the same hierarchy without forcing a dark work surface.
 [data-theme='light'] {
   --state-playing: #d0142c;

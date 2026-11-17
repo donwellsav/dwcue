@@ -1357,7 +1357,6 @@
     "toggle": "Show-modus",
     "toggleHint": "Bytt til en forenklet, touch-vennlig avspillingsvisning for show.",
     "setup": "Oppsett",
-    "setupHint": "Innstillinger, Videoutgang, Nivåkontroll, Sjekk før show og Autolagring",
     "exit": "Avslutt",
     "exitHint": "Hold inne for å avslutte Show-modus",
     "noItems": "Ingen elementer i dette prosjektet",

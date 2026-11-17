@@ -1357,7 +1357,6 @@
     "toggle": "Föreställningsläge",
     "toggleHint": "Växla till en förenklad, pekvänlig uppspelningsvy för föreställningar.",
     "setup": "Inställning",
-    "setupHint": "Inställningar, Videoutgång, Nivåkontroll, Kontroll före föreställning och Autospara",
     "exit": "Avsluta",
     "exitHint": "Håll intryckt för att avsluta föreställningsläget",
     "noItems": "Inga objekt i det här projektet",

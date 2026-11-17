@@ -2521,13 +2521,47 @@ assert.doesNotMatch(spotifyImportModal + youtubeImportModal, /aria-modal|--dialo
 const electronMain = read('client/electron/main.js');
 assert.match(
   read('client/app/components/ProjectHeader.vue'),
-  /class="header-setup"\s+:class="\{ 'header-setup--folded': showMode, 'header-setup--open': showMode && setupOpen \}"[\s\S]*id="header-setup-items" class="header-setup__items" @click="setupOpen = false"[\s\S]*t\('settings\.title'\)[\s\S]*t\('showCheck\.title'\)[\s\S]*class="autosave-toggle"[\s\S]*<\/div>\s*<\/div>\s*<!-- Show Mode toggle:[\s\S]*\.header-setup,\s*\.header-setup__items \{\s*display: contents;/,
+  /class="header-setup"\s+:class="\{ 'header-setup--folded': showMode, 'header-setup--open': showMode && setupOpen \}"[\s\S]*id="header-setup-items" class="header-setup__items" @click="setupOpen = false"[\s\S]*t\('settings\.title'\)[\s\S]*t\('settings\.tabVideoOutput'\)[\s\S]*class="autosave-toggle"[\s\S]*<\/div>\s*<\/div>\s*<!-- Show Mode toggle:[\s\S]*\.header-setup,\s*\.header-setup__items \{\s*display: contents;/,
   'Show Mode folds the setup controls into one menu and keeps the Show Mode switch out of it; Edit Mode lays them out as before',
 );
 assert.doesNotMatch(
   read('client/app/components/ProjectHeader.vue'),
   /setupOpen[^\n]*Escape|Escape[^\n]*setupOpen/,
   'the Setup menu never takes Escape: it is Stop All',
+);
+// Every small Stop All button wears the shared striped edge; none is red.
+for (const file of [
+  'client/app/app.vue', 'client/app/components/SessionRecoveryModal.vue',
+  'client/app/components/ConnectionLostModal.vue', 'client/app/components/ServerFilePickerModal.vue',
+  'client/app/components/AudioImportModal.vue', 'client/app/components/OneShotPanel.vue',
+]) {
+  const source = read(file);
+  assert.equal(
+    (source.match(/stop-all-btn/g) ?? []).length,
+    (source.match(/t\('controls\.stopAll'\)/g) ?? []).length,
+    `${file}: every Stop All button carries the stop-all-btn class`,
+  );
+}
+assert.match(
+  read('client/assets/styles/main.scss'),
+  /\.stop-all-btn\.stop-all-btn\.stop-all-btn:hover:not\(:disabled\) \{[^}]*?border: var\(--stop-button-border\);\s*background: var\(--stop-button-background\);\s*color: var\(--color-text-primary\);/,
+  'the small Stop All buttons keep their hazard stripes, also under the pointer',
+);
+assert.doesNotMatch(
+  read('client/app/app.vue') + read('client/app/components/OneShotPanel.vue'),
+  /(?:cart-recovery-stop|detached-quickplay-stop)[^}]*color: var\(--color-danger\)/,
+  'Stop is never red',
+);
+// Level Check and Pre-show check open from Settings, not from the top bar.
+assert.doesNotMatch(
+  read('client/app/components/ProjectHeader.vue'),
+  /levelCheck|showCheck|useLevelCheck|usePreShowCheck/,
+  'the top bar holds no check buttons',
+);
+assert.match(
+  read('client/app/components/ProjectSettingsModal.vue'),
+  /v-if="activeTab === 'audio'">[\s\S]*?class="settings-rows show-checks"[\s\S]*?@click="openShowCheck">\{\{ t\('showCheck\.title'\) \}\}[\s\S]*?:disabled="levelCheckCount === 0"\s+@click="toggleLevelCheck">\{\{ t\('levelCheck\.title'\) \}\}[\s\S]*?const \{ open: openShowCheck \} = usePreShowCheck\(\);[\s\S]*?useLevelCheck\(\);/,
+  'Settings › Audio Routing opens the Pre-show check and Level Check',
 );
 const stillCapture = read('client/app/composables/useVideoStandbyCapture.ts');
 assert.match(

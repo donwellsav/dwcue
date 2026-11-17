@@ -17,7 +17,7 @@
           />
           <span class="cart-brand-wordmark">DONWELLS CUE</span>
           <div id="cart-header-warnings" class="cart-header-warnings"></div>
-          <Btn v-if="detachedRecoveryOpen" class="cart-recovery-stop" data-recovery-panel type="button"
+          <Btn v-if="detachedRecoveryOpen" class="cart-recovery-stop stop-all-btn" data-recovery-panel type="button"
             icon="stop_circle" :text="t('controls.stopAll')" @click="stopAllCues()" @keydown.enter.space.stop />
           <span v-else class="cart-brand-url">dwcue.com</span>
         </header>
@@ -53,7 +53,7 @@
         <div v-else class="project-hydration-error" role="alert">
           <strong>{{ t('projectHydration.failed') }}</strong>
           <span v-if="projectHydrationError">{{ projectHydrationError }}</span>
-          <button type="button" data-testid="project-hydration-stop-all" @click="stopAllCues()">
+          <button type="button" class="stop-all-btn" data-testid="project-hydration-stop-all" @click="stopAllCues()">
             {{ t('controls.stopAll') }}
           </button>
           <button type="button" :disabled="!!projectLoad" @click="retryProjectHydration">{{ t('projectHydration.retry') }}</button>
@@ -78,7 +78,7 @@
             <h2 id="project-file-panel-title" class="workspace-panel-header__title">
               {{ t(projectLoad === 'open' || projectPicker === 'open' ? 'menu.openProject' : 'project.newShow') }}
             </h2>
-            <Btn v-if="!hasWorkspace" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="stopAllCues()" />
+            <Btn v-if="!hasWorkspace" class="stop-all-btn" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="stopAllCues()" />
           </header>
           <p v-if="projectFileBusy" class="project-file-status" role="status">{{ projectFileStatus }}</p>
           <ServerFilePickerModal v-else-if="projectPicker" docked :open="true"
@@ -1283,7 +1283,6 @@ onMounted(() => {
 .cart-recovery-stop {
   flex: none;
   margin-inline-start: auto;
-  color: var(--color-danger);
 }
 
 .cart-recovery-panel {

@@ -1357,7 +1357,6 @@
     "toggle": "Modo Espectáculo",
     "toggleHint": "Cambiar a una vista de reproducción simplificada y táctil para espectáculos.",
     "setup": "Configurar",
-    "setupHint": "Configuración, Salida de vídeo, Comprobación de niveles, Revisión previa al show y Autoguardado",
     "exit": "Salir",
     "exitHint": "Mantén pulsado para salir del Modo Espectáculo",
     "noItems": "No hay elementos en este proyecto",

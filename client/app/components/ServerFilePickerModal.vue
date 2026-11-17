@@ -18,7 +18,7 @@
             <span class="material-symbols-rounded" aria-hidden="true">computer</span>
           </button>
           <slot name="actions" />
-          <Btn v-if="!docked" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
+          <Btn v-if="!docked" class="stop-all-btn" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
         </header>
 
         <!-- Breadcrumb -->

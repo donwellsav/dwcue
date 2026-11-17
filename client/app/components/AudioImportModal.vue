@@ -4,7 +4,7 @@
       <div class="import-media" :class="docked ? 'workspace-import-body' : 'modal'">
         <header v-if="!docked">
           <h2>{{ t('importAudio.title') }}</h2>
-          <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
+          <Btn class="stop-all-btn" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
           <button class="x" :aria-label="t('actions.close')" :disabled="busy || pickingLocal" @click="close">✕</button>
         </header>
 

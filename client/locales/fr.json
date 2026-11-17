@@ -1357,7 +1357,6 @@
     "toggle": "Mode Spectacle",
     "toggleHint": "Passer à une vue de lecture simplifiée et tactile pour les spectacles.",
     "setup": "Réglages",
-    "setupHint": "Paramètres, Sortie vidéo, Contrôle des niveaux, Vérification avant spectacle et Sauvegarde auto",
     "exit": "Quitter",
     "exitHint": "Maintenez appuyé pour quitter le Mode Spectacle",
     "noItems": "Aucun élément dans ce projet",

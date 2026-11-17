@@ -1357,7 +1357,6 @@
     "toggle": "Show-Modus",
     "toggleHint": "Zu einer vereinfachten, touch-freundlichen Wiedergabeansicht für Shows wechseln.",
     "setup": "Einrichtung",
-    "setupHint": "Einstellungen, Videoausgabe, Pegelprüfung, Show-Check und Automatisch speichern",
     "exit": "Beenden",
     "exitHint": "Gedrückt halten, um den Show-Modus zu verlassen",
     "noItems": "Keine Elemente in diesem Projekt",

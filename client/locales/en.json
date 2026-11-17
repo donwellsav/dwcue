@@ -1357,7 +1357,6 @@
     "toggle": "Show Mode",
     "toggleHint": "Switch to a simplified, touch-friendly playback view for shows.",
     "setup": "Setup",
-    "setupHint": "Settings, Video Output, Level Check, Pre-show check and Autosave",
     "exit": "Exit",
     "exitHint": "Hold to exit Show Mode",
     "noItems": "No items in this project",

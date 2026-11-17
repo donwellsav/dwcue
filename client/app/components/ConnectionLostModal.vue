@@ -27,7 +27,7 @@
         <p class="clm-locked">{{ t('connectionLost.locked') }}</p>
         <Btn
           v-if="showStopAll"
-          class="clm-stop-all"
+          class="clm-stop-all stop-all-btn"
           type="button"
           icon="stop_circle"
           :text="t('controls.stopAll')"

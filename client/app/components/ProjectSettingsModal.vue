@@ -38,6 +38,21 @@
           </p>
           <!-- ================= Audio Routing ================= -->
           <template v-if="activeTab === 'audio'">
+            <!-- The two checks before a show. They open from here, beside the
+                 audio set-up they are about, and stay out of the top bar. -->
+            <div v-if="currentProject" class="settings-rows show-checks">
+              <section class="settings-field show-checks__row">
+                <button type="button" class="modal-btn" aria-controls="workspace-import-host"
+                  @click="openShowCheck">{{ t('showCheck.title') }}</button>
+                <p class="settings-help">{{ t('showCheck.hint') }}</p>
+              </section>
+              <section class="settings-field show-checks__row">
+                <button type="button" class="modal-btn" :class="{ 'modal-btn--on': levelCheckActive }"
+                  :aria-pressed="levelCheckActive" :disabled="levelCheckCount === 0"
+                  @click="toggleLevelCheck">{{ t('levelCheck.title') }}</button>
+                <p class="settings-help">{{ t(levelCheckCount === 0 ? 'levelCheck.unavailable' : 'levelCheck.hint') }}</p>
+              </section>
+            </div>
             <!-- Audio device (default for cue playback) -->
             <section class="settings-field">
               <span class="settings-label">{{ t('settings.audioDevice') }}</span>
@@ -800,6 +815,20 @@ interface SettingsTab {
 }
 
 const activeTab = useState<SettingsTabId>('projectSettingsTab', () => 'audio');
+
+// Pre-show check opens its report in the lower panel, in place of Settings,
+// and runs itself there. Level Check walks each cue's loudest window on the
+// PROGRAM output (the external mixer must see it; preview routes elsewhere);
+// its bar lives in MainWorkspace and this only switches the mode.
+const { open: openShowCheck } = usePreShowCheck();
+const {
+  active: levelCheckActive, items: levelCheckItems, start: startLevelCheck, exit: exitLevelCheck,
+} = useLevelCheck();
+const levelCheckCount = computed(() => levelCheckItems.value.length);
+const toggleLevelCheck = () => {
+  if (levelCheckActive.value) void exitLevelCheck();
+  else startLevelCheck();
+};
 const canCheckVideo = import.meta.client && !!window.electronAPI?.videoOutput?.checkFrame;
 const {
   busy: videoCheckBusy, phase: videoCheckPhase, ready: videoCheckReady,
@@ -1523,6 +1552,27 @@ function close() {
 .settings-test-card { grid-column: span 2; }
 
 .video-check { grid-column: 1 / -1; }
+
+/* The two checks share one row across the tab: button, then what it does. */
+.show-checks {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.settings-rows.show-checks > .settings-field.show-checks__row {
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 5px var(--spacing-sm);
+}
+.settings-rows.show-checks > .show-checks__row + .show-checks__row {
+  border-top: 0;
+  border-inline-start: 1px solid var(--color-border);
+}
+.show-checks__row > .modal-btn { flex: none; font-weight: 600; }
+.show-checks__row > .modal-btn:disabled { color: var(--color-text-disabled); cursor: default; }
+.modal-btn--on { border-color: var(--color-accent); color: var(--color-accent-text); }
 .settings-rows > .video-check-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

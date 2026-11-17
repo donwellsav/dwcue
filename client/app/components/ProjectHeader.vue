@@ -45,8 +45,7 @@
       <div ref="setupEl" class="header-setup"
         :class="{ 'header-setup--folded': showMode, 'header-setup--open': showMode && setupOpen }">
       <Btn v-if="showMode" type="button" class="header-setup__toggle" icon="tune" :text="t('showMode.setup')"
-        :class="{ 'level-check-toggle--active': levelCheckActive }"
-        :title="t('showMode.setupHint')" :aria-expanded="setupOpen" aria-controls="header-setup-items"
+        :title="setupHint" :aria-expanded="setupOpen" aria-controls="header-setup-items"
         @click="setupOpen = !setupOpen" />
       <div id="header-setup-items" class="header-setup__items" @click="setupOpen = false">
       <Btn :text="t('settings.title')" :aria-expanded="showProjectSettings"
@@ -59,23 +58,7 @@
         :class="{ 'video-toggle--active': videoOutputOpen }"
         @click="toggleVideoOutput"
       />
-      <Btn
-        :text="t('levelCheck.title')"
-        :class="{ 'level-check-toggle--active': levelCheckActive }"
-        :disabled="levelCheckCount === 0"
-        :title="levelCheckCount === 0 ? t('levelCheck.unavailable') : t('levelCheck.hint')"
-        @click="toggleLevelCheck"
-      />
-      <!-- Read-only audio readiness report in the lower panel; starts no cue. -->
-      <Btn
-        :text="t('showCheck.title')"
-        :class="{ 'show-check-toggle--active': showCheckOpen }"
-        :disabled="!currentProject"
-        :title="t('showCheck.hint')"
-        :aria-expanded="showCheckOpen"
-        aria-controls="workspace-import-host"
-        @click="toggleShowCheck"
-      />
+      <!-- Level Check and Pre-show check open from Settings › Audio Routing. -->
 
       <!-- Autosave toggle: on by default; when off the project is only saved
            via File > Save and an "Unsaved Changes" pill appears by the title. -->
@@ -148,7 +131,6 @@
 import Btn from './Btn.vue';
 import VideoConfidenceChip from './VideoConfidenceChip.vue';
 import { useVideoOutputToggle } from '~/composables/useCartHotkeys';
-import { usePreShowCheck } from '~/composables/usePreShowCheck';
 import { countdownColorForSeconds, countdownInk, type AudioItem } from '~/types/project';
 import { formatClockSeconds, playlistRemainingSeconds } from '~/utils/playlistRemaining';
 
@@ -371,23 +353,9 @@ let stopVideoStatus: (() => void) | null = null;
 
 const toggleVideoOutput = useVideoOutputToggle();
 
-// Level Check: soundcheck walk through each cue's loudest window on the
-// PROGRAM output (the external mixer must see it — preview routes elsewhere).
-// The bar lives in MainWorkspace; this only toggles the mode.
-const {
-  active: levelCheckActive,
-  items: levelCheckItems,
-  start: startLevelCheck,
-  exit: exitLevelCheck,
-} = useLevelCheck();
-const levelCheckCount = computed(() => levelCheckItems.value.length);
-const toggleLevelCheck = () => {
-  if (levelCheckActive.value) void exitLevelCheck();
-  else startLevelCheck();
-};
-
-// Pre-show check: opens the lower-panel report, which runs the check itself.
-const { isOpen: showCheckOpen, toggle: toggleShowCheck } = usePreShowCheck();
+// What the Setup button holds, said with the names of the controls themselves.
+const setupHint = computed(() =>
+  [t('settings.title'), t('settings.tabVideoOutput'), t('project.autosave')].join(' · '));
 
 onMounted(async () => {
   if (!import.meta.client || !(window as any).electronAPI?.videoOutput) return;
@@ -543,9 +511,7 @@ onMounted(() => {
   box-shadow: none;
 }
 
-.header-right :deep(.video-toggle--active),
-.header-right :deep(.level-check-toggle--active),
-.header-right :deep(.show-check-toggle--active) {
+.header-right :deep(.video-toggle--active) {
   color: var(--color-accent-text);
 }
 
@@ -785,13 +751,13 @@ onMounted(() => {
 
 /* Edit Mode: the Video Output thumbnail takes the room List Left would have
    had, and a narrow window keeps only the clocks a show cannot run without. */
-@media (max-width: 1520px) {
+@media (max-width: 1340px) {
   .project-header:not(.project-header--show) .clock-pair:has(.confidence-chip) .clock--list-left {
     display: none;
   }
 }
 
-@media (max-width: 1376px) {
+@media (max-width: 1200px) {
   .project-header:not(.project-header--show) .clock--list-left {
     display: none;
   }

@@ -90,7 +90,7 @@
         <h3 class="workspace-panel-header__title">{{ t(quickPlayEditor?.remove
           ? 'oneShots.removeConfirmTitle' : quickPlayEditor ? 'oneShots.settings' : 'oneShots.importInto', { number: (importSlot ?? 0) + 1 }) }}</h3>
         <div class="detached-quickplay-actions">
-          <Btn v-if="quickPlayEditor && !quickPlayEditor.remove" class="detached-quickplay-stop"
+          <Btn v-if="quickPlayEditor && !quickPlayEditor.remove" class="detached-quickplay-stop stop-all-btn"
             type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
           <Btn type="button" icon="close" :text="t('actions.close')" @click="quickPlayEditor = null; closeImport()" />
         </div>
@@ -563,14 +563,6 @@ onUnmounted(() => {
 .detached-quickplay-actions {
   display: flex;
   gap: var(--spacing-xs);
-}
-/* Stop is never red here either: the same hazard stripes as every other Stop,
-   kept while the pointer is over it. */
-.detached-quickplay-stop.detached-quickplay-stop,
-.detached-quickplay-stop.detached-quickplay-stop:hover:not(:disabled) {
-  border: var(--stop-button-border);
-  background: var(--stop-button-background);
-  color: var(--color-text-primary);
 }
 
 #detached-quickplay-dock {
