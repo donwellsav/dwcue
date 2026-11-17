@@ -44,6 +44,7 @@ async function runElectronFixture() {
     videoOutputWindowsPreservingSession: new WeakSet(),
     testCardPlayback: { update: async () => {} }, reconcileTestCardPlayback() {},
     shouldForwardVideoOutputShortcut: () => false, showVideoOutputContextMenu() {},
+    ...require('../client/electron/video-output-window'), process,
     videoOutputStatus: () => ({ open: !!context.videoOutputWindow, recoveryRequired: context.videoOutputRecoveryRequired }),
     broadcastVideoOutputStatus: () => context.videoOutputStatus(),
     console, Date, setInterval, clearInterval, setTimeout, clearTimeout,

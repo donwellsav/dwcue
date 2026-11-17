@@ -11,6 +11,7 @@ const {
   toRendererShortcut,
 } = require('../electron/video-output-shortcuts');
 const { buildVideoOutputContextTemplate } = require('../electron/video-output-context-menu');
+const outputWindowRules = require('../electron/video-output-window');
 const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('../electron/video-output-framing.mjs');
 const { createQuickPlayMutationBroker } = require('../electron/quickplay-mutation-broker');
 const { createAppLifecycleActions, createWillQuitHandler } = require('../electron/terminal-action');
@@ -320,6 +321,8 @@ function createVideoWindowHarness() {
     loadFile() { return Promise.resolve(); }
     show() {}
     isFullScreen() { return false; }
+    isSimpleFullScreen() { return false; }
+    hide() {}
     destroy() {
       this.destroyed = true;
       if (!this.delayClosed) this.emit('closed');
@@ -358,6 +361,8 @@ function createVideoWindowHarness() {
     testCardPlayback: { update: (_desired, connection) => { cleanup.push(connection); return Promise.resolve(); } },
     powerSaveBlocker: { isStarted: () => false, start: () => ++powerId, stop: id => powerStops.push(id) },
     shouldForwardVideoOutputShortcut, toRendererShortcut, showVideoOutputContextMenu() {},
+    // The real per-platform window rules, on the platform with the most to do.
+    ...outputWindowRules, process: { platform: 'darwin' },
     console: { error: (...args) => errors.push(args) },
   };
   const closeStart = mainSource.indexOf('function closeVideoOutputWindow(');
@@ -627,6 +632,7 @@ test('video output context menu exposes recovery and exit actions', () => {
     onExit: () => calls.push('exit'),
   });
 
+  assert.equal(template.length, 4);
   assert.equal(template[0].label, 'Exit Full Screen');
   assert.deepEqual(template[1], {
     label: 'Show Test Card',
@@ -640,6 +646,17 @@ test('video output context menu exposes recovery and exit actions', () => {
   template[1].click({ checked: true });
   template[3].click();
   assert.deepEqual(calls, ['fullscreen', 'test-card:true', 'exit']);
+});
+
+test('a Mac audience output offers no fullscreen choice: it always covers its display', () => {
+  const labels = { enterFullscreen: 'Enter Full Screen', exitFullscreen: 'Exit Full Screen',
+    showTestCard: 'Show Test Card', exitOutput: 'Exit Video Output' };
+  const template = buildVideoOutputContextTemplate({
+    fullscreen: true, canToggleFullscreen: false, testCard: true, labels,
+    onToggleFullscreen() {}, onToggleTestCard() {}, onExit() {},
+  });
+  assert.deepEqual(template.map(item => item.label ?? item.type), ['Show Test Card', 'separator', 'Exit Video Output']);
+  assert.equal(template[0].checked, true);
 });
 test('accepts playback errors only from the current output and propagates safe status', async () => {
   const harness = createVideoPlaybackErrorHarness();

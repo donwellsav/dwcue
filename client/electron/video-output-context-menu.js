@@ -2,6 +2,8 @@
 
 function buildVideoOutputContextTemplate({
   fullscreen,
+  // False for a Mac audience output, which always covers its display.
+  canToggleFullscreen = true,
   testCard,
   labels,
   onToggleFullscreen,
@@ -9,10 +11,10 @@ function buildVideoOutputContextTemplate({
   onExit,
 }) {
   return [
-    {
+    ...(canToggleFullscreen ? [{
       label: fullscreen ? labels.exitFullscreen : labels.enterFullscreen,
       click: onToggleFullscreen,
-    },
+    }] : []),
     {
       label: labels.showTestCard,
       type: 'checkbox',

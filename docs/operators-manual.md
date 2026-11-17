@@ -737,9 +737,13 @@ The confidence display uses presented-frame and native-audio-clock progress as w
 
 ### Fullscreen, keyboard focus, and blackout
 
-Double-click or use the output window's context controls to change fullscreen. If the assigned display disappears, the app closes that output instead of moving it onto the control display; it can reacquire the assignment when the display returns while the session remains enabled. Recheck the physical output after reconnecting a cable.
+The output assigned to a display covers that display and no other screen. On a Mac it does this without macOS full screen, so the control screen is left alone whatever the Mac's **Displays have separate Spaces** setting, and the assigned output has no fullscreen choice to make. On Windows and Linux, and on the preview window everywhere, double-click or use the output window's context menu to change fullscreen; a Mac preview window in fullscreen covers only the screen it is on. For the same reason no DonWells Cue window uses macOS full screen: on a Mac the control window fills its screen with **View > Zoom** or the green window button.
 
-Eligible playback keys from the focused Video Output are forwarded to the controller. **Escape exits output fullscreen and, with the default shortcut mapping, also invokes Stop All.** If Stop All is remapped, Escape still exits fullscreen. Rehearse this distinction before giving the output window focus during a show.
+If the assigned display disappears, the app closes that output instead of moving it onto the control display or onto another screen, even one of the same model and resolution; it can reacquire the assignment when the display returns while the session remains enabled. If two connected screens could both be the assigned one, the app does not guess: it reports the display as missing until you choose the output display again in Settings. Recheck the physical output after reconnecting a cable.
+
+While the output is on, the app keeps checking that the picture sits exactly on the assigned display: filling it, and reaching onto no other screen. An output that comes out too small, too large, shifted, or on the wrong screen is put back by itself. If it cannot be put right, the Video Output settings show a warning that the output is not sitting exactly on its display. There is only ever one output window.
+
+Eligible playback keys from the focused Video Output are forwarded to the controller. **With the default shortcut mapping, Escape invokes Stop All. On an assigned display the picture stays full screen; on the preview window Escape also leaves fullscreen**, and still does if Stop All is remapped. Rehearse this distinction before giving the output window focus during a show.
 
 There is no dedicated video-blackout button or shortcut in this source. **Stop All is not a separate picture-blackout command**: a configured standby image can remain visible after cues stop. If the show needs a guaranteed independent blackout, prepare and rehearse it on the video switcher/projector or another supported part of the venue system. Closing Video Output can expose the desktop and is not an audience-safe blackout procedure.
 
@@ -1096,7 +1100,7 @@ These are source defaults, not a promise about a project's customized assignment
 | Cmd/Ctrl+N | New Project |
 | Cmd/Ctrl+W | Close Project |
 | Cmd/Ctrl+Q | Exit / quit workflow |
-| F11 | Fullscreen |
+| F11 | Fullscreen (Windows and Linux; on a Mac use **View > Zoom** or the green window button) |
 
 The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. New Show, Open Project, archive import and export, Quit, **Unsaved Changes**, and the main window's recovery panel reserve Escape for Stop All. With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
 

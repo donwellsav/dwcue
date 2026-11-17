@@ -39,6 +39,19 @@ const { createQuickPlayMutationBroker, validateIdentity, sameIdentity } = requir
 const { findCaptureCue, captureImageUrl } = require('./video-standby-capture');
 const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('./video-output-framing.mjs');
 const { planGeometryCorrection, readViewportReport } = require('./video-output-geometry');
+const {
+  canToggleOutputFullscreen,
+  claimSoleOutput,
+  isOutputFullscreen,
+  keepOutOfFullscreenSpaces,
+  physicalOutputWindowOptions,
+  previewWindowOptions,
+  releaseOutputFullscreen,
+  resolveAssignedDisplay,
+  seatPhysicalOutput,
+  setOutputFullscreen,
+  usesNativeFullscreen,
+} = require('./video-output-window');
 const { checkVideoFrame } = require('./video-frame-check');
 const { convertVideoForOutput, cueSourcePath } = require('./video-convert');
 const {
@@ -181,6 +194,9 @@ async function safeOpenExternal(rawUrl) {
   }
   await shell.openExternal(rawUrl);
 }
+
+// No window of this app opens a macOS fullscreen Space (video-output-window.js).
+app.on('browser-window-created', (_event, window) => keepOutOfFullscreenSpaces(window, process.platform));
 
 app.on('web-contents-created', (_event, contents) => {
   contents.on('will-attach-webview', (event) => event.preventDefault());
@@ -2731,9 +2747,11 @@ function createDetachedQuickPlayWindow() {
 // ===========================================================================
 // Video Output window (video playback, slice 1 — see VIDEO_PLAYBACK_V1.md).
 //
-// One session-scoped, borderless, always-on-top window fullscreen on the
-// display the operator assigned as the video output (typically the HDMI feed
-// to a switcher/projector). The Nuxt page at ?videoOutput=1 renders the layer
+// One session-scoped, borderless, always-on-top window covering the display
+// the operator assigned as the video output (typically the HDMI feed to a
+// switcher/projector), and only that display: which display that is, and how
+// the window takes it over on each platform, is decided in
+// video-output-window.js. The Nuxt page at ?videoOutput=1 renders the layer
 // stack (black / standby image / per-cue image / muted video); this block owns
 // the window, display assignment, shortcut forwarding, and show hygiene.
 //
@@ -2762,9 +2780,10 @@ let displayIdentifierWindows = [];
 let displayIdentifierTimer = null;
 const videoOutputWindowsPreservingSession = new WeakSet();
 
-// Coverage check for a physical output (see video-output-geometry.js). The
-// output page reports what it really covers; on Windows main re-seats a window
-// that falls short of its display, and records what it measured and did in
+// Placement check for a physical output (see video-output-geometry.js). The
+// output page reports what it really covers; main puts back a window that is
+// on a screen it was not given (any platform) or that falls short of its
+// display (Windows), and records what it measured and did in
 // <userData>/video-output-geometry.json so a fault on someone else's machine
 // can be read afterwards instead of guessed at.
 const VIDEO_OUTPUT_GEOMETRY_FILENAME = 'video-output-geometry.json';
@@ -2775,6 +2794,7 @@ const newVideoOutputGeometry = (fullscreenWanted = false) => ({
   busy: false,           // a correction is being applied
   settleTimer: null,
   uncovered: false,      // gave up: the operator is warned
+  compensated: false,    // bounds enlarged on purpose: no longer evidence of position
   recorded: null,        // outcome last written to disk
   actions: [],
 });
@@ -2928,10 +2948,14 @@ function readVideoOutputConfig() {
       // stays the primary key; the fingerprint is only a fallback hint.
       displayFingerprint: typeof parsed.displayFingerprint === 'string'
         ? parsed.displayFingerprint : null,
+      // Other screens of the same size and name that were connected next to
+      // the assigned display: never the output (resolveAssignedDisplay).
+      displayLookalikes: Array.isArray(parsed.displayLookalikes)
+        ? parsed.displayLookalikes.filter(id => typeof id === 'string').slice(0, 16) : [],
       testCardConfig: createTestCardConfig(parsed.testCardConfig),
     };
   } catch {
-    return { displayId: null, displayFingerprint: null, captureDisplayId: null,
+    return { displayId: null, displayFingerprint: null, displayLookalikes: [], captureDisplayId: null,
       framing: DEFAULT_VIDEO_FRAMING, testCardConfig: createTestCardConfig() };
   }
 }
@@ -2967,18 +2991,39 @@ function videoOutputDisplays() {
   }));
 }
 
+// Screens of the same size and name as the assigned display, seen connected
+// next to it this session: known to be other screens.
+const videoOutputLookalikes = new Set();
+
+function videoOutputLookalikeIds(displays, assigned) {
+  const fingerprint = videoOutputFingerprint(assigned);
+  return displays.filter(display => display !== assigned && videoOutputFingerprint(display) === fingerprint)
+    .map(display => String(display.id));
+}
+
 function resolveVideoOutputDisplay(cfg) {
   const displays = screen.getAllDisplays();
-  if (cfg.displayId) {
-    const hit = displays.find((d) => String(d.id) === cfg.displayId);
-    if (hit) return hit;
+  const control = mainWindow && !mainWindow.isDestroyed()
+    ? screen.getDisplayMatching(mainWindow.getBounds()) : null;
+  const target = resolveAssignedDisplay({
+    displays,
+    displayId: cfg.displayId,
+    fingerprint: cfg.displayFingerprint,
+    fingerprintOf: videoOutputFingerprint,
+    lookalikeIds: [...(cfg.displayLookalikes || []), ...videoOutputLookalikes],
+    controlDisplayId: control ? control.id : null,
+  });
+  if (!target) return null;
+  if (String(target.id) !== cfg.displayId) {
+    // The assigned display came back under a new id. It is the assigned
+    // display from here on, so an identical screen plugged in later is a
+    // look-alike and not a rival that would close the output mid-show.
+    cfg.displayId = String(target.id);
+    cfg.displayLookalikes = [...new Set([...(cfg.displayLookalikes || []), ...videoOutputLookalikes])];
+    writeVideoOutputConfig(cfg);
   }
-  if (cfg.displayFingerprint) {
-    const hit = displays.find(
-      (d) => videoOutputFingerprint(d) === cfg.displayFingerprint);
-    if (hit) return hit;
-  }
-  return null;
+  for (const id of videoOutputLookalikeIds(displays, target)) videoOutputLookalikes.add(id);
+  return target;
 }
 
 function videoOutputStatus() {
@@ -3030,7 +3075,7 @@ function videoOutputStatus() {
     },
     fullscreen: videoOutputWindow !== null &&
                 !videoOutputWindow.isDestroyed() &&
-                videoOutputWindow.isFullScreen(),
+                isOutputFullscreen(videoOutputWindow, process.platform),
   };
 }
 
@@ -3056,12 +3101,14 @@ function videoOutputContextLabels() {
 function showVideoOutputContextMenu(outputWindow) {
   if (!outputWindow || outputWindow.isDestroyed()) return;
   const template = buildVideoOutputContextTemplate({
-    fullscreen: outputWindow.isFullScreen(),
+    fullscreen: isOutputFullscreen(outputWindow, process.platform),
+    canToggleFullscreen: canToggleOutputFullscreen(outputWindow, process.platform),
     testCard: videoOutputTestCard,
     labels: videoOutputContextLabels(),
     onToggleFullscreen: () => {
       if (!outputWindow.isDestroyed()) {
-        outputWindow.setFullScreen(!outputWindow.isFullScreen());
+        setOutputFullscreen(outputWindow, process.platform, !isOutputFullscreen(outputWindow, process.platform));
+        broadcastVideoOutputStatus();
       }
     },
     onToggleTestCard: (visible) => { void setVideoOutputTestCard(visible); },
@@ -3297,25 +3344,32 @@ function evaluateVideoOutputGeometry(outputWindow) {
   const target = videoOutputTargetDisplay(outputWindow);
   if (!target) return;
   const windowBounds = outputWindow.getBounds();
+  // Bounds this check enlarged on purpose say nothing about where the window
+  // really is; after that only what the page measures is evidence.
+  const positionTrusted = !geometry.compensated;
   const plan = planGeometryCorrection({
     platform: process.platform,
     report: geometry.report,
     corrections: geometry.corrections,
-    fullscreenWanted: geometry.fullscreenWanted,
-    onTargetDisplay: screen.getDisplayMatching(windowBounds).id === target.id,
+    fullscreenWanted: geometry.fullscreenWanted && usesNativeFullscreen(process.platform),
+    onTargetDisplay: !positionTrusted || screen.getDisplayMatching(windowBounds).id === target.id,
     windowBounds,
     targetBounds: target.bounds,
+    otherBounds: positionTrusted
+      ? screen.getAllDisplays().filter(display => display.id !== target.id).map(display => display.bounds)
+      : [],
   });
 
   if (plan.action === 'none' || plan.action === 'give-up') {
     const uncovered = plan.action === 'give-up';
     const outcome = plan.covered ? (geometry.corrections ? 'covered-after-correction' : 'covered')
-      : uncovered ? 'not-covered' : 'short-not-corrected-on-this-platform';
+      : uncovered ? (plan.misplaced ? 'on-another-screen' : 'not-covered')
+        : 'short-not-corrected-on-this-platform';
     recordVideoOutputGeometry(outputWindow, target, outcome);
     if (geometry.uncovered !== uncovered) {
       geometry.uncovered = uncovered;
       if (uncovered) {
-        console.error('[video-output] output still does not cover its display after corrections:',
+        console.error('[video-output] output is still not exactly on its display after corrections:',
           JSON.stringify({ viewport: geometry.report, windowBounds, target: target.bounds }));
       }
       broadcastVideoOutputStatus();
@@ -3325,11 +3379,12 @@ function evaluateVideoOutputGeometry(outputWindow) {
 
   geometry.corrections += 1;
   geometry.busy = true;
+  geometry.compensated = plan.action === 'compensate';
   geometry.actions.push({
     action: plan.action, bounds: plan.bounds, fullscreen: plan.fullscreen === true,
     viewport: geometry.report, windowBounds, wasFullscreen: outputWindow.isFullScreen(),
   });
-  console.warn('[video-output] output does not cover its display; applying', plan.action,
+  console.warn('[video-output] output is not exactly on its display; applying', plan.action,
     JSON.stringify({ viewport: geometry.report, windowBounds, target: target.bounds }));
   const current = () => videoOutputWindow === outputWindow && !outputWindow.isDestroyed()
     && videoOutputGeometry === geometry;
@@ -3399,33 +3454,14 @@ function createVideoOutputWindow() {
     },
   };
 
-  if (realOutput) {
-    // Raw display bounds: this is a physical output, so no DPI correction
-    // (correction is only for capture-only outputs, e.g. a future NDI sink).
-    Object.assign(options, {
-      x: target.bounds.x,
-      y: target.bounds.y,
-      width: target.bounds.width,
-      height: target.bounds.height,
-      frame: false,
-      fullscreen: true,
-      skipTaskbar: true,
-      resizable: false,
-      movable: false,
-      minimizable: false,
-      maximizable: false,
-      // Keep the Windows Alt+F4 escape hatch available even though this output
-      // has no frame. The closed handler disarms the session so it stays shut.
-      closable: true,
-      alwaysOnTop: true,
-    });
-  } else {
-    // Preview mode: single-display (or unassigned) machines get a normal
-    // window instead of a hostile fullscreen black takeover.
-    Object.assign(options, { useContentSize: true, width: 960, height: 540, minWidth: 320, minHeight: 180 });
-  }
+  // A physical output takes over its display and no other; anything else is
+  // an ordinary preview window.
+  Object.assign(options, realOutput
+    ? physicalOutputWindowOptions(process.platform, target.bounds)
+    : previewWindowOptions(process.platform));
 
   const outputWindow = new BrowserWindow(options);
+  claimSoleOutput(outputWindow);
   videoOutputWindow = outputWindow;
   // Only a physical output must cover its display; the preview is a normal window.
   resetVideoOutputGeometry(realOutput);
@@ -3442,7 +3478,7 @@ function createVideoOutputWindow() {
   resizeCover();
   cover.setVisible(true);
   outputWindow.on('resize', resizeCover);
-  if (realOutput) outputWindow.setAlwaysOnTop(true, 'screen-saver');
+  if (realOutput) seatPhysicalOutput(outputWindow, process.platform, target.bounds);
   startVideoOutputFrames();
 
   outputWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
@@ -3487,9 +3523,10 @@ function createVideoOutputWindow() {
     // Escape is Stop All. On the preview window it also leaves fullscreen, as
     // in any app. An audience display must never drop out of fullscreen
     // because the operator stopped the show while it had keyboard focus.
-    if (shortcut.key === 'Escape' && outputWindow.isFullScreen() &&
-        outputWindow.videoOutputTargetDisplayId == null) {
-      outputWindow.setFullScreen(false);
+    if (shortcut.key === 'Escape' && outputWindow.videoOutputTargetDisplayId == null &&
+        isOutputFullscreen(outputWindow, process.platform)) {
+      setOutputFullscreen(outputWindow, process.platform, false);
+      broadcastVideoOutputStatus();
     }
     mainWindow.webContents.send('video-output:shortcut', shortcut);
     event.preventDefault();
@@ -3511,6 +3548,8 @@ function createVideoOutputWindow() {
   outputWindow.on('enter-full-screen', () => rememberFullscreenChoice(true));
   outputWindow.on('leave-full-screen', () => rememberFullscreenChoice(false));
 
+  // Closed from its own title bar or the keyboard: see closeVideoOutputWindow.
+  outputWindow.on('close', () => releaseOutputFullscreen(outputWindow, process.platform));
   outputWindow.on('closed', () => {
     const preserveSession = videoOutputWindowsPreservingSession.delete(outputWindow);
     if (videoOutputWindow !== outputWindow) return;
@@ -3550,6 +3589,8 @@ function closeVideoOutputWindow({ preserveSession = false, playbackError = null 
   }
   if (!outputWindow || outputWindow.isDestroyed()) return;
   if (preserveSession) videoOutputWindowsPreservingSession.add(outputWindow);
+  // A Mac preview covering its screen hides the menu bar and Dock; hand them back.
+  releaseOutputFullscreen(outputWindow, process.platform);
   outputWindow.destroy();
 }
 
@@ -4092,6 +4133,9 @@ ipcMain.handle('video-output:set-display', (event, displayId) => {
     ? screen.getAllDisplays().find((d) => String(d.id) === checked)
     : null;
   cfg.displayFingerprint = target ? videoOutputFingerprint(target) : null;
+  // A new assignment starts a clean record of its look-alikes.
+  cfg.displayLookalikes = target ? videoOutputLookalikeIds(screen.getAllDisplays(), target) : [];
+  videoOutputLookalikes.clear();
   writeVideoOutputConfig(cfg);
   if (videoOutputSessionEnabled && videoOutputWindow) {
     // Re-place on the new display; recreate is the only clean way to move a
@@ -4117,7 +4161,7 @@ ipcMain.handle('video-output:set-fullscreen', (event, on) => {
     const escapeOnAudienceDisplay = on !== true &&
       event.sender === videoOutputWindow.webContents &&
       videoOutputWindow.videoOutputTargetDisplayId != null;
-    if (!escapeOnAudienceDisplay) videoOutputWindow.setFullScreen(on === true);
+    if (!escapeOnAudienceDisplay) setOutputFullscreen(videoOutputWindow, process.platform, on === true);
   }
   return broadcastVideoOutputStatus();
 });
@@ -4125,7 +4169,8 @@ ipcMain.handle('video-output:set-fullscreen', (event, on) => {
 ipcMain.handle('video-output:toggle-fullscreen', (event) => {
   requireTrustedIpc(event);
   if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
-    videoOutputWindow.setFullScreen(!videoOutputWindow.isFullScreen());
+    setOutputFullscreen(videoOutputWindow, process.platform,
+      !isOutputFullscreen(videoOutputWindow, process.platform));
   }
   return broadcastVideoOutputStatus();
 });
@@ -4685,7 +4730,9 @@ function createMenu(locale = 'en', isDev = false) {
           }
         },
         { type: 'separator' },
-        {
+        // macOS fullscreen is a Space, and one would blank the audience
+        // display (video-output-window.js): a Mac window fills its screen instead.
+        process.platform === 'darwin' ? { role: 'zoom' } : {
           label: t.fullscreen,
           accelerator: 'F11',
           click: () => {
