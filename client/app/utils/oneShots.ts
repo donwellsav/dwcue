@@ -1,3 +1,10 @@
+// One feature, three names. Operators see "QuickPlay". The code says "one
+// shot" (oneShot, OneShotPanel, .one-shot-tile). Saved shows and the engine
+// say "cart" (cartOnlyItems, cartItems, cartSlotCount, cart_slot_set) and
+// keep each QuickPlay's settings in a field called `oneShot`. The last two are
+// part of the saved-show format and the engine protocol, so they cannot be
+// renamed without migrating every saved show; new code should say QuickPlay
+// in anything an operator can read and follow the surrounding file otherwise.
 import type { AudioItem, GroupItem } from '../types/project';
 
 export type OneShotPlaybackMode = 'overlay' | 'duck' | 'replace';
