@@ -1,6 +1,6 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.24
+**Version:** 2.7.0
 **Source revision:** 655ec2a
 **Native engine baseline:** 5e259d0
 **Edition:** 15 November 2026 · English · Operator edition
@@ -63,7 +63,7 @@ Connect the audio interface before opening the show. Confirm the correct outputs
 
 On launch, the desktop normally starts its managed local server automatically. The welcome screen indicates **Using the audio engine on this computer** once connected. If the engine is starting, wait for connection rather than repeatedly reopening the app. The **Connect to a server on the network…** option reveals remote setup; see chapter 10 before using it.
 
-![Welcome screen using the audio engine on this computer, showing version 2.6.24.](manual-assets/welcome-current.png)
+![Welcome screen using the audio engine on this computer, showing version 2.7.0.](manual-assets/welcome-current.png)
 
 **Procedure — establish a known starting state**
 
@@ -1116,7 +1116,7 @@ The default **Escape** Stop All shortcut works while editing, including in the l
 
 ### About this edition
 
-This edition covers **2.6.24**, based on application source **655ec2a**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
+This edition covers **2.7.0**, based on application source **6a36f4e**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
 
 Earlier checkpoints passed 13 native suites, 74 API checks, client checks, type checking, and renderer generation. Held storage tests exercised late Open, Save ordering, and direct cue registration. Chromium exercised Stop All during field editing, deletion, and imports with a software output and simulated online providers.
 

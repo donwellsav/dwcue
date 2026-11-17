@@ -23,17 +23,17 @@
     },
     {
       "file": "welcome-current.png",
-      "view": "Welcome screen using the audio engine on this computer, showing version 2.6.24.",
-      "version": "2.6.24 development",
-      "sourceRevision": "e9b377212209556ae11eea24deaecfc718cd1fd4",
-      "nativeSourceRevision": "73f6ef4f623c88bc928182d82444c01d22e490df",
-      "capturedOn": "2026-11-16",
-      "surface": "DonWells Cue desktop app (development build in Electron on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
+      "view": "Welcome screen using the audio engine on this computer, showing version 2.7.0.",
+      "version": "2.7.0",
+      "sourceRevision": "6a36f4e919811b16d22ad71ecab31d3dbb166ea8",
+      "nativeSourceRevision": "6a36f4e919811b16d22ad71ecab31d3dbb166ea8",
+      "capturedOn": "2026-11-17",
+      "surface": "DonWells Cue desktop app (packaged build on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
       "dimensions": [
         768,
         378
       ],
-      "sha256": "74d73c3fd8bba332d75868bdeace2aa5e14c1a5bbc8a92b5974042d08aea7002",
+      "sha256": "a5350a9c8645d11bf18525c06e31bf506d46bead0f156be4752b3a6c325cdb9b",
       "fixture": "No show open; a disposable practice folder. Local audio engine on the capture computer.",
       "captureMethod": "Chrome DevTools Protocol screenshot of the running app window, clipped to the panel or control.",
       "presentation": "Unaltered crop of the panel or control."
