@@ -2533,6 +2533,15 @@ assert.match(
   /<span v-else-if="item\.type === 'group'" class="group-shuffle-action group-shuffle-action--place" aria-hidden="true"><\/span>[\s\S]*\.group-shuffle-action--place \{\s*width: 32px;\s*height: 32px;/,
   'a group row must keep the place of its shuffle button in Show Mode',
 );
+// The shortcut bar is two lines high and lists every keyboard action, the
+// same in both modes.
+assert.match(
+  read('client/app/components/ShortcutsBar.vue'),
+  /const runningActions = RUNNING\.map\(byId\);[\s\S]*PLAYBACK_ACTIONS\.filter\(\(\{ id \}\) => !RUNNING\.includes\(id\) && !LATER\.includes\(id\)\)[\s\S]*\.shortcuts-bar__items \{[^}]*flex-wrap: wrap;[^}]*height: calc\(2 \* var\(--shortcut-line\) \+ 3px\);[^}]*overflow: hidden;/,
+  'the shortcut bar must show two lines of shortcuts and drop none of the actions from its list',
+);
+assert.doesNotMatch(read('client/app/components/ShortcutsBar.vue'), /showMode|uiMode|show-mode/,
+  'the shortcut bar must be the same in both modes');
 // The top bar is the same in Edit Mode and Show Mode: no folded menu, no
 // rule that depends on the mode.
 assert.doesNotMatch(

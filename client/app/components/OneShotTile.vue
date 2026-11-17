@@ -658,9 +658,13 @@ onUnmounted(() => {
 .one-shot-bottomline :deep(.item-level) {
   flex: none;
   height: 28px;
-  padding-left: 4px;
+  padding-left: 0;
 }
-.one-shot-bottomline :deep(.item-level__value) { width: 3.4ch; }
+/* The number sits in the middle of its box, not against the arrows. */
+.one-shot-bottomline :deep(.item-level__value) {
+  width: 5ch;
+  text-align: center;
+}
 /* No room for the unit here; the number with its arrows is the level. */
 .one-shot-bottomline :deep(.item-level__unit) { display: none; }
 
