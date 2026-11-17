@@ -355,8 +355,8 @@ const showCueProperties = computed(() =>
   !showProjectSettings.value && !visibleImportPanel.value && propertiesPanelOpen.value && !!editableSelectedItem.value);
 const lowerPanelOpen = computed(() => decisionOpen || showProjectSettings.value || !!visibleImportPanel.value || !!showCueProperties.value);
 const filePicker = useState<'cue' | 'standby' | 'replace-media' | null>('workspaceFilePicker', () => null);
-// Leave room for both lines of a compact cue when the lower panel is maximized.
-const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value, regularPlaylistRowHeight.value, 84));
+// Leave room for one row, cue or folder, when the lower panel is maximized.
+const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value, regularPlaylistRowHeight.value));
 
 const MIN_PANEL_HEIGHT = 120;
 const MAX_PANEL_HEIGHT_PERCENT = 60;

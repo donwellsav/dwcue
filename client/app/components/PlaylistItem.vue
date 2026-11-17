@@ -1787,31 +1787,9 @@ button.item-name {
   cursor: default;
 }
 
-/* Keep a full title lane when the side panels leave less room for the playlist. */
-@container (max-width: 700px) {
-  .playlist-item > .item-content .item-left {
-    --folder-column-gap: var(--spacing-xs);
-    --row-lane-gap: var(--spacing-xs);
-    grid-template-columns: var(--cue-leading-width, 34px) minmax(0, 1fr) max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
-    grid-template-areas:
-      'expand identity identity identity identity state video'
-      '. . shuffle actions transport duration arm';
-    gap: var(--spacing-xs);
-  }
-
-  .group-shuffle-action { grid-area: shuffle; }
-  .video-badge-icon { justify-self: end; }
-
-  .item-state,
-  .behavior-indicators {
-    flex-wrap: wrap;
-  }
-
-  .behavior-indicators {
-    max-width: 100%;
-    justify-content: flex-end;
-  }
-}
+/* A row is one line at every width: when the side panels leave less room,
+   the title is cut short (its full text is the tooltip, and the Play Next
+   and live boxes show it whole). Nothing moves to a second line. */
 
 @container playlist-scroll (max-height: 220px) {
   /* A pinned group would cover most of a short playlist. */

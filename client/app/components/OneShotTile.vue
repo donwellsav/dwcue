@@ -683,6 +683,7 @@ onUnmounted(() => {
 }
 
 .one-shot-video-issue {
+  flex: none;
   color: var(--color-danger);
   font: 700 calc(11px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono);
 }
@@ -703,15 +704,42 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+/* The body measures itself, in title lines, to decide what fits (the two
+   container rules below); its font size is the title's for that reason. */
 .one-shot-body {
-  display: grid;
-  align-content: start;
-  gap: var(--spacing-xs);
+  container: one-shot-body / size;
+  display: flex;
+  flex-flow: row wrap;
+  align-content: flex-start;
+  align-items: flex-start;
+  gap: var(--spacing-xs) 6px;
   min-height: 0;
   overflow: hidden;
+  font-size: calc(15px * var(--one-shot-font-scale, 1));
+}
+
+/* Room for one title line only: it gets the whole line and an ellipsis,
+   never a sliver of a second line. A video warning shares that line. */
+@container one-shot-body (max-height: 2.29em) {
+  .one-shot-title.one-shot-title {
+    flex: 1 1 0;
+    display: block;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* The Playing badge needs two title lines and a line of its own. Without
+   that room it steps aside: the red edge, the striped Stop and the countdown
+   already say the tile is live. */
+@container one-shot-body (max-height: 3.79em) {
+  .one-shot-runtime-state {
+    display: none;
+  }
 }
 
 .one-shot-title {
+  flex: 1 1 100%;
   min-width: 0;
   min-height: 0;
   align-self: start;
@@ -751,13 +779,6 @@ onUnmounted(() => {
   border-radius: var(--control-radius);
   background: color-mix(in srgb, var(--color-surface-raised) 92%, transparent);
   box-shadow: inset 0 1px rgb(255 255 255 / 4%);
-}
-
-/* Each button is a quarter of the strip. With Settings and Remove taken out
-   (Show Mode) the strip is half as wide, so Play and Cue to Continue keep
-   the size and place they have in Edit Mode. */
-.one-shot-actions:not(:has(> .one-shot-settings)) {
-  width: 50%;
 }
 
 .one-shot-control,

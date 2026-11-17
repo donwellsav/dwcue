@@ -438,7 +438,7 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /--current-playlist-row-height:\s*var\(--playlist-row-height, 44px\)[\s\S]*--current-playlist-row-height:\s*var\(--folder-playlist-row-height, 60px\)[\s\S]*min-height:\s*var\(--current-playlist-row-height\)[\s\S]*scroll-margin-top:\s*var\(--current-playlist-row-height\)[\s\S]*@container \(max-width: 700px\)/,
+  /--current-playlist-row-height:\s*var\(--playlist-row-height, 44px\)[\s\S]*--current-playlist-row-height:\s*var\(--folder-playlist-row-height, 60px\)[\s\S]*min-height:\s*var\(--current-playlist-row-height\)[\s\S]*scroll-margin-top:\s*var\(--current-playlist-row-height\)/,
   'cue and folder row heights must control geometry while preserving usable title space',
 );
 assert.match(
@@ -2062,10 +2062,13 @@ assert.match(
   /const depthOffset = props\.depth > 0 \? 24 : 0;[\s\S]{0,80}marginLeft:\s*`\$\{depthOffset\}px`/,
   'nested rows must be indented the same way in both modes',
 );
-assert.match(
+// A row is one line at every width. It never rearranges onto a second line
+// when the side panels take room: the title is cut short and the row keeps
+// the same look in a small window as in a large one.
+assert.doesNotMatch(
   playlistItem,
-  /@container \(max-width: 700px\)\s*\{\s*\.playlist-item > \.item-content \.item-left\s*\{[^}]*grid-template-columns:\s*var\(--cue-leading-width, 34px\) minmax\(0, 1fr\)[^}]*'expand identity identity identity identity state video'\s*'\. \. shuffle actions transport duration arm'/,
-  'the compact cue layout must retain a disclosure lane and give the title its own line above transport',
+  /@container \(max-width: \d+px\)|'\. \. shuffle actions transport duration arm'/,
+  'playlist rows must stay on one line at every width',
 );
 assert.match(
   playlistItem,
@@ -2707,8 +2710,8 @@ assert.match(
 );
 assert.match(
   oneShotPanel,
-  /props\.isDetachedWindow \? 'detachedRegular' : 'attachedRegular'[\s\S]*const rows = layout\.rows;[\s\S]*const contentMinHeight = Math\.ceil\(111 \+ 48 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,260}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
-  'One Shots must preserve exact profile columns while reserving a measured safe width and font-scaled two-line row height',
+  /props\.isDetachedWindow \? 'detachedRegular' : 'attachedRegular'[\s\S]*const rows = layout\.rows;[\s\S]*const contentMinHeight = Math\.ceil\(99 \+ 17\.25 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,260}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
+  'One Shots must preserve exact profile columns while reserving a measured safe width and a font-scaled row height that fits ten on the default window',
 );
 assert.doesNotMatch(
   oneShotPanel,
@@ -2822,8 +2825,19 @@ assert.deepEqual(uiModeRuntime.exports.normalizeCartGridLayouts({
   // A layout saved for Show Mode by an older version is left behind: both
   // modes now use the same two layouts.
   attachedRegular: { rows: 1, columns: 16, minHeight: 64 },
-  detachedRegular: { rows: 6, columns: 3, minHeight: 600 },
+  detachedRegular: { rows: 4, columns: 5, minHeight: 600 },
 });
+// Beside the playlist ten QuickPlays show by default, two across and five
+// down; the detached window shows twenty, five across and four down.
+assert.deepEqual(uiModeRuntime.exports.normalizeCartGridLayouts(null), {
+  attachedRegular: { rows: 5, columns: 2, minHeight: 112 },
+  detachedRegular: { rows: 4, columns: 5, minHeight: 112 },
+});
+assert.match(
+  oneShotTile,
+  /\.one-shot-body \{\s*container: one-shot-body \/ size;[\s\S]*@container one-shot-body \(max-height: 2\.29em\) \{\s*\.one-shot-title\.one-shot-title \{[^}]*white-space: nowrap;[\s\S]*@container one-shot-body \(max-height: 3\.79em\) \{\s*\.one-shot-runtime-state \{\s*display: none;/,
+  'a short QuickPlay tile must show one whole title line and drop the Playing badge, never a sliver of either',
+);
 assert.match(
   projectSettingsModal,
   /onCartGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*input\.value = String\(current\)[\s\S]*setCartGridLayout/,

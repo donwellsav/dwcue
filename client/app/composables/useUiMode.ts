@@ -28,15 +28,18 @@ export const CART_GRID_LIMITS = {
 // window, used in Edit Mode and Show Mode alike. The names end in "Regular"
 // because saved layouts already use them.
 export const CART_GRID_PROFILES = {
+  // Beside the playlist, ten QuickPlays show by default (the ten with number
+  // keys): two across and five down. The detached window shows twenty (the
+  // number keys and their Shift row): five across and four down.
   attachedRegular: {
     minHeight: 64,
     maxHeight: 600,
-    default: { rows: 8, columns: 2, minHeight: 112 },
+    default: { rows: 5, columns: 2, minHeight: 112 },
   },
   detachedRegular: {
     minHeight: 64,
     maxHeight: 600,
-    default: { rows: 6, columns: 3, minHeight: 112 },
+    default: { rows: 4, columns: 5, minHeight: 112 },
   },
 } as const;
 

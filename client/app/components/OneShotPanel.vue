@@ -189,9 +189,11 @@ const oneShotGridStyle = computed(() => {
   const rows = layout.rows;
   const rowPercent = 100 / rows;
   const rowGapOffset = GRID_GAP_PX * (rows - 1) / rows;
-  // Allow the metadata row, two title lines, status, the level line (24px)
-  // and the action strip (32px).
-  const contentMinHeight = Math.ceil(111 + 48 * oneShotFontScale.value / 100);
+  // The least a tile needs: the metadata row, one title line, the level
+  // line and the action strip. Five rows of that fit the default window, so
+  // ten QuickPlays show without scrolling; a taller tile shows a second
+  // title line and the Playing badge (see OneShotTile).
+  const contentMinHeight = Math.ceil(99 + 17.25 * oneShotFontScale.value / 100);
   const minHeight = Math.max(layout.minHeight, contentMinHeight);
   return {
     '--one-shot-columns': String(layout.columns),
