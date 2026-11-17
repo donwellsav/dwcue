@@ -410,6 +410,7 @@ Manual runs validate the full matrix by default, including packaged macOS and Wi
 ### Other workflows
 
 - **[`build-server.yml`](.github/workflows/build-server.yml)** — builds the server alone on PRs and pushes that touch `server/**`. Cross-platform matrix; uploads `dwcue-server-<platform>` artefacts for download from the Actions UI. Useful for vetting server-only PRs without running the full release pipeline.
+- **[`publish-website.yml`](.github/workflows/publish-website.yml)** — publishes one `dwcue-site` commit to dwcue.com without building the app: a single Linux job started by hand with the exact website commit and the published release tag. It runs the same steps as the last job of the release pipeline, for a site update after a release is already out.
 
 ---
 

@@ -1,0 +1,110 @@
+name: Publish Website
+
+# Publishes one dwcue-site commit to dwcue.com without building the app:
+# one Linux job, a few minutes. Build and Release runs these same steps as its
+# last job when it is given a website commit; this workflow is for updating
+# the site after a release is already out. Keep the two in step.
+on:
+  workflow_dispatch:
+    inputs:
+      website_commit:
+        description: Exact dwcue-site commit to publish (full 40-character id)
+        required: true
+        type: string
+      release_tag:
+        description: Published release the site must match, for example v2.7.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-website
+  cancel-in-progress: false
+
+jobs:
+  website:
+    name: Publish dwcue.com
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check the request
+        env:
+          WEBSITE_COMMIT: ${{ inputs.website_commit }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$WEBSITE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "website_commit must be a full commit id"; exit 1; }
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "release_tag must look like v2.7.0"; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          repository: donwellsav/dwcue-site
+          ref: ${{ inputs.website_commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Build the selected site commit
+        env:
+          WEBSITE_COMMIT: ${{ inputs.website_commit }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$WEBSITE_COMMIT"
+          test "v$(node -p 'require("./public/package.json").version')" = "$RELEASE_TAG"
+          npm ci --include=optional
+          NUXT_APP_BASE_URL=/ npm run generate
+      - name: Verify installer URLs before changing the site
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          version=${RELEASE_TAG#v}
+          release_url="https://github.com/donwellsav/dwcue/releases/download/$RELEASE_TAG"
+          for file in "DonWells-Cue-Setup-$version.exe" "DonWells-Cue-$version-x86_64.AppImage" \
+            "DonWells-Cue-$version-amd64.deb" "DonWells-Cue-$version-x86_64.rpm"; do
+            curl --fail --silent --show-error --head --location --retry 4 "$release_url/$file" >/dev/null
+          done
+          for arch in arm64 x64; do
+            for ext in dmg zip; do
+              curl --fail --silent --show-error --head --location --retry 4 \
+                "https://dwcue.com/downloads/DonWells-Cue-$version-$arch.$ext" >/dev/null
+            done
+          done
+      - name: Publish generated site files
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          python3 - <<'PY'
+          from concurrent.futures import ThreadPoolExecutor
+          import mimetypes
+          from pathlib import Path
+          import subprocess
+
+          root = Path(".output/public")
+          last = ["package.json", "index.html"]
+          no_cache = {*last, "sitemap.xml", "robots.txt", "_payload.json", "assets/builds/latest.json"}
+
+          def upload(key):
+              content_type = mimetypes.guess_type(key)[0] or "application/octet-stream"
+              cache = "no-cache" if key in no_cache or key.endswith(".html") else "public, max-age=31536000, immutable"
+              subprocess.run([
+                  "npx", "--yes", "wrangler@4", "r2", "object", "put", f"dwcue-site/{key}",
+                  "--remote", "--file", str(root / key), "--content-type", content_type,
+                  "--cache-control", cache,
+              ], check=True)
+
+          for key in last:
+              if not (root / key).is_file():
+                  raise SystemExit(f"Missing generated website file: {key}")
+          files = [p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()]
+          # Keep the live version pointer and home page until their assets are ready.
+          with ThreadPoolExecutor(max_workers=4) as pool:
+              list(pool.map(upload, [key for key in files if key not in last and not key.startswith("downloads/")]))
+          for key in last:
+              upload(key)
+          PY
