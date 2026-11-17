@@ -3,7 +3,7 @@
        Properties already owns, nothing new: a cue's `volume` (stored linear,
        shown in dB, -60 to +10 like the Volume field) and a group's
        `groupGainDb` (-60 to 0 like the Group level slider). -->
-  <span class="item-level" :class="{ 'item-level--large': large }" draggable="false"
+  <span class="item-level" draggable="false"
     @click.stop @dblclick.stop @pointerdown.stop @mousedown.stop>
     <!-- Read-only is Show Mode: a number that is not a text field, so nothing
          here can take the keyboard from GO. -->
@@ -40,7 +40,6 @@ import { dbToLinear, linearToDb } from '~/utils/audio';
 const props = defineProps<{
   item: AudioItem | GroupItem;
   readOnly?: boolean;   // Show Mode: display the number instead of a field
-  large?: boolean;      // sized for a Show Mode row or tile
   disabled?: boolean;
   maxDb?: number;       // a QuickPlay's gain goes to +12 dB, as in its settings
   // How the change is stored. The default saves the show; a QuickPlay tile
@@ -133,7 +132,7 @@ function nudge(direction: number, event: Event) {
   font-size: 11px;
 }
 
-/* Stacked arrows: 16px wide, wider and taller in the large size. */
+/* Stacked arrows, 16px wide. */
 .item-level__spin {
   display: grid;
   grid-template-rows: 1fr 1fr;
@@ -157,16 +156,4 @@ function nudge(direction: number, event: Event) {
   &:disabled { color: var(--color-text-disabled); cursor: default; }
 }
 
-/* The same control, scaled to a Show Mode row or tile. */
-.item-level--large {
-  height: 44px;
-  padding-left: 8px;
-
-  .item-level__value { font-size: 16px; width: 4.6ch; }
-  .item-level__unit { font-size: 12px; margin-right: 5px; }
-  .item-level__spin { width: 28px; }
-  .item-level__nudge { color: var(--color-text-primary); }
-  .item-level__nudge + .item-level__nudge { border-top: 1px solid var(--color-border); }
-  .item-level__nudge .material-symbols-rounded { font-size: 26px; }
-}
 </style>

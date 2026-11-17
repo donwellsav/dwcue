@@ -210,8 +210,8 @@ void run();
   gap: 2px var(--spacing-sm);
 }
 
-/* The named cue or output. As a button it is a full-size target: 34px, and
-   44px in Show Mode, from the shared panel control height. */
+/* The named cue or output. As a button it is a full-size target: 34px, from
+   the shared panel control height. */
 .show-check__subject {
   display: inline-flex;
   align-items: center;

@@ -245,7 +245,7 @@
             <div class="settings-rows">
               <h3 class="settings-section-title">{{ t('playlist.title') }}</h3>
               <section class="settings-field track-height-control">
-                <label for="regular-playlist-row-height">{{ t('settings.regularModeTrackHeight') }}</label>
+                <label for="regular-playlist-row-height">{{ t('settings.playlistTrackHeight') }}</label>
                 <input
                   id="regular-playlist-row-height"
                   type="range"
@@ -256,19 +256,6 @@
                   @input="onPlaylistRowHeightInput('regular', $event)"
                 />
                 <output for="regular-playlist-row-height">{{ regularPlaylistRowHeight }} px</output>
-              </section>
-              <section class="settings-field track-height-control">
-                <label for="show-playlist-row-height">{{ t('settings.showModeTrackHeight') }}</label>
-                <input
-                  id="show-playlist-row-height"
-                  type="range"
-                  :min="PLAYLIST_ROW_HEIGHTS.show.min"
-                  :max="PLAYLIST_ROW_HEIGHTS.show.max"
-                  step="2"
-                  :value="showPlaylistRowHeight"
-                  @input="onPlaylistRowHeightInput('show', $event)"
-                />
-                <output for="show-playlist-row-height">{{ showPlaylistRowHeight }} px</output>
               </section>
               <section class="settings-field track-height-control">
                 <label for="folder-playlist-row-height">{{ t('settings.folderHeaderTrackHeight') }}</label>
@@ -727,7 +714,6 @@ function setAccentColor(color: string) {
 }
 const {
   regularPlaylistRowHeight,
-  showPlaylistRowHeight,
   folderPlaylistRowHeight,
   waveformOpacity,
   uiFontScale,
@@ -736,7 +722,6 @@ const {
   headerWarningTiming,
   showTooltips,
   setRegularPlaylistRowHeight,
-  setShowPlaylistRowHeight,
   setFolderPlaylistRowHeight,
   setWaveformOpacity,
   setUiFontScale,
@@ -759,11 +744,11 @@ function onHeaderWarningTimingChange(field: keyof HeaderWarningTiming, event: Ev
   setHeaderWarningTiming(next);
 }
 
+// One layout for the QuickPlays panel and one for the detached window; Edit
+// Mode and Show Mode share them.
 const cartGridProfileOptions = computed<Array<{ id: CartGridProfile; label: string }>>(() => [
-  { id: 'attachedRegular', label: t('settings.cartLayoutAttachedRegular') },
-  { id: 'attachedShow', label: t('settings.cartLayoutAttachedShow') },
-  { id: 'detachedRegular', label: t('settings.cartLayoutDetachedRegular') },
-  { id: 'detachedShow', label: t('settings.cartLayoutDetachedShow') },
+  { id: 'attachedRegular', label: t('oneShots.title') },
+  { id: 'detachedRegular', label: t('controls.toggleDetachedQuickPlays') },
 ]);
 
 const devices = computed(() => server.devices ?? []);
@@ -1371,8 +1356,7 @@ async function onScrollToPlayingChange(e: Event) {
 
 function onPlaylistRowHeightInput(mode: PlaylistRowMode, e: Event) {
   const value = (e.target as HTMLInputElement).value;
-  if (mode === 'show') setShowPlaylistRowHeight(value);
-  else if (mode === 'folder') setFolderPlaylistRowHeight(value);
+  if (mode === 'folder') setFolderPlaylistRowHeight(value);
   else setRegularPlaylistRowHeight(value);
 }
 
@@ -1572,7 +1556,13 @@ function close() {
 }
 .show-checks__row > .modal-btn { flex: none; font-weight: 600; }
 .show-checks__row > .modal-btn:disabled { color: var(--color-text-disabled); cursor: default; }
-.modal-btn--on { border-color: var(--color-accent); color: var(--color-accent-text); }
+/* A check that is running: the button is filled, not just tinted. */
+.modal-btn.modal-btn--on,
+.modal-btn.modal-btn--on:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
 .settings-rows > .video-check-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

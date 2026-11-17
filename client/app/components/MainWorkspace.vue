@@ -2,9 +2,9 @@
   <div class="main-workspace" :class="{ 'show-mode': uiMode === 'playback' }">
     <!-- Show Mode reuses the full editor layout (header, transport, resizable/
          detachable playlist⇄cart split). It is not a separate view: the child
-         components read useUiMode() and hide their edit affordances + enlarge
-         touch targets, so waveforms, colours, durations, behaviour flags and
-         warnings all render exactly as in edit mode. -->
+         components read useUiMode() and hide their edit affordances, and
+         nothing else: every size, waveform, colour, duration, behaviour flag
+         and warning renders exactly as in Edit Mode. -->
     <ProjectHeader :inert="recoveryOpen" />
     <PlaybackControls />
     <LevelCheckBar :inert="recoveryOpen" />
@@ -306,7 +306,7 @@ const {
 const { cartOnlyItems } = useCartItems();
 const { t } = useLocalization();
 const server = useLiveplayServer();
-const { uiMode, uiFontScale, regularPlaylistRowHeight, showPlaylistRowHeight, folderPlaylistRowHeight } = useUiMode();
+const { uiMode, uiFontScale, regularPlaylistRowHeight, folderPlaylistRowHeight } = useUiMode();
 const { levels: outputTargetLevels } = useOutputTarget();
 const showProjectSettings = useState('showProjectSettings', () => false);
 const quickPlayImportSlot = useState<number | null>('quickPlayImportSlot', () => null);
@@ -356,8 +356,7 @@ const showCueProperties = computed(() =>
 const lowerPanelOpen = computed(() => decisionOpen || showProjectSettings.value || !!visibleImportPanel.value || !!showCueProperties.value);
 const filePicker = useState<'cue' | 'standby' | 'replace-media' | null>('workspaceFilePicker', () => null);
 // Leave room for both lines of a compact cue when the lower panel is maximized.
-const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value,
-  uiMode.value === 'playback' ? Math.max(showPlaylistRowHeight.value, 108) : Math.max(regularPlaylistRowHeight.value, 84)));
+const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value, regularPlaylistRowHeight.value, 84));
 
 const MIN_PANEL_HEIGHT = 120;
 const MAX_PANEL_HEIGHT_PERCENT = 60;
@@ -979,11 +978,6 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   background: var(--color-background);
-}
-
-.main-workspace.show-mode {
-  // Leave room for Show Mode's larger playlist controls beside QuickPlays.
-  --playlist-split-min-width: 637px;
 }
 
 .workspace-content {

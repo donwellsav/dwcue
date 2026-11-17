@@ -241,13 +241,6 @@ button > .material-symbols-rounded {
   --color-warning: #e2b65e;
 }
 
-// Show Mode is operated by touch in a dark room: panel header controls
-// (hide, detach, locate, close) become 44px targets like the transport.
-.main-workspace.show-mode {
-  --panel-control-height: 44px;
-  --panel-header-height: 54px;
-}
-
 // Base styles
 * {
   box-sizing: border-box;

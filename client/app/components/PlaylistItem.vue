@@ -208,7 +208,7 @@
           </div>
           <!-- Level, on every row: a cue's Volume or a group's Group level,
                the same values Properties edits (see ItemLevel). -->
-          <ItemLevel :item="item" :read-only="showMode" :large="showMode" :disabled="!projectControlsReady" />
+          <ItemLevel :item="item" :read-only="showMode" :disabled="!projectControlsReady" />
         </div>
 
         <span v-if="item.type === 'audio'" class="item-duration" :style="{ color: durationColor ?? undefined }">{{ durationDisplay }}</span>
@@ -703,8 +703,7 @@ const warningState = computed(() => {
 const itemStyle = computed(() => {
   const depthOffset = props.depth > 0 ? 24 : 0;
   return {
-    marginLeft: showMode.value ? '0px' : `${depthOffset}px`,
-    '--item-depth-offset': `${depthOffset}px`,
+    marginLeft: `${depthOffset}px`,
     '--folder-background': 'var(--color-surface-raised)',
     '--waveform-color': props.item.color || 'var(--color-text-tertiary)',
   };
@@ -1677,13 +1676,6 @@ button.item-name {
   max-width: none;
 }
 
-/* In Show Mode a cue inside a group is not indented, but its colour rail is,
-   and the rail stands in that lane: slide the number only as far as the rail. */
-.playlist-item.show-mode.no-preview-lane > .item-content .item-identity {
-  --freed-lane: calc(
-    var(--cue-leading-width, 34px) + var(--row-lane-gap, var(--spacing-sm)) - var(--item-depth-offset, 0px)
-  );
-}
 .group-shuffle-action {
   grid-area: video;
   justify-self: end;
@@ -1778,140 +1770,21 @@ button.item-name {
   padding-top: 2px;
 }
 
-.playlist-item:not(.show-mode) > .group-children {
+.playlist-item > .group-children {
   padding-left: var(--spacing-md);
 }
 
-.playlist-item:not(.show-mode).is-group > .item-content .expand-btn {
+.playlist-item.is-group > .item-content .expand-btn {
   /* Keep the arrow aligned to the child rail without covering the number. */
   transform: translateX(min(10px, calc(2px + var(--folder-column-gap, var(--spacing-sm)))));
 }
 
-/* ------------------------------------------------------------------ */
-/* Show Mode — larger, touch-friendly rows. Same operator information, */
-/* bigger hit areas: taller rows, stable number/time lanes, and chunky */
-/* play/stop / set-next buttons. The independent cue-colour rail,      */
-/* waveform, behavior flags, and warnings remain visible.              */
-/* ------------------------------------------------------------------ */
-.playlist-item.show-mode {
-  --current-playlist-row-height: var(--show-playlist-row-height, 68px);
-  --cue-leading-width: 44px;
-
-  .item-content {
-    padding: 6px var(--spacing-md);
-  }
-
-  .item-color-rail {
-    left: var(--item-depth-offset, 0px);
-  }
-
-  &.is-group {
-    --current-playlist-row-height: var(--folder-playlist-row-height, 60px);
-  }
-  .item-left {
-    grid-template-columns: 44px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
-    grid-template-areas: 'expand identity state video actions transport duration arm';
-    gap: var(--spacing-sm);
-  }
-
-  .expand-btn {
-    width: 44px;
-    height: 44px;
-
-    .material-symbols-rounded {
-      font-size: 24px;
-    }
-  }
-
-  &.is-group .expand-btn {
-    transform: translateX(-8px);
-  }
-
-  .item-identity {
-    gap: var(--spacing-sm);
-  }
-
-  .item-index {
-    font-size: 18px;
-  }
-
-  .item-icon .material-symbols-rounded {
-    font-size: 22px;
-  }
-
-  .item-name,
-  &.is-group .item-name {
-    font-size: 18px;
-  }
-
-  &.is-audio .item-name {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    height: auto;
-    line-height: 1.12;
-    white-space: normal;
-  }
-
-  .item-duration {
-    font-size: calc(var(--cue-cell-height) - 4px);
-    line-height: 1;
-  }
-
-  .status-pill {
-    font-size: var(--cue-text-size);
-    height: 28px;
-    padding: 2px 10px;
-  }
-
-  .behavior-icon {
-    font-size: 18px;
-  }
-
-  /* Enlarge the playback action buttons (play/stop, set-next) for touch —
-     double width vs. height so they're easier to hit without misjudging
-     horizontal position. :deep() reaches into the ActionButton child. */
-  :deep(.action-btn--playlist) {
-    width: var(--playlist-set-next-width, 92px);
-    height: var(--cue-cell-height);
-    min-height: 44px;
-    flex-shrink: 0;
-
-    .material-symbols-rounded {
-      font-size: clamp(18px, calc(var(--current-playlist-row-height, 44px) * 0.42), 36px);
-    }
-  }
-  :deep(.preview-action.action-btn--playlist) {
-    --current-playlist-row-height: var(--playlist-row-height, 44px);
-    width: 32px;
-    min-width: 32px;
-    height: var(--cue-cell-height);
-    min-height: 26px;
-    flex-shrink: 0;
-
-    .material-symbols-rounded {
-      font-size: clamp(18px, calc(var(--current-playlist-row-height, 44px) * 0.42), 36px);
-    }
-  }
-
-  :deep(.group-music-toggle.action-btn--playlist) {
-    width: 44px;
-  }
-
-  :deep(.restart-action.action-btn--playlist) {
-    width: 40px;
-    height: 40px;
-
-    .material-symbols-rounded {
-      font-size: 20px;
-    }
-  }
-
-
-  /* Not selectable — row is a playback surface, not a list to click into. */
-  .item-content {
-    cursor: default;
-  }
+/* Show Mode is Edit Mode with the editing taken out: the same rows, at the
+   same size, in the same places. The one difference in how a row is drawn is
+   the pointer, because a row there is a playback surface and not something
+   to select or drag. */
+.playlist-item.show-mode .item-content {
+  cursor: default;
 }
 
 /* Keep a full title lane when the side panels leave less room for the playlist. */

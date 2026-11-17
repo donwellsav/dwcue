@@ -79,8 +79,8 @@
       </div>
       </div>
 
-      <!-- Show Mode toggle: flips the whole workspace into the touch-friendly
-           playback layout (edit buttons hidden, larger touch targets) and back.
+      <!-- Show Mode toggle: takes the editing controls out of the workspace and
+           puts them back. Nothing changes size or place.
            Persisted per-device, not in the project. -->
       <button
         type="button"
@@ -551,13 +551,6 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
-}
-
-/* Show Mode is used by touch in the dark: every control here is a 44px target. */
-.show-mode .header-right :deep(.btn),
-.show-mode .autosave-toggle {
-  min-height: 44px;
-  padding-inline: 12px;
 }
 
 /* Autosave toggle switch */

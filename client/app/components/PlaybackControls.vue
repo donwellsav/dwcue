@@ -620,35 +620,7 @@ const handlePlayNext = async () => {
   background-color: var(--color-surface);
 }
 
-/* Show Mode keeps every transport target comfortably touchable. */
-.playback-controls.show-mode {
-  min-height: calc(var(--playback-controls-height) + var(--spacing-lg));
-}
-
-.playback-controls.show-mode .control-btn {
-  padding: var(--spacing-lg);
-  font-size: 17px;
-}
-
-.playback-controls.show-mode .control-btn .material-symbols-rounded {
-  font-size: 26px;
-}
-
-.playback-controls.show-mode .preview-cue-header {
-  font-size: 16px;
-}
-
-.playback-controls.show-mode .preview-transport .preview-action-btn {
-  width: 44px;
-  height: 44px;
-  font-size: 28px;
-}
-
-.playback-controls.show-mode :deep(.active-cue-item .action-btn) {
-  width: 32px;
-  height: 32px;
-  font-size: 24px;
-}
+/* The transport is drawn the same in Edit Mode and Show Mode. */
 
 .control-btn {
   display: flex;
@@ -682,10 +654,6 @@ const handlePlayNext = async () => {
 
 .play-next-btn:disabled {
   opacity: 1;
-}
-
-.playback-controls.show-mode .play-next-btn {
-  padding-block: var(--spacing-xs);
 }
 
 .play-next-btn.has-next {
@@ -771,14 +739,6 @@ const handlePlayNext = async () => {
   }
 }
 
-.playback-controls.show-mode .play-next-target {
-  font-size: 20px;
-}
-
-.playback-controls.show-mode .play-next-meta {
-  font-size: 11px;
-}
-
 .panic-zone {
   grid-area: panic;
   align-self: stretch;
@@ -802,21 +762,6 @@ const handlePlayNext = async () => {
   /* The striped frame is the margin: the label gets the width inside it. */
   padding-inline: 4px;
   gap: 6px;
-}
-
-.playback-controls.show-mode .panic-btn {
-  padding-inline: 4px;
-}
-
-/* On a small window the button is narrow: a slightly smaller label keeps
-   "Stop All" together on one line of two. */
-@media (max-width: 1280px) {
-  .playback-controls.show-mode .panic-btn {
-    flex-direction: column;
-    gap: 2px;
-    font-size: 15px;
-    line-height: 1.15;
-  }
 }
 
 .panic-btn:hover:not(:disabled) {
@@ -900,6 +845,15 @@ const handlePlayNext = async () => {
   .control-btn {
     padding-inline: var(--spacing-md);
   }
+
+  /* The button is narrow here: with the icon above it the label stays on
+     one line instead of breaking into three. Both modes. */
+  .panic-btn {
+    flex-direction: column;
+    gap: 2px;
+    padding-block: 0;
+    line-height: 1.15;
+  }
 }
 
 @media (max-width: 1220px) {
@@ -911,10 +865,6 @@ const handlePlayNext = async () => {
 
   .panic-zone {
     padding-right: var(--spacing-xs);
-  }
-
-  .playback-controls.show-mode .control-btn {
-    padding-inline: var(--spacing-sm);
   }
 }
 

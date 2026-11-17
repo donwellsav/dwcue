@@ -154,10 +154,10 @@ const canMutate = computed(() => isDetached ? !!detachedIdentity.value : project
 
 const showMode = computed(() => uiMode.value === 'playback');
 const GRID_GAP_PX = 8;
-const gridProfile = computed<CartGridProfile>(() => {
-  if (props.isDetachedWindow) return showMode.value ? 'detachedShow' : 'detachedRegular';
-  return showMode.value ? 'attachedShow' : 'attachedRegular';
-});
+// One layout for the attached panel and one for the detached window. Show
+// Mode uses the same one as Edit Mode: it strips the editing, not the size.
+// The saved names keep their old spelling so nobody's layout is lost.
+const gridProfile = computed<CartGridProfile>(() => props.isDetachedWindow ? 'detachedRegular' : 'attachedRegular');
 const gridLayout = computed(() => cartGridLayouts.value[gridProfile.value]);
 const standaloneItems = computed(() => Array.from(cartOnlyItems.value.values()));
 const oneShotSlots = computed(() => {
@@ -172,9 +172,9 @@ const oneShotSlots = computed(() => {
     Math.ceil(slots.length / layout.columns) * layout.columns,
   );
   while (slots.length < roundedLength) slots.push(null);
-  // In Show Mode the rows after the last QuickPlay are only empty outlines.
-  // Leave them out so the QuickPlays in use get the room. Every QuickPlay
-  // keeps its place and number; only trailing empty rows go.
+  // In Show Mode the rows after the last QuickPlay are only empty outlines,
+  // so they are left out. Every QuickPlay keeps its place, number and size;
+  // only trailing empty rows go.
   if (showMode.value) {
     let lastUsed = slots.length - 1;
     while (lastUsed >= 0 && !slots[lastUsed]) lastUsed -= 1;
@@ -182,24 +182,20 @@ const oneShotSlots = computed(() => {
   }
   return slots;
 });
-// Tallest a Show Mode tile grows when few rows share the panel.
-const SHOW_MODE_MAX_ROW_HEIGHT = 250;
 const oneShotGridStyle = computed(() => {
   const layout = gridLayout.value;
-  // Show Mode shares the height between the rows in use, up to the layout's rows.
-  const rows = showMode.value
-    ? Math.max(1, Math.min(layout.rows, Math.ceil(oneShotSlots.value.length / layout.columns)))
-    : layout.rows;
+  // The layout's rows share the height in both modes, so a tile is the same
+  // size whether or not Show Mode has left the empty rows out.
+  const rows = layout.rows;
   const rowPercent = 100 / rows;
   const rowGapOffset = GRID_GAP_PX * (rows - 1) / rows;
-  // Allow the metadata row, two title lines, status, the level line and the
-  // action strip (24px + 32px in Edit Mode, 44px + 44px touch targets in Show Mode).
-  const contentMinHeight = Math.ceil((showMode.value ? 143 : 111) + 48 * oneShotFontScale.value / 100);
+  // Allow the metadata row, two title lines, status, the level line (24px)
+  // and the action strip (32px).
+  const contentMinHeight = Math.ceil(111 + 48 * oneShotFontScale.value / 100);
   const minHeight = Math.max(layout.minHeight, contentMinHeight);
-  const rowHeight = `max(${minHeight}px, calc(${rowPercent}% - ${rowGapOffset}px))`;
   return {
     '--one-shot-columns': String(layout.columns),
-    '--one-shot-row-height': showMode.value ? `min(${Math.max(SHOW_MODE_MAX_ROW_HEIGHT, minHeight)}px, ${rowHeight})` : rowHeight,
+    '--one-shot-row-height': `max(${minHeight}px, calc(${rowPercent}% - ${rowGapOffset}px))`,
   };
 });
 

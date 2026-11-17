@@ -270,10 +270,17 @@ assert.match(
   /grid-template-areas:\s*'expand identity state video actions transport duration arm'/,
   'Normal Mode must place video, edit controls, transport, clock, and Play Next in order',
 );
+// Show Mode is Edit Mode with the editing taken out. It has no sizes of its
+// own: the same rows, tiles and transport, at the same size, in both modes.
+assert.doesNotMatch(
+  playlistItem,
+  /\.playlist-item\.show-mode[^{]*\{[^}]*(?:font-size|width|height|grid-template|padding|margin)/,
+  'Show Mode rows must be drawn at the same size and in the same places as Edit Mode rows',
+);
 assert.match(
   playlistItem,
-  /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand identity state video actions transport duration arm'/,
-  'Show Mode must keep video, edit controls, transport, clock, and Play Next in order',
+  /\.playlist-item\.show-mode \.item-content\s*\{\s*cursor:\s*default;\s*\}/,
+  'a Show Mode row is a playback surface: it shows no grab pointer',
 );
 assert.equal(
   playlistItem.includes('grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px)'),
@@ -292,16 +299,6 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.show-mode[\s\S]*:deep\(\.preview-action\.action-btn--playlist\)\s*\{[\s\S]*width:\s*32px;[\s\S]*min-width:\s*32px;[\s\S]*min-height:\s*26px;/,
-  'Show Mode must keep the secondary preview button at normal size',
-);
-assert.match(
-  playlistItem,
-  /\.playlist-item\.show-mode[\s\S]{0,1400}\.item-index\s*\{\s*font-size:\s*18px;[\s\S]*\.item-name,\s*&\.is-group \.item-name\s*\{\s*font-size:\s*18px;/,
-  'Show Mode must use larger readable cue numbers and titles',
-);
-assert.match(
-  playlistItem,
   /\.item-index\s*\{[\s\S]*justify-content:\s*center;[\s\S]*font-size:\s*var\(--cue-text-size\);[\s\S]*font-family:\s*var\(--font-sans\);[\s\S]*\.item-name\s*\{[\s\S]*font-size:\s*var\(--cue-text-size\);[\s\S]*\.video-badge-icon\s*\{[\s\S]*height:\s*var\(--cue-cell-height\);[\s\S]*font-size:\s*var\(--cue-text-size\);/,
   'playlist number, title, and video cells must share the readable playlist font and sizing',
 );
@@ -317,7 +314,7 @@ assert.doesNotMatch(playlistItem, /class="material-symbols-rounded video-badge-i
 assert.match(playlistItem, /class="set-next-action"[\s\S]{0,700}:label="t\('status\.upNext'\)"[\s\S]{0,700}:hover-label="[^"]+"/, 'the next control must combine its fixed Up Next label with the Play Next hover label');
 assert.match(
   uiMode,
-  /normalizeBoundedInteger[\s\S]*Math\.min\(max, Math\.max\(min, Math\.round\(number\)\)\)[\s\S]*regular:\s*\{ min: 44, max: 72, default: 44 \}[\s\S]*show:\s*\{ min: 60, max: 96, default: 68 \}[\s\S]*folder:\s*\{ min: 60, max: 96, default: 60 \}[\s\S]*normalizePlaylistRowHeight[\s\S]*REGULAR_ROW_HEIGHT_KEY[\s\S]*SHOW_ROW_HEIGHT_KEY[\s\S]*FOLDER_ROW_HEIGHT_KEY/,
+  /normalizeBoundedInteger[\s\S]*Math\.min\(max, Math\.max\(min, Math\.round\(number\)\)\)[\s\S]*regular:\s*\{ min: 44, max: 72, default: 44 \}[\s\S]*folder:\s*\{ min: 60, max: 96, default: 60 \}[\s\S]*normalizePlaylistRowHeight[\s\S]*REGULAR_ROW_HEIGHT_KEY[\s\S]*FOLDER_ROW_HEIGHT_KEY/,
   'playlist row-height preferences must remain bounded and persist per device',
 );
 assert.match(
@@ -327,7 +324,7 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /:style="playlistRowStyle"[\s\S]*--playlist-row-height[\s\S]*--show-playlist-row-height[\s\S]*--folder-playlist-row-height[\s\S]*--playlist-waveform-opacity/,
+  /:style="playlistRowStyle"[\s\S]*--playlist-row-height[\s\S]*--folder-playlist-row-height[\s\S]*--playlist-waveform-opacity/,
   'playlist density and waveform opacity must be inherited once by top-level and nested rows',
 );
 assert.match(
@@ -441,8 +438,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /--current-playlist-row-height:\s*var\(--playlist-row-height, 44px\)[\s\S]*--current-playlist-row-height:\s*var\(--folder-playlist-row-height, 60px\)[\s\S]*min-height:\s*var\(--current-playlist-row-height\)[\s\S]*scroll-margin-top:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--show-playlist-row-height, 68px\)[\s\S]*@container \(max-width: 700px\)/,
-  'regular, Show Mode, and folder row heights must control geometry while preserving usable title space',
+  /--current-playlist-row-height:\s*var\(--playlist-row-height, 44px\)[\s\S]*--current-playlist-row-height:\s*var\(--folder-playlist-row-height, 60px\)[\s\S]*min-height:\s*var\(--current-playlist-row-height\)[\s\S]*scroll-margin-top:\s*var\(--current-playlist-row-height\)[\s\S]*@container \(max-width: 700px\)/,
+  'cue and folder row heights must control geometry while preserving usable title space',
 );
 assert.match(
   playlistItem,
@@ -985,8 +982,8 @@ assert.doesNotMatch(projectSettingsModal + read('client/app/components/TestCardC
   'Time Left and Test Card colors must not open native color dialogs');
 assert.match(
   projectSettingsModal,
-  /regular-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.regular[\s\S]*show-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.show[\s\S]*folder-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.folder[\s\S]*onPlaylistRowHeightInput/,
-  'User Interface settings must expose independent regular, Show Mode, and folder row-height controls',
+  /regular-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.regular[\s\S]*folder-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.folder[\s\S]*onPlaylistRowHeightInput/,
+  'User Interface settings must expose one cue row height and one folder row height, shared by both modes',
 );
 assert.match(
   projectSettingsModal,
@@ -1867,7 +1864,7 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /\.main-workspace\.show-mode\s*\{[\s\S]{0,240}--playlist-split-min-width:\s*637px;[\s\S]*\.playlist-section\s*\{[\s\S]{0,140}min-width:\s*var\(--playlist-split-min-width\);[\s\S]*\.cart-section\s*\{[^}]*--cart-max-width:\s*calc\(100% - var\(--playlist-split-min-width\) - var\(--resize-handle-width\)\);[^}]*&\.cart-section--fullscreen\s*\{[^}]*max-width:\s*none;/,
+  /\.playlist-section\s*\{[\s\S]{0,140}min-width:\s*var\(--playlist-split-min-width\);[\s\S]*\.cart-section\s*\{[^}]*--cart-max-width:\s*calc\(100% - var\(--playlist-split-min-width\) - var\(--resize-handle-width\)\);[^}]*&\.cart-section--fullscreen\s*\{[^}]*max-width:\s*none;/,
   'the split view must stay usable while fullscreen cart remains unconstrained',
 );
 assert.match(
@@ -1965,10 +1962,10 @@ assert.doesNotMatch(
   /\{ id: '(?:media|ducking)', label:/,
   'media and ducking must not return as separate audio-property tabs',
 );
-assert.match(
-  playbackControls,
-  /\.playback-controls\.show-mode :deep\(\.active-cue-item \.action-btn\)\s*\{[\s\S]{0,100}width:\s*32px;[\s\S]{0,80}height:\s*32px;/,
-  'preview and active-cue actions must share one Show Mode control tier',
+assert.doesNotMatch(
+  playbackControls + mainWorkspace + read('client/assets/styles/main.scss'),
+  /\.(?:playback-controls|main-workspace)\.show-mode[^{]*\{/,
+  'the transport, panel headers and split view must be drawn the same in Show Mode as in Edit Mode',
 );
 assert.match(
   globalStyles,
@@ -2062,8 +2059,8 @@ assert.doesNotMatch(
 );
 assert.match(
   playlistItem,
-  /const depthOffset = props\.depth > 0 \? 24 : 0;[\s\S]*marginLeft:\s*showMode\.value \? '0px' : `\$\{depthOffset\}px`[\s\S]*'--item-depth-offset':\s*`\$\{depthOffset\}px`[\s\S]*\.playlist-item\.show-mode\s*\{[\s\S]*\.item-color-rail\s*\{[\s\S]{0,100}left:\s*var\(--item-depth-offset, 0px\);[\s\S]*&\.is-group \.expand-btn\s*\{[\s\S]{0,120}transform:\s*translateX\(-8px\);/,
-  'nested folders must align recursively without entering the fixed Show Mode play lane',
+  /const depthOffset = props\.depth > 0 \? 24 : 0;[\s\S]{0,80}marginLeft:\s*`\$\{depthOffset\}px`/,
+  'nested rows must be indented the same way in both modes',
 );
 assert.match(
   playlistItem,
@@ -2072,13 +2069,13 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item:not\(\.show-mode\) > \.group-children\s*\{[\s\S]{0,80}padding-left:\s*var\(--spacing-md\);/,
-  'Regular Mode must retain its existing nested-folder offset',
+  /\.playlist-item > \.group-children\s*\{[\s\S]{0,80}padding-left:\s*var\(--spacing-md\);/,
+  'both modes must keep the nested-folder offset',
 );
 assert.match(
   playlistItem,
-  /\.playlist-item:not\(\.show-mode\)\.is-group > \.item-content \.expand-btn\s*\{[^}]*translateX\(min\(10px, calc\(2px \+ var\(--folder-column-gap, var\(--spacing-sm\)\)\)\)\)/,
-  'Regular Mode folder arrows must align with their child accent rail',
+  /\.playlist-item\.is-group > \.item-content \.expand-btn\s*\{[^}]*translateX\(min\(10px, calc\(2px \+ var\(--folder-column-gap, var\(--spacing-sm\)\)\)\)\)/,
+  'folder arrows must align with their child accent rail in both modes',
 );
 assert.match(
   playlistView,
@@ -2486,17 +2483,19 @@ assert.match(read('client/app/components/ServerFileBrowser.vue'),
   'the staged file list must grow with its panel instead of being capped at a few rows');
 const itemLevel = read('client/app/components/ItemLevel.vue');
 assert.match(playlistItem,
-  /<div class="item-state">[\s\S]*<ItemLevel :item="item" :read-only="showMode" :large="showMode" :disabled="!projectControlsReady" \/>\s*<\/div>\s*<span v-if="item\.type === 'audio'" class="item-duration"/,
+  /<div class="item-state">[\s\S]*<ItemLevel :item="item" :read-only="showMode" :disabled="!projectControlsReady" \/>\s*<\/div>\s*<span v-if="item\.type === 'audio'" class="item-duration"/,
   'every row must show its level at the right of the state lane');
 assert.match(read('client/app/components/OneShotTile.vue'),
-  /<ItemLevel :item="item" :read-only="showMode" :large="showMode" :max-db="12"\s*:persist="\(\) => persist\(\{ volume: item\.volume \}\)" \/>/,
+  /<ItemLevel :item="item" :read-only="showMode" :max-db="12"\s*:persist="\(\) => persist\(\{ volume: item\.volume \}\)" \/>/,
   'a QuickPlay tile must use the same level control, saved the way the tile saves its other settings');
 assert.match(itemLevel,
   /<output v-if="readOnly" class="item-level__value item-level__value--readout"[\s\S]*<input v-else class="item-level__value" type="number"[\s\S]*<span class="item-level__spin">[\s\S]*arrow_drop_up[\s\S]*arrow_drop_down/,
   'the level is one compact control: a number (never a text field in Show Mode) with stacked up and down arrows');
 assert.match(itemLevel,
-  /\.item-level__spin \{[\s\S]{0,120}grid-template-rows: 1fr 1fr;\s*width: 16px;[\s\S]*\.item-level--large \{[\s\S]{0,260}\.item-level__spin \{ width: 28px; \}/,
-  'the level arrows must stay stacked and slim in both sizes');
+  /\.item-level__spin \{[\s\S]{0,120}grid-template-rows: 1fr 1fr;\s*width: 16px;/,
+  'the level arrows must stay stacked and slim');
+assert.doesNotMatch(itemLevel + playlistItem + read('client/app/components/OneShotTile.vue'), /item-level--large|:large=/,
+  'the level control has one size, used in both modes');
 assert.doesNotMatch(itemLevel + playlistItem, /row-level__step|levelArrowsOpen|v-if="[^"]*" class="item-level__spin"/,
   'the level arrows must not depend on selection or a tap, and must not return to side-by-side buttons');
 assert.match(itemLevel,
@@ -2703,12 +2702,12 @@ assert.match(
 
 assert.match(
   uiMode,
-  /CART_GRID_LIMITS[\s\S]*rows:\s*\{ min: 1, max: 16 \}[\s\S]*columns:\s*\{ min: 1, max: 16 \}[\s\S]*attachedRegular[\s\S]*attachedShow[\s\S]*detachedRegular[\s\S]*detachedShow[\s\S]*normalizeCartGridLayouts[\s\S]*CART_GRID_LAYOUTS_KEY[\s\S]*setCartGridLayout/,
-  'cart layouts must keep four bounded per-device profiles',
+  /CART_GRID_LIMITS[\s\S]*rows:\s*\{ min: 1, max: 16 \}[\s\S]*columns:\s*\{ min: 1, max: 16 \}[\s\S]*attachedRegular[\s\S]*detachedRegular[\s\S]*normalizeCartGridLayouts[\s\S]*CART_GRID_LAYOUTS_KEY[\s\S]*setCartGridLayout/,
+  'cart layouts must keep two bounded per-device profiles, attached and detached, shared by both modes',
 );
 assert.match(
   oneShotPanel,
-  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*const contentMinHeight = Math\.ceil\(\(showMode\.value \? 143 : 111\) \+ 48 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,260}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
+  /props\.isDetachedWindow \? 'detachedRegular' : 'attachedRegular'[\s\S]*const rows = layout\.rows;[\s\S]*const contentMinHeight = Math\.ceil\(111 \+ 48 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,260}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
   'One Shots must preserve exact profile columns while reserving a measured safe width and font-scaled two-line row height',
 );
 assert.doesNotMatch(
@@ -2726,15 +2725,15 @@ assert.match(
   /\.playlist-header,\s*\.playlist-content\s*\{\s*scrollbar-gutter:\s*stable;/,
   'the playlist header and track list must reserve the same scrollbar gutter',
 );
-assert.match(
-  uiMode,
-  /attachedShow:\s*\{[\s\S]{0,180}minHeight:\s*72,[\s\S]{0,180}default:\s*\{\s*rows:\s*8,\s*columns:\s*2,\s*minHeight:\s*112\s*\}/,
-  'attached Show Mode One Shot cells must keep a compact configurable minimum with a safe default',
+assert.doesNotMatch(
+  uiMode + oneShotPanel + projectSettingsModal,
+  /attachedShow|detachedShow|showPlaylistRowHeight|SHOW_MODE_MAX_ROW_HEIGHT/,
+  'Show Mode has no row height or QuickPlays layout of its own',
 );
-assert.match(
+assert.doesNotMatch(
   oneShotTile,
-  /\.show-mode \.one-shot-actions\s*\{\s*width:\s*100%;\s*grid-auto-columns:\s*minmax\(0, 1fr\);\s*\}[\s\S]*\.show-mode \.one-shot-control\s*\{\s*width:\s*44px;\s*height:\s*44px;\s*\}/,
-  'Show Mode One Shot cells must use a full-width bottom action strip with clear transport targets',
+  /\.show-mode[^{]*\{[^}]*(?:width|height|font-size|grid-template|grid-auto)/,
+  'a QuickPlay tile must be drawn at the same size in Show Mode as in Edit Mode',
 );
 assert.match(
   oneShotPanel,
@@ -2744,7 +2743,7 @@ assert.match(
 assert.match(
   oneShotPanel,
   /if \(showMode\.value\) \{\s*let lastUsed = slots\.length - 1;\s*while \(lastUsed >= 0 && !slots\[lastUsed\]\) lastUsed -= 1;\s*slots\.length = Math\.ceil\(\(lastUsed \+ 1\) \/ layout\.columns\) \* layout\.columns;/,
-  'Show Mode must drop only the empty rows after the last QuickPlay, so every QuickPlay keeps its place',
+  'Show Mode must drop only the empty rows after the last QuickPlay, so every QuickPlay keeps its place and size',
 );
 assert.doesNotMatch(oneShotPanel, /v-for="slot in 16"/, 'One Shots must not return to a fixed 16-cell grid');
 assert.match(
@@ -2754,8 +2753,8 @@ assert.match(
 );
 assert.match(
   projectSettingsModal,
-  /cart-layout-grid[\s\S]*minimumCardHeight[\s\S]*visibleRows[\s\S]*columns[\s\S]*cartGridProfileOptions[\s\S]*attachedRegular[\s\S]*attachedShow[\s\S]*detachedRegular[\s\S]*detachedShow[\s\S]*onCartGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*setCartGridLayout/,
-  'settings must expose height, visible rows, and columns for all four One Shot layout profiles',
+  /cart-layout-grid[\s\S]*minimumCardHeight[\s\S]*visibleRows[\s\S]*columns[\s\S]*cartGridProfileOptions[\s\S]*attachedRegular[\s\S]*detachedRegular[\s\S]*onCartGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*setCartGridLayout/,
+  'settings must expose height, visible rows, and columns for the attached and the detached QuickPlays layout',
 );
 assert.match(
   controlConfig,
@@ -2820,10 +2819,10 @@ assert.deepEqual(uiModeRuntime.exports.normalizeCartGridLayouts({
   detachedRegular: { minHeight: 999 },
   detachedShow: { rows: '4', columns: '3', minHeight: 999 },
 }), {
+  // A layout saved for Show Mode by an older version is left behind: both
+  // modes now use the same two layouts.
   attachedRegular: { rows: 1, columns: 16, minHeight: 64 },
-  attachedShow: { rows: 8, columns: 2, minHeight: 72 },
   detachedRegular: { rows: 6, columns: 3, minHeight: 600 },
-  detachedShow: { rows: 4, columns: 3, minHeight: 600 },
 });
 assert.match(
   projectSettingsModal,

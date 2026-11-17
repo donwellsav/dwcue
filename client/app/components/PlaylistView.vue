@@ -13,15 +13,16 @@
         <Btn type="button" class="locate-btn locate-next" icon="my_location" text=""
           :title="t('actions.locateUpNext')" :aria-label="t('actions.locateUpNext')"
           :disabled="readOnly || !locatableNextUuid" @click="locateUpNext" />
-        <!-- Shown in Edit Mode and Show Mode alike. It jumps to a row; it never
-             filters or reorders the list. -->
-        <PlaylistSearch :disabled="readOnly || projectHydrationStatus !== 'ready'" @jump="jumpToSearchHit" />
+        <!-- The buttons keep together; the search field, which grows, comes last. -->
         <Btn v-if="backupMusicGroup?.type === 'group' || currentProject?.settings?.keepMusicGoing"
           type="button" class="music-toggle" icon="music_note" text=""
           :title="musicContinuityTitle" :aria-label="t('musicContinuity.toggle')"
           :aria-pressed="currentProject?.settings?.keepMusicGoing === true"
           :disabled="projectHydrationStatus !== 'ready' || server.cueStartsBlocked || musicContinuityPending.has('')"
           @click="toggleMusicContinuity" />
+        <!-- Shown in Edit Mode and Show Mode alike. It jumps to a row; it never
+             filters or reorders the list. -->
+        <PlaylistSearch :disabled="readOnly || projectHydrationStatus !== 'ready'" @jump="jumpToSearchHit" />
       </div>
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
       <div v-if="!showMode" class="playlist-actions" :inert="readOnly">
@@ -187,7 +188,6 @@ const locatableNextUuid = computed(() => {
 const {
   uiMode,
   regularPlaylistRowHeight,
-  showPlaylistRowHeight,
   folderPlaylistRowHeight,
   waveformOpacity,
 } = useUiMode();
@@ -215,7 +215,6 @@ const cueTimeLaneWidth = computed(() => longestCueSeconds.value < 600 ? 76 : lon
 const playlistRowStyle = computed(() => ({
   '--cue-time-width': `${cueTimeLaneWidth.value}px`,
   '--playlist-row-height': `${regularPlaylistRowHeight.value}px`,
-  '--show-playlist-row-height': `${showPlaylistRowHeight.value}px`,
   '--folder-playlist-row-height': `${folderPlaylistRowHeight.value}px`,
   '--playlist-waveform-opacity': String(waveformOpacity.value / 100),
 }));
@@ -1383,10 +1382,6 @@ const handleDrop = async (e: DragEvent) => {
   flex-direction: column;
   container-type: inline-size;
   background-color: var(--color-background);
-}
-
-.playlist-view.show-mode {
-  --cue-number-width: 52px;
 }
 
 .playlist-actions {

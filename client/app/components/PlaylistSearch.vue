@@ -129,11 +129,6 @@ onBeforeUnmount(() => { hit.value = null; });
   flex-basis: clamp(130px, 100cqi - 470px, 200px);
 }
 
-/* Show Mode has no edit buttons beside it, so the field is always open. */
-.playlist-view.show-mode .playlist-search {
-  flex-basis: clamp(130px, 100cqi - 300px, 240px);
-}
-
 /* The same focus look as every other text field in the app. */
 .playlist-search:focus-within {
   border-color: var(--color-accent);
@@ -212,12 +207,4 @@ onBeforeUnmount(() => { hit.value = null; });
   font-size: 18px;
 }
 
-/* Show Mode is read from further away and worked by touch. */
-.playlist-view.show-mode .playlist-search__input {
-  font-size: 15px;
-}
-
-.playlist-view.show-mode .playlist-search__count {
-  font-size: 13px;
-}
 </style>

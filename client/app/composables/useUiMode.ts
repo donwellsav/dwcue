@@ -1,8 +1,8 @@
 // =====================================================================
 // useUiMode.ts
 // ---------------------------------------------------------------------
-// Global edit/playback ("Show Mode") toggle for Stage 1 of the
-// touch-friendly playback surface (see IMPROVEMENTS_PLAN.md §2).
+// Global edit/playback ("Show Mode") toggle. Show Mode is Edit Mode with
+// the editing taken out: every size comes from the same settings.
 //
 // Persisted per-device via localStorage (NOT in the project file) — the
 // same project may be open on an editing laptop and a touch tablet at
@@ -24,24 +24,17 @@ export const CART_GRID_LIMITS = {
   columns: { min: 1, max: 16 },
 } as const;
 
+// One QuickPlays layout for the attached panel and one for the detached
+// window, used in Edit Mode and Show Mode alike. The names end in "Regular"
+// because saved layouts already use them.
 export const CART_GRID_PROFILES = {
   attachedRegular: {
     minHeight: 64,
     maxHeight: 600,
     default: { rows: 8, columns: 2, minHeight: 112 },
   },
-  attachedShow: {
-    minHeight: 72,
-    maxHeight: 600,
-    default: { rows: 8, columns: 2, minHeight: 112 },
-  },
   detachedRegular: {
     minHeight: 64,
-    maxHeight: 600,
-    default: { rows: 6, columns: 3, minHeight: 112 },
-  },
-  detachedShow: {
-    minHeight: 72,
     maxHeight: 600,
     default: { rows: 6, columns: 3, minHeight: 112 },
   },
@@ -66,17 +59,17 @@ const normalizeBoundedInteger = (
     : fallback;
 };
 
+// Cue rows have one height, used in Edit Mode and Show Mode alike.
 export const PLAYLIST_ROW_HEIGHTS = {
   regular: { min: 44, max: 72, default: 44 },
-  show: { min: 60, max: 96, default: 68 },
   folder: { min: 60, max: 96, default: 60 },
 } as const;
 
 export const WAVEFORM_OPACITY = { min: 0, max: 100, default: 10 } as const;
 // Percentages: 100 = the original interface text size. Defaults sit below
 // 100 — both were introduced as "smaller than before" preferences.
-// 100% draws the interface at its designed sizes (44px touch targets in Show
-// Mode, 11px smallest text). It used to default to 90%, which shrank both.
+// 100% draws the interface at its designed sizes (11px smallest text). It
+// used to default to 90%, which shrank everything.
 // A saved preference is kept; the range lets a laptop go denser or a touch
 // screen go larger.
 export const UI_FONT_SCALE = { min: 80, max: 125, default: 100 } as const;
@@ -144,7 +137,6 @@ export const normalizeCartGridLayouts = (value: unknown): CartGridLayouts => {
 
 const STORAGE_KEY = 'liveplay-ui-mode';
 const REGULAR_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-regular';
-const SHOW_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-show';
 const FOLDER_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-folder';
 const WAVEFORM_OPACITY_KEY = 'liveplay-playlist-waveform-opacity';
 const UI_FONT_SCALE_KEY = 'liveplay-ui-font-scale';
@@ -172,10 +164,6 @@ export const useUiMode = () => {
   const regularPlaylistRowHeight = useState<number>(
     'useUiMode.regularPlaylistRowHeight',
     () => PLAYLIST_ROW_HEIGHTS.regular.default,
-  );
-  const showPlaylistRowHeight = useState<number>(
-    'useUiMode.showPlaylistRowHeight',
-    () => PLAYLIST_ROW_HEIGHTS.show.default,
   );
   const folderPlaylistRowHeight = useState<number>(
     'useUiMode.folderPlaylistRowHeight',
@@ -209,10 +197,6 @@ export const useUiMode = () => {
         localStorage.getItem(REGULAR_ROW_HEIGHT_KEY),
         'regular',
       );
-      showPlaylistRowHeight.value = normalizePlaylistRowHeight(
-        localStorage.getItem(SHOW_ROW_HEIGHT_KEY),
-        'show',
-      );
       folderPlaylistRowHeight.value = normalizePlaylistRowHeight(
         localStorage.getItem(FOLDER_ROW_HEIGHT_KEY),
         'folder',
@@ -244,8 +228,6 @@ export const useUiMode = () => {
           if (next === 'edit' || next === 'playback') uiMode.value = next;
         } else if (e.key === REGULAR_ROW_HEIGHT_KEY) {
           regularPlaylistRowHeight.value = normalizePlaylistRowHeight(e.newValue, 'regular');
-        } else if (e.key === SHOW_ROW_HEIGHT_KEY) {
-          showPlaylistRowHeight.value = normalizePlaylistRowHeight(e.newValue, 'show');
         } else if (e.key === FOLDER_ROW_HEIGHT_KEY) {
           folderPlaylistRowHeight.value = normalizePlaylistRowHeight(e.newValue, 'folder');
         } else if (e.key === WAVEFORM_OPACITY_KEY) {
@@ -295,14 +277,6 @@ export const useUiMode = () => {
     regularPlaylistRowHeight.value = next;
     if (import.meta.client) {
       try { localStorage.setItem(REGULAR_ROW_HEIGHT_KEY, String(next)); } catch {}
-    }
-  };
-
-  const setShowPlaylistRowHeight = (value: unknown) => {
-    const next = normalizePlaylistRowHeight(value, 'show');
-    showPlaylistRowHeight.value = next;
-    if (import.meta.client) {
-      try { localStorage.setItem(SHOW_ROW_HEIGHT_KEY, String(next)); } catch {}
     }
   };
 
@@ -373,7 +347,6 @@ export const useUiMode = () => {
   return {
     uiMode,
     regularPlaylistRowHeight,
-    showPlaylistRowHeight,
     folderPlaylistRowHeight,
     waveformOpacity,
     uiFontScale,
@@ -383,7 +356,6 @@ export const useUiMode = () => {
     showTooltips,
     setUiMode,
     setRegularPlaylistRowHeight,
-    setShowPlaylistRowHeight,
     setFolderPlaylistRowHeight,
     setWaveformOpacity,
     setUiFontScale,

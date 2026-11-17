@@ -34,7 +34,7 @@
     <!-- The QuickPlay's level: the same control as a playlist row, on the
          same value as Gain in its settings. -->
     <div class="one-shot-levelline">
-      <ItemLevel :item="item" :read-only="showMode" :large="showMode" :max-db="12"
+      <ItemLevel :item="item" :read-only="showMode" :max-db="12"
         :persist="() => persist({ volume: item.volume })" />
     </div>
 
@@ -567,8 +567,8 @@ onUnmounted(() => {
   transform: scale(0.985);
 }
 
+/* Show Mode draws a tile exactly as Edit Mode does; it only cannot be dragged. */
 .one-shot-tile.show-mode {
-  grid-template-rows: 22px minmax(0, 1fr) auto 44px;
   cursor: default;
 }
 
@@ -650,7 +650,7 @@ onUnmounted(() => {
   z-index: 1;
 }
 
-.one-shot-levelline :deep(.item-level:not(.item-level--large)) { height: 24px; }
+.one-shot-levelline :deep(.item-level) { height: 24px; }
 
 .one-shot-bottomline {
   min-width: 0;
@@ -753,6 +753,13 @@ onUnmounted(() => {
   box-shadow: inset 0 1px rgb(255 255 255 / 4%);
 }
 
+/* Each button is a quarter of the strip. With Settings and Remove taken out
+   (Show Mode) the strip is half as wide, so Play and Cue to Continue keep
+   the size and place they have in Edit Mode. */
+.one-shot-actions:not(:has(> .one-shot-settings)) {
+  width: 50%;
+}
+
 .one-shot-control,
 .popover-close,
 .shortcut-clear {
@@ -810,11 +817,6 @@ onUnmounted(() => {
   font-size: 19px;
   font-variation-settings: 'FILL' 0, 'wght' 520, 'GRAD' 0, 'opsz' 20;
 }
-.show-mode .one-shot-actions { width: 100%; grid-auto-columns: minmax(0, 1fr); }
-/* Touch targets: 44px is the smallest a finger hits reliably in a dark room. */
-.show-mode .one-shot-control { width: 44px; height: 44px; }
-.show-mode .one-shot-actions .one-shot-control { width: 100%; height: 44px; }
-.show-mode .one-shot-actions .material-symbols-rounded { font-size: 24px; }
 .one-shot-control:hover,
 .one-shot-control.is-active { background: var(--color-surface-hover); border-color: var(--color-text-tertiary); }
 .one-shot-control:focus-visible {
