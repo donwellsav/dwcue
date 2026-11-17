@@ -643,6 +643,8 @@ jobs:
 
       - name: Generate changelog
         id: changelog
+        env:
+          RELEASE_TAG: ${{ needs.check-version.outputs.version }}
         run: |
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -z "$PREVIOUS_TAG" ]; then
@@ -651,7 +653,15 @@ jobs:
             COMMIT_RANGE="${PREVIOUS_TAG}..HEAD"
           fi
 
+          # Notes written for operators come first when this version has them
+          # (docs/release-notes/<tag>.md); the list of commits follows.
+          NOTES="docs/release-notes/${RELEASE_TAG}.md"
+
           {
+            if [ -f "$NOTES" ]; then
+              cat "$NOTES"
+              echo ""
+            fi
             echo "## What's Changed"
             echo ""
             git log "$COMMIT_RANGE" --pretty=format:"- %s (%an)" --no-merges

@@ -1,6 +1,6 @@
 # DonWells Cue
 
-DonWells Cue **2.6.24** adds live playlist and group shuffle, group level control, and QuickPlay continuation into Up Next. Import, show management, routing, and recovery controls use the lower panel. Video Output can recover picture during the active cue, and the pre-show check samples the authored cue range.
+DonWells Cue **2.7.0** makes a running show easier to read (red is live, green is next, Stop is striped), keeps Video Output on the one display it was given, converts videos the computer cannot show, and adds a pre-show check, show backups and a printable cue sheet. QuickPlays have the full Properties panel. See the [2.7.0 release notes](docs/release-notes/v2.7.0.md), and read their first section before updating a machine that shares shows with others.
 
 **Enter** sets Up Next and **Space** runs it after the engine confirms the target. **Q** toggles QuickPlays and **Shift+Q** toggles the detached window. The number row triggers slots **1–10**, and holding **Shift** triggers **11–20**. **S** opens Settings, **Shift+S** opens Properties, and **V** toggles Video Output. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification and the deferred line-level audio and 1080p HDMI checks.
 
@@ -10,7 +10,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> The current source builds **v2.6.24**. Match the installed About version to the release notes before rehearsal.
+> The current source builds **v2.7.0**. Match the installed About version to the release notes before rehearsal.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -389,11 +389,11 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.24**. Find published artefacts and checksums on the release page.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.7.0**. Find published artefacts and checksums on the release page.
 
 ### Triggering a release
 
-1. Use `npm run bump -- patch|minor|major` to update the root, client and server versions. Match the root and workspace versions in `package-lock.json` and update the operator manual.
+1. Use `npm run bump -- patch|minor|major` to update the root, client and server versions. Match the root and workspace versions in `package-lock.json` and update the operator manual. Write the operator-facing notes in `docs/release-notes/v<version>.md`; the published release shows them above the list of commits.
 2. Push the release branch and open a pull request; after review, merge it to `main`.
 3. The `build-release` workflow detects the version change and runs the platform matrix:
    - **Windows x64** (MSVC, WASAPI)
