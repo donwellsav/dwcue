@@ -337,7 +337,7 @@ test('a later waveform cannot overwrite an imported cue gain or trim edit', asyn
   )} } };`, {
     ...project, ...audio, markRaw: (value: unknown) => value,
     findItemByUuid: () => item, _waveformCache: cache,
-    findItemAndParent: () => null, lastItems: [], lastCartOnly: [],
+    findItemAndParent: () => null, lastItems: [], lastQuickPlayItems: [],
     cacheWaveform: (uuid: string, value: unknown) => cache.set(uuid, value),
     _importProcessingPendingUuids: new Set(['cue']),
     currentProject: { value: { settings: oldSettings } },
@@ -355,7 +355,7 @@ test('a later waveform cannot overwrite an imported cue gain or trim edit', asyn
 
 test('saving imported analysis keeps it in the session cache without sending waveform blobs', () => {
   const cache = new Map();
-  const serialize = compile(section(projectSource, 'const _deepToRaw =', 'const isCartWindowMode ='), {
+  const serialize = compile(section(projectSource, 'const _deepToRaw =', 'const isQuickPlayWindowMode ='), {
     toRaw: (value: unknown) => value,
     cacheWaveform: (uuid: string, value: unknown) => cache.set(uuid, value),
   }, 'itemsToJSON');

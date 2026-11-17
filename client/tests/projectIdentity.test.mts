@@ -63,7 +63,7 @@ test('waveform delivery preserves the full-file timing sentinel and explicit tri
       currentProject: { value: { items: [item] } }, itemPatchIdentity: { owns: () => false },
       serverProjectSessionId: { value: 'current' }, findItemByUuid: () => item,
       findItemAndParent: () => ({ item: baseline }), _waveformCache: cache, markRaw: (x: any) => x,
-      lastItems: [baseline], lastCartOnly: [],
+      lastItems: [baseline], lastQuickPlayItems: [],
       cacheWaveform: (uuid: string, waveform: any) => cache.set(uuid, waveform), triggerWaveformUpdate() {},
       buildWaveformFromChannels: () => ({ peaks: [0.1], duration: 1.001 }),
       acknowledgeDocPatchBaseline() {},
@@ -115,7 +115,7 @@ test('an owned project header commits its server session together with the local
     projectPathFromHeader: (h: any) => h.server.projectFilePath,
     isNativeProjectPath: (p: string) => p.endsWith('.dwcue'),
     reportOpenProjectPath() {}, updateIndices() {}, _uninstallItemsWatcherFn() {},
-    DEFAULT_CART_SLOT_KEYS: {}, DEFAULT_THEME: {},
+    DEFAULT_QUICK_PLAY_SLOT_KEYS: {}, DEFAULT_THEME: {},
     _projectHydration: { begin: () => ({ finish() {} }) },
     clearLocalProjectMirror: () => { currentProject.value = null; path.value = ''; session.value = ''; },
   });
@@ -150,7 +150,7 @@ test('New Show opens the header from the server operation that saves before swit
   };
   const create = projectFunction('createNewProject', {
     projectLoad, isHydrating,
-    useLiveplayServer: () => server, DEFAULT_CART_SLOT_KEYS: {}, DEFAULT_THEME: {}, DEFAULT_PROJECT_SETTINGS: {},
+    useLiveplayServer: () => server, DEFAULT_QUICK_PLAY_SLOT_KEYS: {}, DEFAULT_THEME: {}, DEFAULT_PROJECT_SETTINGS: {},
     projectPathInFolder: (folder: string, name: string) => `${folder}/${name}.dwcue`,
     applyServerHeader: (accepted: unknown) => { calls.push(['accepted', accepted]); return { finish() {} }; }, nextTick: async () => {},
     refreshItemsBaselineAfterHydrate() {}, installItemsWatcherFn() {}, recordRecentProject() {},
@@ -168,7 +168,7 @@ test('New Show opens the header from the server operation that saves before swit
 
 test('explicit session recovery uses fresh server and load identities for its chained writes', async () => {
   const calls: any[][] = [];
-  const project = { name: 'Local', items: [], cartOnlyItems: [] };
+  const project = { name: 'Local', items: [], quickPlayItems: [] };
   const saveFailed = { value: true };
   const server = {
     fetchProjectHeader: async () => ({ server: { projectSessionId: 'fresh-server-session' } }),
@@ -178,7 +178,7 @@ test('explicit session recovery uses fresh server and load identities for its ch
   const resume = projectFunction('resumeProjectOnServer', {
     currentProject: { value: project }, _projectHydration: { wait: async () => true },
     useLiveplayServer: () => server, projectFilePathRef: { value: '/show/Local.dwcue' },
-    isNativeProjectPath: () => true, useCartItems: () => ({ cartOnlyItems: { value: new Map() } }),
+    isNativeProjectPath: () => true, useQuickPlayItems: () => ({ quickPlayItems: { value: new Map() } }),
     hasUnsavedChanges: { value: true }, saveFailed, buildDocumentSnapshot: () => ({ ...project }),
     uninstallItemsWatcherFn() {}, tryRejoinExistingProject: async () => { saveFailed.value = false; return true; },
   });
@@ -338,12 +338,12 @@ test('cold Open owns the loading panel while the welcome screen probes for an ex
   }).outputText;
   const projectLoad = { value: null };
   const header = { hasOpenProject: true, itemCount: 1 };
-  const currentProject = { value: { cartOnlyItems: [] } };
+  const currentProject = { value: { quickPlayItems: [] } };
   let headerProbes = 0;
   let pages = 0;
   const deps = {
     _hydrationRequestRevision: 0, _openLoadRevision: 0, _hydrationRetry: createProjectHydrationRetry(),
-    isCartWindowMode: false, isVideoOutputWindowMode: false, recoveringProject: { value: false },
+    isQuickPlayWindowMode: false, isVideoOutputWindowMode: false, recoveringProject: { value: false },
     projectHydrationStatus: { value: 'ready' }, isHydrating: { value: false },
     projectLoad, currentProject, projectFilePathRef: { value: '' },
     useLiveplayServer: () => ({
@@ -351,7 +351,7 @@ test('cold Open owns the loading panel while the welcome screen probes for an ex
       fetchProjectHeader: async () => { headerProbes++; return header; },
     }),
     applyServerHeader: () => ({}), nextTick: async () => {},
-    useCartItems: () => ({ clearCartOnlyItems() {}, addCartOnlyItem() {} }),
+    useQuickPlayItems: () => ({ clearQuickPlayItems() {}, addQuickPlayItem() {} }),
     streamItemPages: async () => { pages++; return true; },
     pollLoadingProgress() {}, recordRecentProject() {},
     _projectHydration: { current: () => null },
@@ -389,13 +389,13 @@ test('cold Open owns the loading panel while the welcome screen probes for an ex
 });
 
 test('reconnect retains the verified playlist through a failed page and replaces it only on success', async () => {
-  const previous = { items: ['verified cue'], cartOnlyItems: [] };
+  const previous = { items: ['verified cue'], quickPlayItems: [] };
   const currentProject = { value: previous };
   const header = { hasOpenProject: true, itemCount: 2, server: { projectSessionId: 'new-show' } };
   let finishPages!: (loaded: boolean) => void;
   const rejoin = projectFunction('tryRejoinExistingProject', {
     currentProject, _hydrationRequestRevision: 0, projectLoad: { value: null }, _hydrationRetry: createProjectHydrationRetry(),
-    isCartWindowMode: false, isVideoOutputWindowMode: false, recoveringProject: { value: false },
+    isQuickPlayWindowMode: false, isVideoOutputWindowMode: false, recoveringProject: { value: false },
     projectHydrationStatus: { value: 'ready' }, isHydrating: { value: false },
     useLiveplayServer: () => ({ connected: true, showVerification: 'checking' }),
     async readProjectItemPages(_: unknown, count: number, isCurrent: () => boolean,
@@ -408,11 +408,11 @@ test('reconnect retains the verified playlist through a failed page and replaces
       return accepted && isCurrent();
     },
     applyServerHeader(_header: unknown, items: string[]) {
-      currentProject.value = { items, cartOnlyItems: [] };
+      currentProject.value = { items, quickPlayItems: [] };
       return {};
     },
     nextTick: async () => {},
-    useCartItems: () => ({ clearCartOnlyItems() {}, addCartOnlyItem() {} }),
+    useQuickPlayItems: () => ({ clearQuickPlayItems() {}, addQuickPlayItem() {} }),
     async streamItemPages(_: unknown, _count: number, _load: unknown, _signal: unknown, pagesLoaded: boolean) {
       assert.equal(pagesLoaded, true, 'verification pages must be applied only once');
       return true;
@@ -443,7 +443,7 @@ test('save failure persists through edits and pending retries until the current 
   };
   const save = projectFunction('saveProject', {
     currentProject, saveFailed, hasUnsavedChanges, autoSaveEnabled, saveRevision: { value: 0 },
-    useCartItems: () => ({ cartOnlyItems: { value: new Map() } }),
+    useQuickPlayItems: () => ({ quickPlayItems: { value: new Map() } }),
     useLiveplayServer: () => server, projectFilePathRef: { value: '/show.dwcue' },
     projectEpoch: { value: 0 }, serverProjectSessionId: { value: 'session' },
     sessionLost: { value: false }, recoveringProject: { value: false }, repairNotice: { value: null },

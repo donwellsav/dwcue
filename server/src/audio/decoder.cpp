@@ -9,9 +9,6 @@ extern "C" {
 #include <libavutil/error.h>
 #include <libavutil/samplefmt.h>
 #include <libswresample/swresample.h>
-#include <fluidsynth.h>
-#include <gme/gme.h>
-#include <vgmstream/libvgmstream.h>
 }
 
 #include <algorithm>
@@ -29,58 +26,10 @@ extern "C" {
 #include <string_view>
 #include <vector>
 
-#if defined(__APPLE__)
-#include <mach-o/dyld.h>
-#elif defined(_WIN32)
-#include <windows.h>
-#elif defined(__linux__)
-#include <unistd.h>
-#endif
-
 namespace liveplay::audio {
 namespace {
 
 using namespace std::string_view_literals;
-
-std::filesystem::path executable_directory() {
-#if defined(__APPLE__)
-    std::uint32_t size = 0;
-    _NSGetExecutablePath(nullptr, &size);
-    std::vector<char> path(size);
-    if (_NSGetExecutablePath(path.data(), &size) == 0) {
-        return std::filesystem::weakly_canonical(path.data()).parent_path();
-    }
-#elif defined(_WIN32)
-    std::vector<wchar_t> path(32768);
-    const DWORD size = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
-    if (size > 0 && size < path.size()) {
-        return std::filesystem::path{std::wstring_view{path.data(), size}}.parent_path();
-    }
-#elif defined(__linux__)
-    std::error_code error;
-    const auto path = std::filesystem::read_symlink("/proc/self/exe", error);
-    if (!error) return path.parent_path();
-#endif
-    return {};
-}
-
-std::filesystem::path soundfont_path() {
-    if (const char* configured = std::getenv("LIVEPLAY_SOUNDFONT")) {
-        const std::filesystem::path path{configured};
-        if (std::filesystem::is_regular_file(path)) return path;
-    }
-    const auto bundled = executable_directory() / "TimGM6mb.sf2";
-    if (std::filesystem::is_regular_file(bundled)) return bundled;
-#if defined(LIVEPLAY_DEFAULT_SOUNDFONT)
-    const std::filesystem::path source_tree{LIVEPLAY_DEFAULT_SOUNDFONT};
-    if (std::filesystem::is_regular_file(source_tree)) return source_tree;
-#endif
-    return {};
-}
-
-std::uint16_t read_be16(const std::uint8_t* data) {
-    return static_cast<std::uint16_t>((data[0] << 8) | data[1]);
-}
 
 std::uint32_t read_be32(const std::uint8_t* data) {
     return (static_cast<std::uint32_t>(data[0]) << 24) |
@@ -95,208 +44,10 @@ std::uint32_t read_le32(const std::uint8_t* data) {
            (static_cast<std::uint32_t>(data[3]) << 24);
 }
 
-bool read_midi_variable(const std::vector<std::uint8_t>& data, std::size_t& position,
-                        std::size_t end, std::uint32_t& value) {
-    value = 0;
-    for (int i = 0; i < 4 && position < end; ++i) {
-        const std::uint8_t byte = data[position++];
-        value = (value << 7) | (byte & 0x7f);
-        if ((byte & 0x80) == 0) return true;
-    }
-    return false;
-}
-
-ma_uint64 midi_length_frames(const std::vector<std::uint8_t>& data) {
-    if (data.size() < 14 || std::memcmp(data.data(), "MThd", 4) != 0) return 0;
-    const std::uint32_t header_size = read_be32(data.data() + 4);
-    if (header_size < 6 || 8ull + header_size > data.size()) return 0;
-    const std::uint16_t track_count = read_be16(data.data() + 10);
-    const std::uint16_t division = read_be16(data.data() + 12);
-    if (division == 0) return 0;
-
-    std::vector<std::pair<std::uint64_t, std::uint32_t>> tempos;
-    std::uint64_t max_tick = 0;
-    std::size_t position = 8 + header_size;
-    for (std::uint16_t track = 0; track < track_count; ++track) {
-        if (position + 8 > data.size() ||
-            std::memcmp(data.data() + position, "MTrk", 4) != 0) return 0;
-        const std::uint32_t track_size = read_be32(data.data() + position + 4);
-        position += 8;
-        if (track_size > data.size() - position) return 0;
-        const std::size_t end = position + track_size;
-        std::uint64_t tick = 0;
-        std::uint8_t running_status = 0;
-
-        while (position < end) {
-            std::uint32_t delta = 0;
-            if (!read_midi_variable(data, position, end, delta)) return 0;
-            if (tick > std::numeric_limits<std::uint64_t>::max() - delta) return 0;
-            tick += delta;
-            max_tick = std::max(max_tick, tick);
-            if (position >= end) return 0;
-
-            std::uint8_t status = data[position];
-            if (status < 0x80) {
-                if (running_status == 0) return 0;
-                status = running_status;
-            } else {
-                ++position;
-                if (status < 0xf0) running_status = status;
-            }
-
-            if (status == 0xff) {
-                if (position >= end) return 0;
-                const std::uint8_t type = data[position++];
-                std::uint32_t size = 0;
-                if (!read_midi_variable(data, position, end, size) || size > end - position) {
-                    return 0;
-                }
-                if (type == 0x51 && size == 3) {
-                    const std::uint32_t tempo =
-                        (static_cast<std::uint32_t>(data[position]) << 16) |
-                        (static_cast<std::uint32_t>(data[position + 1]) << 8) |
-                        data[position + 2];
-                    if (tempo > 0) tempos.emplace_back(tick, tempo);
-                }
-                position += size;
-                if (type == 0x2f) break;
-                continue;
-            }
-            if (status == 0xf0 || status == 0xf7) {
-                std::uint32_t size = 0;
-                if (!read_midi_variable(data, position, end, size) || size > end - position) {
-                    return 0;
-                }
-                position += size;
-                continue;
-            }
-
-            std::size_t event_size = 0;
-            if (status < 0xf0) {
-                event_size = ((status & 0xf0) == 0xc0 || (status & 0xf0) == 0xd0) ? 1 : 2;
-            } else if (status == 0xf1 || status == 0xf3) {
-                event_size = 1;
-            } else if (status == 0xf2) {
-                event_size = 2;
-            }
-            if (event_size > end - position) return 0;
-            position += event_size;
-        }
-        position = end;
-    }
-
-    double seconds = 0.0;
-    if ((division & 0x8000) != 0) {
-        const int fps = -static_cast<std::int8_t>(division >> 8);
-        const int ticks_per_frame = division & 0xff;
-        if (fps <= 0 || ticks_per_frame <= 0) return 0;
-        seconds = static_cast<double>(max_tick) / (fps * ticks_per_frame);
-    } else {
-        std::sort(tempos.begin(), tempos.end());
-        std::uint64_t last_tick = 0;
-        std::uint32_t tempo = 500000;
-        for (const auto& [tick, next_tempo] : tempos) {
-            if (tick > max_tick) break;
-            seconds += static_cast<double>(tick - last_tick) * tempo /
-                       (static_cast<double>(division) * 1000000.0);
-            last_tick = tick;
-            tempo = next_tempo;
-        }
-        seconds += static_cast<double>(max_tick - last_tick) * tempo /
-                   (static_cast<double>(division) * 1000000.0);
-    }
-    const double frames = seconds * 48000.0 + 96000.0;
-    if (frames <= 0.0 || frames >= static_cast<double>(
-            std::numeric_limits<ma_uint64>::max())) return 0;
-    return static_cast<ma_uint64>(frames);
-}
-
-struct MidiDataSource {
-    ma_data_source_base base{};
-    fluid_settings_t* settings = nullptr;
-    fluid_synth_t* synth = nullptr;
-    fluid_player_t* player = nullptr;
-    std::vector<std::uint8_t> midi;
-    std::vector<float> scratch;
-    ma_uint64 cursor = 0;
-    ma_uint64 length = 0;
-};
-
-void close(MidiDataSource& source) {
-    if (source.player) {
-        fluid_player_stop(source.player);
-        fluid_player_join(source.player);
-        delete_fluid_player(source.player);
-    }
-    if (source.synth) delete_fluid_synth(source.synth);
-    if (source.settings) delete_fluid_settings(source.settings);
-    source.player = nullptr;
-    source.synth = nullptr;
-    source.settings = nullptr;
-}
-
-bool reset_midi_player(MidiDataSource& source) {
-    if (source.player) {
-        fluid_player_stop(source.player);
-        fluid_player_join(source.player);
-        delete_fluid_player(source.player);
-    }
-    fluid_synth_system_reset(source.synth);
-    source.player = new_fluid_player(source.synth);
-    if (!source.player ||
-        fluid_player_add_mem(source.player, source.midi.data(), source.midi.size()) != FLUID_OK ||
-        fluid_player_play(source.player) != FLUID_OK) {
-        return false;
-    }
-    return true;
-}
-
-ma_result midi_on_read(ma_data_source* data_source, void* output, ma_uint64 frame_count,
-                       ma_uint64* frames_read) {
-    auto& source = *reinterpret_cast<MidiDataSource*>(data_source);
-    if ((source.length > 0 && source.cursor >= source.length) ||
-        (source.length == 0 && fluid_player_get_status(source.player) == FLUID_PLAYER_DONE &&
-         fluid_synth_get_active_voice_count(source.synth) == 0)) {
-        if (frames_read) *frames_read = 0;
-        return MA_AT_END;
-    }
-
-    const ma_uint64 count = source.length > 0
-        ? std::min(frame_count, source.length - source.cursor) : frame_count;
-
-    float* pcm = static_cast<float*>(output);
-    if (!pcm) {
-        source.scratch.resize(static_cast<std::size_t>(count) * 2);
-        pcm = source.scratch.data();
-    }
-    if (fluid_synth_write_float(source.synth, static_cast<int>(count),
-                                pcm, 0, 2, pcm, 1, 2) != FLUID_OK) {
-        if (frames_read) *frames_read = 0;
-        return MA_ERROR;
-    }
-    source.cursor += count;
-    if (frames_read) *frames_read = count;
-    return MA_SUCCESS;
-}
-
-ma_result midi_on_seek(ma_data_source* data_source, ma_uint64 frame_index) {
-    auto& source = *reinterpret_cast<MidiDataSource*>(data_source);
-    if (!reset_midi_player(source)) return MA_INVALID_OPERATION;
-
-    source.cursor = 0;
-    source.scratch.resize(4096 * 2);
-    while (source.cursor < frame_index) {
-        const ma_uint64 count = std::min<ma_uint64>(4096, frame_index - source.cursor);
-        ma_uint64 rendered = 0;
-        const ma_result result = midi_on_read(&source.base, source.scratch.data(), count, &rendered);
-        if (result != MA_SUCCESS || rendered == 0) return MA_BAD_SEEK;
-    }
-    return MA_SUCCESS;
-}
-
-ma_result midi_on_get_format(ma_data_source*, ma_format* format, ma_uint32* channels,
-                             ma_uint32* sample_rate, ma_channel* channel_map,
-                             size_t channel_map_capacity) {
+// Shared by the fixed stereo / 48 kHz float sources (playlist, silent video).
+ma_result stereo_48k_on_get_format(ma_data_source*, ma_format* format, ma_uint32* channels,
+                                   ma_uint32* sample_rate, ma_channel* channel_map,
+                                   size_t channel_map_capacity) {
     if (format) *format = ma_format_f32;
     if (channels) *channels = 2;
     if (sample_rate) *sample_rate = 48000;
@@ -305,398 +56,6 @@ ma_result midi_on_get_format(ma_data_source*, ma_format* format, ma_uint32* chan
                                      std::min<std::size_t>(2, channel_map_capacity), 2);
     }
     return MA_SUCCESS;
-}
-
-ma_result midi_on_get_cursor(ma_data_source* data_source, ma_uint64* cursor) {
-    if (!cursor) return MA_INVALID_ARGS;
-    *cursor = reinterpret_cast<MidiDataSource*>(data_source)->cursor;
-    return MA_SUCCESS;
-}
-
-ma_result midi_on_get_length(ma_data_source* data_source, ma_uint64* length) {
-    if (!length) return MA_INVALID_ARGS;
-    *length = reinterpret_cast<MidiDataSource*>(data_source)->length;
-    return *length == 0 ? MA_NOT_IMPLEMENTED : MA_SUCCESS;
-}
-
-ma_data_source_vtable midi_data_source_vtable{
-    midi_on_read, midi_on_seek, midi_on_get_format, midi_on_get_cursor,
-    midi_on_get_length, nullptr, 0};
-
-ma_result open_midi(const std::filesystem::path& path, ma_data_source** backend) {
-    std::string extension = path.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (extension != ".mid" && extension != ".midi" && extension != ".smf" &&
-        extension != ".kar" && extension != ".rmi") {
-        return MA_NO_BACKEND;
-    }
-
-    const auto soundfont = soundfont_path();
-    if (soundfont.empty()) return MA_DOES_NOT_EXIST;
-
-    std::ifstream input(path, std::ios::binary | std::ios::ate);
-    if (!input) return MA_DOES_NOT_EXIST;
-    const auto size = input.tellg();
-    if (size <= 0) return MA_INVALID_FILE;
-    input.seekg(0);
-
-    auto* source = new (std::nothrow) MidiDataSource{};
-    if (!source) return MA_OUT_OF_MEMORY;
-    source->midi.resize(static_cast<std::size_t>(size));
-    if (!input.read(reinterpret_cast<char*>(source->midi.data()), size)) {
-        delete source;
-        return MA_IO_ERROR;
-    }
-    if (extension == ".rmi") {
-        const auto& riff = source->midi;
-        if (riff.size() < 20 || std::memcmp(riff.data(), "RIFF", 4) != 0 ||
-            std::memcmp(riff.data() + 8, "RMID", 4) != 0) {
-            delete source;
-            return MA_INVALID_FILE;
-        }
-        std::vector<std::uint8_t> midi;
-        for (std::size_t position = 12; position + 8 <= riff.size();) {
-            const std::uint32_t chunk_size = read_le32(riff.data() + position + 4);
-            position += 8;
-            if (chunk_size > riff.size() - position) break;
-            if (std::memcmp(riff.data() + position - 8, "data", 4) == 0) {
-                midi.assign(riff.begin() + position, riff.begin() + position + chunk_size);
-                break;
-            }
-            position += chunk_size + (chunk_size & 1u);
-        }
-        if (midi.empty()) {
-            delete source;
-            return MA_INVALID_FILE;
-        }
-        source->midi = std::move(midi);
-    }
-
-    source->settings = new_fluid_settings();
-    if (source->settings) {
-        fluid_settings_setnum(source->settings, "synth.sample-rate", 48000.0);
-        fluid_settings_setstr(source->settings, "player.timing-source", "sample");
-        fluid_settings_setint(source->settings, "synth.lock-memory", 0);
-        source->synth = new_fluid_synth(source->settings);
-    }
-    if (!source->synth ||
-        fluid_synth_sfload(source->synth, util::path_to_utf8(soundfont).c_str(), 1) < 0 ||
-        !reset_midi_player(*source)) {
-        close(*source);
-        delete source;
-        return MA_INVALID_FILE;
-    }
-
-    source->length = midi_length_frames(source->midi);
-
-    ma_data_source_config config = ma_data_source_config_init();
-    config.vtable = &midi_data_source_vtable;
-    const ma_result result = ma_data_source_init(&config, &source->base);
-    if (result != MA_SUCCESS) {
-        close(*source);
-        delete source;
-        return result;
-    }
-    *backend = source;
-    return MA_SUCCESS;
-}
-
-ma_result midi_backend_init_file(void*, const char* path, const ma_decoding_backend_config*,
-                                 const ma_allocation_callbacks*, ma_data_source** backend) {
-    if (!path) return MA_INVALID_ARGS;
-    return open_midi(std::filesystem::path{path}, backend);
-}
-
-ma_result midi_backend_init_file_w(void*, const wchar_t* path,
-                                   const ma_decoding_backend_config*,
-                                   const ma_allocation_callbacks*, ma_data_source** backend) {
-    if (!path) return MA_INVALID_ARGS;
-    return open_midi(std::filesystem::path{path}, backend);
-}
-
-void midi_backend_uninit(void*, ma_data_source* backend, const ma_allocation_callbacks*) {
-    if (!backend) return;
-    auto* source = reinterpret_cast<MidiDataSource*>(backend);
-    ma_data_source_uninit(&source->base);
-    close(*source);
-    delete source;
-}
-
-struct GmeDataSource {
-    ma_data_source_base base{};
-    Music_Emu* emulator = nullptr;
-    std::vector<short> pcm;
-    ma_uint64 cursor = 0;
-    ma_uint64 length = 0;
-};
-
-ma_result gme_on_read(ma_data_source* data_source, void* output, ma_uint64 frame_count,
-                      ma_uint64* frames_read) {
-    auto& source = *reinterpret_cast<GmeDataSource*>(data_source);
-    if (gme_track_ended(source.emulator) || source.cursor >= source.length) {
-        if (frames_read) *frames_read = 0;
-        return MA_AT_END;
-    }
-
-    const ma_uint64 count = std::min(frame_count, source.length - source.cursor);
-    source.pcm.resize(static_cast<std::size_t>(count) * 2);
-    if (gme_play(source.emulator, static_cast<int>(count * 2), source.pcm.data())) {
-        if (frames_read) *frames_read = 0;
-        return MA_ERROR;
-    }
-    if (output) {
-        auto* samples = static_cast<float*>(output);
-        std::transform(source.pcm.begin(), source.pcm.end(), samples,
-                       [](short sample) { return static_cast<float>(sample) / 32768.0f; });
-    }
-    source.cursor += count;
-    if (frames_read) *frames_read = count;
-    return count == 0 ? MA_AT_END : MA_SUCCESS;
-}
-
-ma_result gme_on_seek(ma_data_source* data_source, ma_uint64 frame_index) {
-    auto& source = *reinterpret_cast<GmeDataSource*>(data_source);
-    if (frame_index > static_cast<ma_uint64>(std::numeric_limits<int>::max() / 2)) {
-        return MA_BAD_SEEK;
-    }
-    if (gme_seek_samples(source.emulator, static_cast<int>(frame_index * 2))) {
-        return MA_BAD_SEEK;
-    }
-    source.cursor = frame_index;
-    return MA_SUCCESS;
-}
-
-ma_result gme_on_get_format(ma_data_source*, ma_format* format, ma_uint32* channels,
-                            ma_uint32* sample_rate, ma_channel* channel_map,
-                            size_t channel_map_capacity) {
-    return midi_on_get_format(nullptr, format, channels, sample_rate,
-                              channel_map, channel_map_capacity);
-}
-
-ma_result gme_on_get_cursor(ma_data_source* data_source, ma_uint64* cursor) {
-    if (!cursor) return MA_INVALID_ARGS;
-    *cursor = reinterpret_cast<GmeDataSource*>(data_source)->cursor;
-    return MA_SUCCESS;
-}
-
-ma_result gme_on_get_length(ma_data_source* data_source, ma_uint64* length) {
-    if (!length) return MA_INVALID_ARGS;
-    *length = reinterpret_cast<GmeDataSource*>(data_source)->length;
-    return MA_SUCCESS;
-}
-
-ma_data_source_vtable gme_data_source_vtable{
-    gme_on_read, gme_on_seek, gme_on_get_format, gme_on_get_cursor,
-    gme_on_get_length, nullptr, 0};
-
-ma_result open_gme(const std::filesystem::path& path, ma_data_source** backend) {
-    std::string extension = path.extension().string();
-    std::transform(extension.begin(), extension.end(), extension.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    static constexpr std::array extensions{
-        ".ay"sv, ".gbs"sv, ".gym"sv, ".hes"sv, ".kss"sv, ".nsf"sv,
-        ".nsfe"sv, ".sap"sv, ".spc"sv, ".vgm"sv, ".vgz"sv};
-    if (std::find(extensions.begin(), extensions.end(), extension) == extensions.end()) {
-        return MA_NO_BACKEND;
-    }
-
-    std::ifstream input(path, std::ios::binary | std::ios::ate);
-    if (!input) return MA_DOES_NOT_EXIST;
-    const auto size = input.tellg();
-    if (size <= 0 || size > std::numeric_limits<long>::max()) return MA_INVALID_FILE;
-    input.seekg(0);
-    std::vector<std::uint8_t> data(static_cast<std::size_t>(size));
-    if (!input.read(reinterpret_cast<char*>(data.data()), size)) return MA_IO_ERROR;
-
-    auto* source = new (std::nothrow) GmeDataSource{};
-    if (!source) return MA_OUT_OF_MEMORY;
-    if (gme_open_data(data.data(), static_cast<long>(data.size()), &source->emulator, 48000) ||
-        gme_start_track(source->emulator, 0)) {
-        if (source->emulator) gme_delete(source->emulator);
-        delete source;
-        return MA_INVALID_FILE;
-    }
-
-    gme_info_t* info = nullptr;
-    const int play_length = gme_track_info(source->emulator, &info, 0) == nullptr && info
-        ? std::max(info->play_length, 1000)
-        : 150000;
-    if (info) gme_free_info(info);
-    constexpr int fade_length = 5000;
-    gme_set_fade_msecs(source->emulator, play_length, fade_length);
-    source->length = static_cast<ma_uint64>(play_length + fade_length) * 48;
-
-    ma_data_source_config config = ma_data_source_config_init();
-    config.vtable = &gme_data_source_vtable;
-    const ma_result result = ma_data_source_init(&config, &source->base);
-    if (result != MA_SUCCESS) {
-        gme_delete(source->emulator);
-        delete source;
-        return result;
-    }
-    *backend = source;
-    return MA_SUCCESS;
-}
-
-ma_result gme_backend_init_file(void*, const char* path, const ma_decoding_backend_config*,
-                                const ma_allocation_callbacks*, ma_data_source** backend) {
-    if (!path) return MA_INVALID_ARGS;
-    return open_gme(std::filesystem::path{path}, backend);
-}
-
-ma_result gme_backend_init_file_w(void*, const wchar_t* path,
-                                  const ma_decoding_backend_config*,
-                                  const ma_allocation_callbacks*, ma_data_source** backend) {
-    if (!path) return MA_INVALID_ARGS;
-    return open_gme(std::filesystem::path{path}, backend);
-}
-
-void gme_backend_uninit(void*, ma_data_source* backend, const ma_allocation_callbacks*) {
-    if (!backend) return;
-    auto* source = reinterpret_cast<GmeDataSource*>(backend);
-    ma_data_source_uninit(&source->base);
-    gme_delete(source->emulator);
-    delete source;
-}
-
-struct VgmstreamDataSource {
-    ma_data_source_base base{};
-    libvgmstream_t* decoder = nullptr;
-    ma_uint32 channels = 0;
-    ma_uint32 sample_rate = 0;
-    ma_uint64 cursor = 0;
-    ma_uint64 length = 0;
-    std::vector<float> scratch;
-};
-
-ma_result vgmstream_on_read(ma_data_source* data_source, void* output,
-                            ma_uint64 frame_count, ma_uint64* frames_read) {
-    auto& source = *reinterpret_cast<VgmstreamDataSource*>(data_source);
-    if (source.decoder->decoder->done || source.cursor >= source.length) {
-        if (frames_read) *frames_read = 0;
-        return MA_AT_END;
-    }
-    const int count = static_cast<int>(std::min<ma_uint64>(
-        {frame_count, source.length - source.cursor,
-         static_cast<ma_uint64>(std::numeric_limits<int>::max())}));
-    float* pcm = static_cast<float*>(output);
-    if (!pcm) {
-        source.scratch.resize(static_cast<std::size_t>(count) * source.channels);
-        pcm = source.scratch.data();
-    }
-    if (libvgmstream_fill(source.decoder, pcm, count) < 0) {
-        if (frames_read) *frames_read = 0;
-        return MA_ERROR;
-    }
-    const ma_uint64 rendered = static_cast<ma_uint64>(source.decoder->decoder->buf_samples);
-    source.cursor += rendered;
-    if (frames_read) *frames_read = rendered;
-    return rendered == 0 ? MA_AT_END : MA_SUCCESS;
-}
-
-ma_result vgmstream_on_seek(ma_data_source* data_source, ma_uint64 frame_index) {
-    auto& source = *reinterpret_cast<VgmstreamDataSource*>(data_source);
-    libvgmstream_seek(source.decoder, static_cast<int64_t>(
-        std::min<ma_uint64>(frame_index, std::numeric_limits<int64_t>::max())));
-    source.cursor = std::min(frame_index, source.length);
-    return MA_SUCCESS;
-}
-
-ma_result vgmstream_on_get_format(ma_data_source* data_source, ma_format* format,
-                                  ma_uint32* channels, ma_uint32* sample_rate,
-                                  ma_channel* channel_map, size_t channel_map_capacity) {
-    const auto& source = *reinterpret_cast<VgmstreamDataSource*>(data_source);
-    if (format) *format = ma_format_f32;
-    if (channels) *channels = source.channels;
-    if (sample_rate) *sample_rate = source.sample_rate;
-    if (channel_map && channel_map_capacity > 0) {
-        ma_channel_map_init_standard(ma_standard_channel_map_default, channel_map,
-                                     std::min<std::size_t>(source.channels,
-                                                           channel_map_capacity),
-                                     source.channels);
-    }
-    return MA_SUCCESS;
-}
-
-ma_result vgmstream_on_get_cursor(ma_data_source* data_source, ma_uint64* cursor) {
-    if (!cursor) return MA_INVALID_ARGS;
-    *cursor = reinterpret_cast<VgmstreamDataSource*>(data_source)->cursor;
-    return MA_SUCCESS;
-}
-
-ma_result vgmstream_on_get_length(ma_data_source* data_source, ma_uint64* length) {
-    if (!length) return MA_INVALID_ARGS;
-    *length = reinterpret_cast<VgmstreamDataSource*>(data_source)->length;
-    return MA_SUCCESS;
-}
-
-ma_data_source_vtable vgmstream_data_source_vtable{
-    vgmstream_on_read, vgmstream_on_seek, vgmstream_on_get_format,
-    vgmstream_on_get_cursor, vgmstream_on_get_length, nullptr, 0};
-
-ma_result open_vgmstream(const std::filesystem::path& path, ma_data_source** backend) {
-    const std::string filename = util::path_to_utf8(path);
-    libvgmstream_valid_t valid{};
-    valid.reject_extensionless = true;
-    if (!libvgmstream_is_valid(filename.c_str(), &valid)) return MA_NO_BACKEND;
-
-    libstreamfile_t* file = libstreamfile_open_from_stdio(filename.c_str());
-    if (!file) return MA_DOES_NOT_EXIST;
-    libvgmstream_config_t config{};
-    config.ignore_loop = true;
-    config.force_sfmt = LIBVGMSTREAM_SFMT_FLOAT;
-    libvgmstream_t* decoder = libvgmstream_create(file, 0, &config);
-    libstreamfile_close(file);
-    if (!decoder || !decoder->format || decoder->format->channels <= 0 ||
-        decoder->format->sample_rate <= 0 || decoder->format->play_samples <= 0) {
-        if (decoder) libvgmstream_free(decoder);
-        return MA_INVALID_FILE;
-    }
-
-    auto* source = new (std::nothrow) VgmstreamDataSource{};
-    if (!source) {
-        libvgmstream_free(decoder);
-        return MA_OUT_OF_MEMORY;
-    }
-    source->decoder = decoder;
-    source->channels = static_cast<ma_uint32>(decoder->format->channels);
-    source->sample_rate = static_cast<ma_uint32>(decoder->format->sample_rate);
-    source->length = static_cast<ma_uint64>(decoder->format->play_samples);
-
-    ma_data_source_config data_source_config = ma_data_source_config_init();
-    data_source_config.vtable = &vgmstream_data_source_vtable;
-    const ma_result result = ma_data_source_init(&data_source_config, &source->base);
-    if (result != MA_SUCCESS) {
-        libvgmstream_free(decoder);
-        delete source;
-        return result;
-    }
-    *backend = source;
-    return MA_SUCCESS;
-}
-
-ma_result vgmstream_backend_init_file(void*, const char* path,
-                                      const ma_decoding_backend_config*,
-                                      const ma_allocation_callbacks*, ma_data_source** backend) {
-    if (!path) return MA_INVALID_ARGS;
-    return open_vgmstream(std::filesystem::path{path}, backend);
-}
-
-ma_result vgmstream_backend_init_file_w(void*, const wchar_t* path,
-                                        const ma_decoding_backend_config*,
-                                        const ma_allocation_callbacks*, ma_data_source** backend) {
-    if (!path) return MA_INVALID_ARGS;
-    return open_vgmstream(std::filesystem::path{path}, backend);
-}
-
-void vgmstream_backend_uninit(void*, ma_data_source* backend,
-                              const ma_allocation_callbacks*) {
-    if (!backend) return;
-    auto* source = reinterpret_cast<VgmstreamDataSource*>(backend);
-    ma_data_source_uninit(&source->base);
-    libvgmstream_free(source->decoder);
-    delete source;
 }
 
 std::string trim(std::string value) {
@@ -1157,8 +516,8 @@ ma_result playlist_on_seek(ma_data_source* data_source, ma_uint64 frame_index) {
 ma_result playlist_on_get_format(ma_data_source*, ma_format* format, ma_uint32* channels,
                                  ma_uint32* sample_rate, ma_channel* channel_map,
                                  size_t channel_map_capacity) {
-    return midi_on_get_format(nullptr, format, channels, sample_rate,
-                              channel_map, channel_map_capacity);
+    return stereo_48k_on_get_format(nullptr, format, channels, sample_rate,
+                                    channel_map, channel_map_capacity);
 }
 
 ma_result playlist_on_get_cursor(ma_data_source* data_source, ma_uint64* cursor) {
@@ -1603,7 +962,7 @@ ma_result silent_on_get_length(ma_data_source* data_source, ma_uint64* length) {
 }
 
 ma_data_source_vtable silent_data_source_vtable{
-    silent_on_read, silent_on_seek, midi_on_get_format, silent_on_get_cursor,
+    silent_on_read, silent_on_seek, stereo_48k_on_get_format, silent_on_get_cursor,
     silent_on_get_length, nullptr, 0};
 
 ma_result open_silent(ma_uint64 length_frames, ma_data_source** backend) {
@@ -1786,13 +1145,6 @@ void backend_uninit(void*, ma_data_source* backend, const ma_allocation_callback
 
 ma_decoding_backend_vtable ffmpeg_backend{
     backend_init, backend_init_file, backend_init_file_w, nullptr, backend_uninit};
-ma_decoding_backend_vtable midi_backend{
-    nullptr, midi_backend_init_file, midi_backend_init_file_w, nullptr, midi_backend_uninit};
-ma_decoding_backend_vtable gme_backend{
-    nullptr, gme_backend_init_file, gme_backend_init_file_w, nullptr, gme_backend_uninit};
-ma_decoding_backend_vtable vgmstream_backend{
-    nullptr, vgmstream_backend_init_file, vgmstream_backend_init_file_w,
-    nullptr, vgmstream_backend_uninit};
 ma_decoding_backend_vtable playlist_backend{
     nullptr, playlist_backend_init_file, playlist_backend_init_file_w,
     nullptr, playlist_backend_uninit};
@@ -1800,8 +1152,7 @@ ma_decoding_backend_vtable cdda_backend{
     nullptr, cdda_backend_init_file, cdda_backend_init_file_w,
     nullptr, cdda_backend_uninit};
 ma_decoding_backend_vtable* backends[] = {
-    &cdda_backend, &playlist_backend, &midi_backend, &gme_backend,
-    &vgmstream_backend, &ffmpeg_backend};
+    &cdda_backend, &playlist_backend, &ffmpeg_backend};
 
 } // namespace
 
@@ -1822,7 +1173,7 @@ bool file_has_video_stream(const std::filesystem::path& path) noexcept {
 ma_decoder_config decoder_config(ma_format format, ma_uint32 channels, ma_uint32 sample_rate) {
     ma_decoder_config config = ma_decoder_config_init(format, channels, sample_rate);
     config.ppCustomBackendVTables = backends;
-    config.customBackendCount = 6;
+    config.customBackendCount = static_cast<ma_uint32>(std::size(backends));
     return config;
 }
 

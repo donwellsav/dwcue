@@ -18,9 +18,10 @@
 #include "liveplay/audio/engine.hpp"
 #include "liveplay/core/project_state.hpp"
 #include "liveplay/util/atomic_file.hpp"
-#include "liveplay/core/backup_manager.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -154,8 +155,8 @@ void render_to_end(liveplay::core::ProjectState& state,
 }
 json document(json items) {
     return json{{"name", "runtime-contract"}, {"folderPath", ""},
-                {"items", std::move(items)}, {"cartOnlyItems", json::array()},
-                {"cartItems", json::array()}, {"settings", json::object()}};
+                {"items", std::move(items)}, {"quickPlayItems", json::array()},
+                {"quickPlaySlots", json::array()}, {"settings", json::object()}};
 }
 bool wait_gate_entered(const std::filesystem::path& gate) {
     const auto entered = std::filesystem::path{gate.string() + ".entered"};
@@ -2437,8 +2438,8 @@ void test_quick_play_continuation(const std::filesystem::path& wav) {
         liveplay::audio::AudioEngine engine;
         liveplay::core::ProjectState state(engine);
         auto show = document(json::array({audio("first", wav), audio("late", wav)}));
-        show["cartOnlyItems"] = json::array({audio("quick-play", wav, {
-            {"oneShot", {{"order", 0}}}, {"endBehavior", {{"action", ending}, {"targetUuid", "first"}}},
+        show["quickPlayItems"] = json::array({audio("quick-play", wav, {
+            {"quickPlay", {{"order", 0}}}, {"endBehavior", {{"action", ending}, {"targetUuid", "first"}}},
             {"outPoint", 0.08}, {"stopFade", 0.01},
         })});
         check(state.load_from_json(show) && wait_ready(state), "QuickPlay follow: project and media load");
@@ -2453,10 +2454,381 @@ void test_quick_play_continuation(const std::filesystem::path& wav) {
         for (int i = 0; i < 500 && !on_air(state, engine, "late"); ++i)
             std::this_thread::sleep_for(2ms);
         check(on_air(state, engine, "late") && !on_air(state, engine, "first") &&
-              state.full_document()["cartOnlyItems"][0]["endBehavior"]["action"] == ending,
+              state.full_document()["quickPlayItems"][0]["endBehavior"]["action"] == ending,
               "QuickPlay follow: natural ending starts the latest Up Next without altering the authored ending");
         state.stop_all_cues(0);
     }
+}
+
+// A QuickPlay's saved ending, and the Cue to Continue toggle that overrides it
+// for one pass, both resolve against the playlist's Up Next rather than the
+// QuickPlay's own (meaningless) position.
+void test_quick_play_authored_follow(const std::filesystem::path& wav) {
+    const auto show = [&](json quick_play) {
+        auto doc = document(json::array({audio("first", wav), audio("late", wav)}));
+        json item{{"quickPlay", {{"order", 0}}}, {"outPoint", 0.08}, {"stopFade", 0.01}};
+        item.update(quick_play);
+        doc["quickPlayItems"] = json::array({audio("quick-play", wav, item)});
+        return doc;
+    };
+    const auto starts = [](liveplay::core::ProjectState& state, liveplay::audio::AudioEngine& engine,
+                           const std::string& uuid) {
+        for (int i = 0; i < 500 && !on_air(state, engine, uuid); ++i)
+            std::this_thread::sleep_for(2ms);
+        return on_air(state, engine, uuid);
+    };
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        std::vector<std::string> follow_events;
+        state.set_ui_state_broadcaster([&](const json& event) {
+            if (event.value("op", std::string{}) == "cue_follow_set" &&
+                event.value("itemUuid", std::string{}) == "quick-play")
+                follow_events.push_back(event.value("follow", std::string{"?"}));
+        });
+        check(state.load_from_json(show({{"endBehavior", {{"action", "next"}}}})) && wait_ready(state),
+              "QuickPlay Play Next: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("late") && state.trigger_item("quick-play") &&
+              state.cue_follow_state("quick-play").empty() &&
+              !on_air(state, engine, "first") && !on_air(state, engine, "late"),
+              "QuickPlay Play Next: plays without touching the playlist");
+        render_to_end(state, engine, "quick-play");
+        check(starts(state, engine, "late") && !on_air(state, engine, "first") &&
+              state.full_document()["quickPlayItems"][0]["endBehavior"]["action"] == "next",
+              "QuickPlay Play Next: natural ending starts Up Next");
+        state.stop_all_cues(0);
+
+        check(state.set_next_item_override("late") && state.trigger_item("quick-play") &&
+              state.set_cue_follow("quick-play", false) &&
+              state.cue_follow_state("quick-play") == "suppressed",
+              "QuickPlay Play Next: the toggle cancels this pass");
+        render_to_end(state, engine, "quick-play");
+        std::this_thread::sleep_for(150ms);
+        check(!on_air(state, engine, "late") && !on_air(state, engine, "first") &&
+              state.next_item_override() == "late" &&
+              state.full_document()["quickPlayItems"][0]["endBehavior"]["action"] == "next",
+              "QuickPlay Play Next: a cancelled pass leaves Up Next and the saved ending alone");
+
+        check(state.trigger_item("quick-play") && state.cue_follow_state("quick-play").empty() &&
+              state.set_cue_follow("quick-play", false) && state.set_cue_follow("quick-play", true) &&
+              state.cue_follow_state("quick-play").empty(),
+              "QuickPlay Play Next: a new pass starts on, and toggling back restores it");
+        render_to_end(state, engine, "quick-play");
+        check(starts(state, engine, "late"), "QuickPlay Play Next: restored pass starts Up Next");
+        state.stop_all_cues(0);
+        state.set_ui_state_broadcaster({});
+        check(follow_events == std::vector<std::string>{"suppressed", "suppressed", ""},
+              "QuickPlay Play Next: every toggle change is published to clients");
+    }
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(show({{"endBehavior", {{"action", "nothing"}}}})) && wait_ready(state),
+              "QuickPlay toggle: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("first") && state.trigger_item("quick-play") &&
+              state.set_cue_follow("quick-play", true) && state.cue_follow_state("quick-play") == "armed" &&
+              state.set_cue_follow("quick-play", false) && state.cue_follow_state("quick-play").empty(),
+              "QuickPlay toggle: arming can be switched off again");
+        render_to_end(state, engine, "quick-play");
+        std::this_thread::sleep_for(150ms);
+        check(!on_air(state, engine, "first") && !on_air(state, engine, "late") &&
+              state.next_item_override() == "first",
+              "QuickPlay toggle: an un-armed pass just stops");
+        state.stop_all_cues(0);
+    }
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(show({{"endBehavior", {{"action", "loop"}}}, {"outPoint", 0.02}})) &&
+              wait_ready(state), "QuickPlay loop toggle: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("first") && state.trigger_item("quick-play") &&
+              state.set_cue_follow("quick-play", true) && state.set_cue_follow("quick-play", false),
+              "QuickPlay loop toggle: arm then un-arm is accepted");
+        render_to_end(state, engine, "quick-play", 80);
+        check(wait_for_on_air(state, engine, "quick-play") && !on_air(state, engine, "first"),
+              "QuickPlay loop toggle: un-arming resumes the saved loop");
+        check(state.set_cue_follow("quick-play", true), "QuickPlay loop toggle: re-arms");
+        render_to_end(state, engine, "quick-play");
+        check(starts(state, engine, "first") &&
+              state.full_document()["quickPlayItems"][0]["endBehavior"]["action"] == "loop",
+              "QuickPlay loop toggle: armed pass finishes into Up Next and stays a saved loop");
+        state.stop_all_cues(0);
+    }
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(show({{"endBehavior", {{"action", "goto-item"}, {"targetUuid", "late"}}}})) &&
+              wait_ready(state), "QuickPlay Go to Item: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("first") && state.trigger_item("quick-play"),
+              "QuickPlay Go to Item: starts");
+        render_to_end(state, engine, "quick-play");
+        check(starts(state, engine, "late") && !on_air(state, engine, "first"),
+              "QuickPlay Go to Item: follows its own target, not Up Next");
+        state.stop_all_cues(0);
+    }
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(show({{"endBehavior", {{"action", "next"}}}})) && wait_ready(state),
+              "QuickPlay Play Next without Up Next: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("") && state.trigger_item("quick-play"),
+              "QuickPlay Play Next without Up Next: starts");
+        render_to_end(state, engine, "quick-play");
+        std::this_thread::sleep_for(150ms);
+        check(!on_air(state, engine, "first") && !on_air(state, engine, "late"),
+              "QuickPlay Play Next without Up Next: just stops");
+        state.stop_all_cues(0);
+    }
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(show({{"endBehavior", {{"action", "next"}}}, {"crossFade", 0.03}})) &&
+              wait_ready(state), "QuickPlay crossfade: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("late") && state.trigger_item("quick-play"),
+              "QuickPlay crossfade: starts");
+        render_to_end(state, engine, "quick-play");
+        check(starts(state, engine, "late") && !on_air(state, engine, "first"),
+              "QuickPlay crossfade: crossfades into Up Next");
+        state.stop_all_cues(0);
+    }
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load_from_json(show({{"endBehavior", {{"action", "next"}}}, {"outPoint", 0.3},
+                  {"startNextEnabled", true}, {"startNextTime", 0.05}})) &&
+              wait_ready(state), "QuickPlay Start Next: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("late") && state.trigger_item("quick-play"),
+              "QuickPlay Start Next: starts");
+        const auto quick_play = engine.find_cue(*state.item_to_cue_id("quick-play"));
+        std::array<float, 256> left{}, right{};
+        float* channels[]{left.data(), right.data()};
+        for (int block = 0; quick_play && block < 30; ++block) {
+            quick_play->service_read_ahead(1);
+            quick_play->render_block(channels, 2, 256);
+        }
+        check(starts(state, engine, "late") && on_air(state, engine, "quick-play"),
+              "QuickPlay Start Next: marker starts Up Next while the QuickPlay plays on");
+        state.stop_all_cues(0);
+    }
+    {
+        // The usual live case: a QuickPlay is fired over the tail of the
+        // playlist cue on air. That cue ending must still queue the next
+        // playlist cue, so the QuickPlay has somewhere to hand over to.
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        auto doc = document(json::array({audio("first", wav, {{"outPoint", 0.05}}), audio("late", wav)}));
+        doc["quickPlayItems"] = json::array({audio("quick-play", wav, {
+            {"quickPlay", {{"order", 0}}}, {"endBehavior", {{"action", "next"}}},
+            {"duckingBehavior", {{"mode", "no-ducking"}}}, {"outPoint", 0.3}, {"stopFade", 0.01},
+        })});
+        check(state.load_from_json(doc) && wait_ready(state), "QuickPlay over a playlist cue: project and media load");
+        close_devices(engine);
+        check(state.set_next_item_override("first") && state.go() == "first" &&
+              state.trigger_item("quick-play") && on_air(state, engine, "first") &&
+              on_air(state, engine, "quick-play"),
+              "QuickPlay over a playlist cue: both play");
+        render_to_end(state, engine, "first");
+        for (int i = 0; i < 250 && state.next_item_override() != "late"; ++i)
+            std::this_thread::sleep_for(2ms);
+        check(on_air(state, engine, "quick-play") && !on_air(state, engine, "late") &&
+              state.next_item_override() == "late",
+              "QuickPlay over a playlist cue: the ending cue still queues Up Next");
+        render_to_end(state, engine, "quick-play");
+        check(starts(state, engine, "late"),
+              "QuickPlay over a playlist cue: Play Next hands over to the queued cue");
+        state.stop_all_cues(0);
+    }
+}
+
+// True when any object key, at any depth, still says "cart" or "oneShot".
+bool has_old_quick_play_name(const json& value) {
+    if (value.is_object()) {
+        for (const auto& [key, child] : value.items()) {
+            std::string lower = key;
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                           [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+            if (lower.find("cart") != std::string::npos ||
+                lower.find("oneshot") != std::string::npos) {
+                return true;
+            }
+            if (has_old_quick_play_name(child)) return true;
+        }
+    } else if (value.is_array()) {
+        for (const auto& child : value)
+            if (has_old_quick_play_name(child)) return true;
+    }
+    return false;
+}
+
+// A show saved before the QuickPlay rename (and a backup of it, and the same
+// document pushed by a client) opens, is served and is saved again under the
+// current names only, with nothing lost.
+void test_legacy_quick_play_names(const std::filesystem::path& wav) {
+    struct Names {
+        const char* quick_play_items;
+        const char* slots;
+        const char* slot_keys;
+        const char* slot_count;
+        const char* item_settings;
+    };
+    const Names old_names{"cartOnlyItems", "cartItems", "cartSlotKeys", "cartSlotCount", "oneShot"};
+    const Names new_names{"quickPlayItems", "quickPlaySlots", "quickPlaySlotKeys",
+                          "quickPlaySlotCount", "quickPlay"};
+    const json hotkey{{"key", "F2"}, {"ctrlKey", false}, {"shiftKey", false}, {"altKey", false}};
+    // Every renamed field: a QuickPlay item, a slot assignment with its key,
+    // the settings slot count, and a playlist cue inside a group that carries
+    // QuickPlay settings.
+    const auto show = [&](const Names& names) {
+        json pad_settings = json::object(), linked_settings = json::object();
+        pad_settings[names.item_settings] = json{{"order", 0}, {"retrigger", "restart"}};
+        linked_settings[names.item_settings] = json{{"order", 2}, {"retrigger", "ignore"}};
+        json doc{{"name", "legacy-names"}, {"folderPath", ""}};
+        doc["items"] = json::array({json{
+            {"uuid", "set"}, {"type", "group"}, {"displayName", "set"},
+            {"startBehavior", {{"action", "play-first"}}}, {"endBehavior", {{"action", "nothing"}}},
+            {"children", json::array({audio("plain", wav), audio("linked", wav, linked_settings)})},
+        }});
+        doc[names.quick_play_items] = json::array({audio("pad", wav, pad_settings)});
+        doc[names.slots] = json::array({json{{"slot", 1}, {"itemUuid", "plain"}, {"index", json::array({-1, 1})}}});
+        doc[names.slot_keys] = json::object();
+        doc[names.slot_keys]["1"] = hotkey;
+        doc["settings"] = json::object();
+        doc["settings"][names.slot_count] = 24;
+        return doc;
+    };
+    const auto quick_play_settings = [](const json& doc, const char* uuid) {
+        for (const auto& item : doc.value("quickPlayItems", json::array()))
+            if (item.value("uuid", std::string{}) == uuid) return item.value("quickPlay", json{});
+        return json{};
+    };
+    // What the old show holds once it is open: the same QuickPlays, slot
+    // assignment, key, slot count and playlist, under the current names.
+    const auto check_current = [&](const json& doc, const char* label) {
+        const auto children = doc.contains("items") && doc["items"].is_array() && !doc["items"].empty()
+            ? doc["items"][0].value("children", json::array()) : json::array();
+        check(!has_old_quick_play_name(doc) &&
+                  doc.value("quickPlayItems", json::array()).size() == 3 &&
+                  quick_play_settings(doc, "pad") == json{{"order", 0}, {"retrigger", "restart"}} &&
+                  quick_play_settings(doc, "plain-one-shot") ==
+                      json{{"order", 1}, {"retrigger", "restart"}, {"hotkey", hotkey}, {"sourceUuid", "plain"}} &&
+                  quick_play_settings(doc, "linked-one-shot") ==
+                      json{{"order", 2}, {"retrigger", "ignore"}, {"sourceUuid", "linked"}} &&
+                  doc.value("quickPlaySlots", json{}) == json::array() &&
+                  doc.value("quickPlaySlotKeys", json{}) == json::object() &&
+                  doc.value("settings", json::object()).value("quickPlaySlotCount", 0) == 24 &&
+                  children.size() == 2 && children[0].value("uuid", "") == "plain" &&
+                  children[1].value("uuid", "") == "linked" &&
+                  !children[0].contains("quickPlay") && !children[1].contains("quickPlay"),
+              label);
+    };
+    const auto read_show = [](const std::filesystem::path& file) {
+        std::ifstream input{file};
+        return json::parse(input, nullptr, /*allow_exceptions=*/false);
+    };
+
+    const auto folder = std::filesystem::temp_directory_path() /
+        ("dwcue-legacy-names-" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directory(folder);
+    const auto path = folder / "Old.dwcue";
+    const auto twin_path = folder / "Current.dwcue";
+    std::ofstream{path} << show(old_names).dump(2);
+    std::ofstream{twin_path} << show(new_names).dump(2);
+    check(has_old_quick_play_name(read_show(path)) && !has_old_quick_play_name(read_show(twin_path)),
+          "legacy names: fixture shows use the old and the current names");
+
+    // The same show written with the current names, opened and saved.
+    json twin_saved;
+    {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.load(twin_path) && wait_ready(state) && state.save(twin_path),
+              "legacy names: the show under the current names opens and saves");
+        close_devices(engine);
+        twin_saved = read_show(twin_path);
+    }
+
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    check(state.load(path) && wait_ready(state), "legacy names: a show saved with the old names opens");
+    close_devices(engine);
+    check_current(state.full_document(), "legacy names: the served show has the current names and all its content");
+    const auto header = state.header_document();
+    check(!has_old_quick_play_name(header) && header["quickPlayItems"].size() == 3 &&
+              header["quickPlaySlots"].empty() && header["quickPlaySlotKeys"].empty() &&
+              header["settings"]["quickPlaySlotCount"] == 24,
+          "legacy names: the served header has the current names");
+
+    check(state.save(path), "legacy names: the opened show saves");
+    auto saved = read_show(path);
+    check_current(saved, "legacy names: the saved show has only the current names and all its content");
+    saved.erase("lastModified");
+    twin_saved.erase("lastModified");
+    check(saved == twin_saved, "legacy names: old and current names save the same show");
+
+    // The first save kept the old file as a backup. It restores like any other.
+    const auto backups = state.list_show_backups();
+    check(backups.size() == 1 && has_old_quick_play_name(read_show(backups.front().path)),
+          "legacy names: the backup of the old file still has the old names");
+    if (!backups.empty()) {
+        const auto restored = state.restore_show_backup(backups.front().name);
+        check(restored.status == liveplay::core::ProjectState::RestoreBackupStatus::Restored &&
+                  wait_ready(state) && !has_old_quick_play_name(restored.header),
+              "legacy names: a backup written with the old names restores");
+        close_devices(engine);
+        check_current(state.full_document(), "legacy names: the restored show has the current names and all its content");
+        check(state.save(path), "legacy names: the restored show saves");
+        check_current(read_show(path), "legacy names: the restored show saves only the current names");
+    }
+
+    // A whole document pushed by a client that still uses the old names.
+    check(state.replace_full_document(show(old_names), false) && wait_ready(state),
+          "legacy names: a pushed document with the old names is accepted");
+    close_devices(engine);
+    check_current(state.full_document(), "legacy names: the pushed document has the current names and all its content");
+
+    check(state.trigger_item("pad") && on_air(state, engine, "pad") &&
+              state.trigger_item("linked-one-shot") && on_air(state, engine, "linked-one-shot"),
+          "legacy names: converted QuickPlays play");
+    state.stop_all_cues(0);
+
+    // Slot assignments, the state summary and the slot count use the current names.
+    check(state.set_quick_play_slot(3, "pad") && state.quick_play_slot_item_uuid(3) == "pad" &&
+              state.full_document()["quickPlaySlots"] ==
+                  json::array({json{{"slot", 3}, {"itemUuid", "pad"}, {"index", json::array({-1, 3})}}}),
+          "legacy names: a slot assignment is stored in quickPlaySlots");
+    const auto summary = state.state_summary();
+    check(!has_old_quick_play_name(summary) && summary.value("quickPlays", json{}).size() == 1 &&
+              summary["quickPlays"][0].value("slot", -1) == 3 &&
+              summary["quickPlays"][0].value("itemUuid", "") == "pad" &&
+              summary["quickPlays"][0].value("name", "") == "pad",
+          "legacy names: the state summary lists slot assignments as quickPlays");
+    check(state.clear_quick_play_slot(3) && state.full_document()["quickPlaySlots"].empty() &&
+              state.state_summary()["quickPlays"].empty(),
+          "legacy names: clearing a slot empties quickPlaySlots");
+    check(!state.patch_settings({{"quickPlaySlotCount", 65}}) &&
+              state.patch_settings({{"quickPlaySlotCount", 32}}) &&
+              state.full_document()["settings"]["quickPlaySlotCount"] == 32,
+          "legacy names: the slot count is checked and stored as quickPlaySlotCount");
+    const auto added = state.add_item(audio("added", wav, {{"quickPlay", {{"order", 7}}}}), "",
+                                      /*quick_play_only=*/true);
+    check(!added.value.empty() && wait_ready(state) &&
+              quick_play_settings(state.full_document(), "added") == json{{"order", 7}} &&
+              state.full_document()["items"].size() == 1,
+          "legacy names: a QuickPlay-only item is added to quickPlayItems");
+    close_devices(engine);
+    check(state.save(path) && !has_old_quick_play_name(read_show(path)),
+          "legacy names: later saves still contain only the current names");
+
+    std::error_code error;
+    std::filesystem::remove_all(folder, error);
 }
 
 void test_group_levels() {
@@ -3018,7 +3390,7 @@ void test_owned_loader_destruction() {
         stage == 1 ? "DWCUE_TEST_METADATA_GATE" : "DWCUE_TEST_LOADER_GATE";
     std::ofstream{gate} << wav; set_loader_gate(gate, hook);
     auto item = audio("owned-load", wav);
-    if (stage == 2) item["oneShot"] = json::object();
+    if (stage == 2) item["quickPlay"] = json::object();
     if (queued) state->add_item(item);
     else state->replace_full_document(document(json::array({item})));
     check(wait_gate_entered(gate), "loader lifetime: actual queued/bulk decoder/metadata call is held");
@@ -3064,65 +3436,6 @@ void test_loading_metadata_preserves_controls(const std::filesystem::path& wav) 
     std::filesystem::remove(gate + ".entered");
 }
 
-void test_backup_retention() {
-    namespace fs = std::filesystem;
-    const auto root = fs::temp_directory_path() /
-        ("dwcue-backup-runtime-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-    const auto now = fs::file_time_type::clock::now();
-    liveplay::audio::AudioEngine engine;
-    liveplay::core::ProjectState state(engine);
-    liveplay::core::BackupManager backup(state);
-    for (const bool fail_copy : {false, true}) {
-        const auto folder = root / (fail_copy ? "failed-copy" : "chronology");
-        const auto history = folder / "backups";
-        fs::create_directories(history);
-        std::vector<fs::path> existing;
-        for (int i = 0; i < 19; ++i) {
-            const auto file = history / ("Z_backup_" + std::to_string(i) + ".dwcue");
-            std::ofstream(file) << "old-" << i;
-            fs::last_write_time(file, now - 48h + std::chrono::minutes(i));
-            existing.push_back(file);
-        }
-        const auto newest = history / "A_backup_newer.dwcue";
-        std::ofstream(newest) << "newer-history";
-        fs::last_write_time(newest, now - 1h);
-        existing.push_back(newest);
-        const auto source = folder / "Show.dwcue";
-        if (fail_copy) fs::create_directory(source); // Deterministic failure, including elevated test runs.
-        else {
-            std::ofstream(source) << "complete-source";
-            fs::last_write_time(source, now - 200h);
-        }
-        state.set_project_file_path(source);
-        backup.do_backup();
-        std::size_t files = 0;
-        bool complete_copy = false;
-        bool partial_left = false;
-        for (const auto& entry : fs::directory_iterator(history)) {
-            if (!entry.is_regular_file()) continue;
-            partial_left |= entry.path().extension() != ".dwcue";
-            if (entry.path().extension() != ".dwcue") continue;
-            ++files;
-            if (entry.path().filename().string().starts_with("Show_backup_")) {
-                std::ifstream in(entry.path());
-                std::string contents{std::istreambuf_iterator<char>{in}, {}};
-                complete_copy = contents == "complete-source";
-                check(fs::last_write_time(entry.path()) >= now - 1min,
-                      "backup: age reflects publication rather than source modification");
-            }
-        }
-        if (fail_copy) {
-            check(files == 20 && std::all_of(existing.begin(), existing.end(), [](const auto& p) { return fs::exists(p); }),
-                  "backup: failed copy retains all twenty usable history files");
-        } else {
-            check(files == 20 && fs::exists(newest) && !fs::exists(existing.front()),
-                  "backup: chronology prunes oldest Z and retains newer A across names");
-            check(complete_copy, "backup: publishes a complete copy before retaining the cap");
-        }
-        check(!partial_left, "backup: no partial publication file remains");
-    }
-    fs::remove_all(root);
-}
 } // namespace
 
 int test_crash_resume_lifecycle();
@@ -3467,13 +3780,14 @@ int main() try {
     test_failed_group_follow_requires_go(wav);
     test_shuffle_items(wav);
     test_quick_play_continuation(wav);
+    test_quick_play_authored_follow(wav);
+    test_legacy_quick_play_names(wav);
     test_group_levels();
     test_music_backup(wav);
     test_manual_go_parity(wav);
     test_replacement_cancels_ownership();
     test_group_waits_for_fading_child(wav);
     test_group_waits_for_retired_tail(wav);
-    test_backup_retention();
     std::error_code error;
     // Detached decoder cleanup can outlive a fixture. Windows waits for the handle to close.
     for (int i = 0; i < 200; ++i) {

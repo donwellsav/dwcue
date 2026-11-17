@@ -120,7 +120,7 @@ async function installUpdate() {
 }
 
 // Get app version
-const appVersion = ref('2.6.24');
+const appVersion = ref('2.7.0');
 onMounted(async () => {
   if (import.meta.client && window.electronAPI?.getAppVersion) {
     appVersion.value = await window.electronAPI.getAppVersion();
@@ -210,7 +210,7 @@ const openExternal = (url: string) => {
 }
 
 .about-update-actions strong {
-  color: var(--state-up-next);
+  color: var(--color-warning);
 }
 
 .about-progress,
@@ -264,7 +264,7 @@ const openExternal = (url: string) => {
 }
 
 .about-notices a {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .about-content--docked { max-width: none; }

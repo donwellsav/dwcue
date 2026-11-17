@@ -1,14 +1,12 @@
-const { app, BrowserWindow, View, ipcMain, dialog, shell, Menu, session, screen, desktopCapturer, powerSaveBlocker, webContents } = require('electron');
+const { app, BrowserWindow, View, ipcMain, dialog, shell, Menu, net, session, screen, desktopCapturer, powerSaveBlocker, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { spawn, exec, execFile } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const { Readable, Transform } = require('stream');
 const { pipeline } = require('stream/promises');
 const youtubesearchapi = require('youtube-search-api');
-const YTDlpWrap = require('yt-dlp-wrap').default;
-const ffmpeg = require('fluent-ffmpeg');
 const { promisify } = require('util');
 const https = require('https');
 const { fileURLToPath } = require('url');
@@ -28,14 +26,49 @@ const {
 const { buildVideoOutputContextTemplate } = require('./video-output-context-menu');
 const os = require('node:os');
 const { createTestCardConfig, AUDIO_SYNC_RATES } = require('./test-card-config');
+const {
+  downloadToFile,
+  extractTarballEntry,
+  ffmpegToolsFor,
+  fileMatchesIntegrity,
+  toolFileName,
+} = require('./ffmpeg-tools');
 const { cleanupConnectionFor, TestCardPlayback } = require('./test-card-playback');
 const { managedWebSocketHeaders } = require('./managed-websocket-origin');
-const { createOneShotMutationBroker, validateIdentity, sameIdentity } = require('./one-shot-mutation-broker');
-const { createStandbyCaptureStore, findCaptureCue, captureImageUrl } = require('./video-standby-capture');
+const { createQuickPlayMutationBroker, validateIdentity, sameIdentity } = require('./quickplay-mutation-broker');
+const { findCaptureCue, captureImageUrl } = require('./video-standby-capture');
 const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('./video-output-framing.mjs');
+const { planGeometryCorrection, readViewportReport } = require('./video-output-geometry');
+const {
+  canToggleOutputFullscreen,
+  claimSoleOutput,
+  isOutputFullscreen,
+  keepOutOfFullscreenSpaces,
+  physicalOutputWindowOptions,
+  previewWindowOptions,
+  releaseOutputFullscreen,
+  resolveAssignedDisplay,
+  seatPhysicalOutput,
+  setOutputFullscreen,
+  usesNativeFullscreen,
+} = require('./video-output-window');
 const { checkVideoFrame } = require('./video-frame-check');
+const { convertVideoForOutput, cueSourcePath } = require('./video-convert');
+const {
+  collectReferences, findUnusedMedia, isPlainFileName, isReferenced, isShowDocument, mediaFilePath, mediaFolderFor,
+} = require('./unused-media');
 const { createAppLifecycleActions, createWillQuitHandler } = require('./terminal-action');
 const { createOperatorManual } = require('./operator-manual');
+const {
+  CUE_SHEET_LIMITS,
+  buildCueSheetHtml,
+  cueSheetFileName,
+  cueSheetPdfOptions,
+  cueSheetWindowOptions,
+  normalizeCueSheet,
+  normalizeCueSheetLabels,
+} = require('./cue-sheet');
+const { applyKeepAwake, keepAwakePlan } = require('./keep-awake');
 const {
   SPOTIFY_AUDIO_PROVIDERS,
   normalizeSpotifyBitrate,
@@ -46,7 +79,6 @@ const {
   spotifyReviewIsValid,
   validatedSpotifyUrl,
 } = require('./spotify-import-reliability');
-const execPromise = promisify(exec);
 const execFilePromise = promisify(execFile);
 
 app.setName('DonWells Cue');
@@ -61,7 +93,6 @@ app.setName('DonWells Cue');
 app.setPath('userData', process.env.DWCUE_USERDATA || path.join(app.getPath('appData'), 'LivePlay'));
 
 let ffmpegPath = null;
-let ffmpegAvailable = false;
 let ffmpegSetupPromise = null;
 
 const MAX_IPC_PATH_LENGTH = 32768;
@@ -163,6 +194,9 @@ async function safeOpenExternal(rawUrl) {
   }
   await shell.openExternal(rawUrl);
 }
+
+// No window of this app opens a macOS fullscreen Space (video-output-window.js).
+app.on('browser-window-created', (_event, window) => keepOutOfFullscreenSpaces(window, process.platform));
 
 app.on('web-contents-created', (_event, contents) => {
   contents.on('will-attach-webview', (event) => event.preventDefault());
@@ -379,7 +413,10 @@ async function inspectServerProcess(pid) {
     const { stdout } = await execFilePromise(
       'powershell.exe',
       ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', command],
-      { timeout: 3000, windowsHide: true, maxBuffer: 64 * 1024 },
+      // PowerShell can take several seconds to start on a busy or freshly
+      // booted machine. Timing out here reads as "cannot prove it is ours",
+      // which blocks stopping or replacing a server that has hung.
+      { timeout: 8000, windowsHide: true, maxBuffer: 64 * 1024 },
     );
     const info = JSON.parse(stdout);
     return {
@@ -509,23 +546,42 @@ async function probeServerHealth(port, timeoutMs = 1000) {
   });
 }
 
+const validTcpPort = (value) => Number.isInteger(value) && value >= 1 && value <= 65535;
+
+// `localPort` is the port the local server uses right now. It is normally the
+// configured port. When that port is taken by another program the app moves
+// the server to a free one by itself (see launchLiveplayServerWithFallback)
+// and remembers it here, so every reader keeps working without knowing.
+// `configuredLocalPort` is what the operator chose and what the next fresh
+// launch tries first.
 function readLiveplayConfig() {
   try {
     const raw = fs.readFileSync(liveplayConfigPath(), 'utf-8');
     const parsed = JSON.parse(raw);
+    const configuredLocalPort = Number.isInteger(parsed.localPort) ? parsed.localPort : LIVEPLAY_DEFAULT_PORT;
+    const fallback = validTcpPort(parsed.localPortFallback) && parsed.localPortFallbackFor === configuredLocalPort
+      ? parsed.localPortFallback : null;
     return {
       mode:      parsed.mode === 'remote' ? 'remote' : 'local',
       remoteUrl: typeof parsed.remoteUrl === 'string' ? parsed.remoteUrl : `http://127.0.0.1:${LIVEPLAY_DEFAULT_PORT}`,
-      localPort: Number.isInteger(parsed.localPort) ? parsed.localPort : LIVEPLAY_DEFAULT_PORT,
+      localPort: fallback ?? configuredLocalPort,
+      configuredLocalPort,
     };
   } catch {
-    return { mode: 'local', remoteUrl: `http://127.0.0.1:${LIVEPLAY_DEFAULT_PORT}`, localPort: LIVEPLAY_DEFAULT_PORT };
+    return { mode: 'local', remoteUrl: `http://127.0.0.1:${LIVEPLAY_DEFAULT_PORT}`,
+      localPort: LIVEPLAY_DEFAULT_PORT, configuredLocalPort: LIVEPLAY_DEFAULT_PORT };
   }
 }
 
 function writeLiveplayConfig(cfg) {
   try {
-    fs.writeFileSync(liveplayConfigPath(), JSON.stringify(cfg, null, 2));
+    const configured = validTcpPort(cfg.configuredLocalPort) ? cfg.configuredLocalPort : cfg.localPort;
+    const stored = { mode: cfg.mode, remoteUrl: cfg.remoteUrl, localPort: configured };
+    if (cfg.localPort !== configured) {
+      stored.localPortFallback = cfg.localPort;
+      stored.localPortFallbackFor = configured;
+    }
+    fs.writeFileSync(liveplayConfigPath(), JSON.stringify(stored, null, 2));
   } catch (e) {
     console.error('[liveplay-server] could not persist config:', e);
   }
@@ -779,6 +835,120 @@ function initializeCapabilitiesFromRecentProjects() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Recovering by itself from the states that used to need a person.
+// ---------------------------------------------------------------------------
+// The lock file can outlive its server: Windows ends a detached server at
+// sign-out or shutdown without letting it clean up, and the process id in the
+// lock is later handed to some other program. The checks above rightly refuse
+// to touch a live process they cannot prove is ours — but they must not treat
+// "could not prove it" as "it is ours" forever. A lock is discarded only on
+// positive evidence that no server of ours is behind it.
+const LIVEPLAY_SERVER_IMAGE_NAMES = new Set([
+  'dwcue-server', 'dwcue-server.exe', 'liveplay-server', 'liveplay-server.exe',
+]);
+
+// Program name of a running process, or null when it cannot be read. Only a
+// name that was actually read is ever used as evidence.
+async function processImageName(pid) {
+  try {
+    if (process.platform === 'win32') {
+      // tasklist ships with every Windows, answers in a fraction of a second,
+      // and can name system processes this user is not allowed to open.
+      const { stdout } = await execFilePromise(
+        'tasklist.exe', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'],
+        { timeout: 5000, windowsHide: true, maxBuffer: 64 * 1024 },
+      );
+      const row = /^"([^"]+)","(\d+)"/m.exec(stdout);
+      return row && Number(row[2]) === pid ? row[1].toLowerCase() : null;
+    }
+    const info = await inspectServerProcess(pid);
+    return path.basename(String(info.executable || '')).toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
+// A lock written before this computer last started cannot belong to anything
+// running now, whatever has since been given its process id.
+function liveplayLockPredatesBoot() {
+  try {
+    const startedAt = Date.now() - os.uptime() * 1000;
+    return fs.statSync(liveplayLockPath()).mtimeMs < startedAt - 10000;
+  } catch {
+    return false;
+  }
+}
+
+// True when `identity` (a lock, or this app's own record) names a live process
+// that is provably not a server of ours; the stale record is then removed so
+// the next launch is not blocked by it. Callers have already failed to verify
+// it as ours through health and process identity.
+async function discardStaleLiveplayIdentity(identity) {
+  if (!identity || !isPidAlive(identity.pid)) return false;
+  const lock = readLiveplayLock();
+  const fromLock = !!lock && lock.pid === identity.pid;
+  let reason = fromLock && liveplayLockPredatesBoot() ? 'the lock predates the last system start' : '';
+  if (!reason) {
+    const image = await processImageName(identity.pid);
+    if (image && !LIVEPLAY_SERVER_IMAGE_NAMES.has(image)) reason = `its process id now belongs to ${image}`;
+  }
+  if (!reason) return false;
+  console.warn('[liveplay-server] discarding stale server record for pid', identity.pid, '-', reason);
+  if (fromLock) {
+    try { fs.rmSync(liveplayLockPath(), { force: true }); }
+    catch (error) { console.warn('[liveplay-server] could not remove stale lock:', error.message); }
+  }
+  if (liveplayServerIdentity?.pid === identity.pid) clearLiveplayIdentity();
+  return true;
+}
+
+// Whether a server could listen on this port right now. Asked before every
+// launch because on Windows a second program can bind a port that is already
+// being served, and the server would then never be reachable.
+function isLoopbackPortFree(port) {
+  return new Promise((resolve) => {
+    const probe = require('net').createServer();
+    probe.once('error', () => resolve(false));
+    probe.listen({ host: '127.0.0.1', port }, () => probe.close(() => resolve(true)));
+  });
+}
+
+// A free port on this computer only, chosen by the operating system.
+function findFreeLoopbackPort() {
+  return new Promise((resolve) => {
+    const probe = require('net').createServer();
+    probe.once('error', () => resolve(null));
+    probe.listen({ host: '127.0.0.1', port: 0 }, () => {
+      const address = probe.address();
+      probe.close(() => resolve(address && typeof address === 'object' ? address.port : null));
+    });
+  });
+}
+
+// The last thing the server itself said went wrong, if it said so just now.
+function lastLiveplayServerLogError() {
+  let fd;
+  try {
+    const file = path.join(app.getPath('userData'), 'logs', 'dwcue-server.log');
+    const stat = fs.statSync(file);
+    if (Date.now() - stat.mtimeMs > 60000) return '';
+    const length = Math.min(stat.size, 16384);
+    const tail = Buffer.alloc(length);
+    fd = fs.openSync(file, 'r');
+    fs.readSync(fd, tail, 0, length, stat.size - length);
+    const errors = tail.toString('utf8').split(/\r?\n/).filter(line => line.includes('[ERROR]'));
+    return (errors.at(-1) || '')
+      .replace(/\u001b\[[0-9;]*m/g, '')
+      .replace(/^.*?\[ERROR\]\s*/, '')
+      .trim().slice(0, 300);
+  } catch {
+    return '';
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* already closed */ } }
+  }
+}
+
 function resolveServerBinaryPath() {
   const exeName = process.platform === 'win32' ? 'dwcue-server.exe' : 'dwcue-server';
 
@@ -845,18 +1015,31 @@ async function verifyLiveplayLock(lock) {
   return null;
 }
 
+// A crashing server starts its replacement at once, and the replacement
+// publishes its process id before doing anything else. So a replacement shows
+// up in the lock within moments or not at all; only one that has shown up is
+// worth the longer wait for it to finish starting.
+const LIVEPLAY_REPLACEMENT_APPEAR_MS = 3000;
+
 async function waitForCrashReplacement(staleIdentity, timeoutMs = 6500) {
   if (!/^[0-9a-f]{32}$/.test(staleIdentity?.instanceToken || '')) return null;
-  const deadline = Date.now() + timeoutMs;
+  // Nothing that died with the last system start is coming back.
+  if (liveplayLockPredatesBoot()) return null;
+  const started = Date.now();
+  const deadline = started + timeoutMs;
+  const appearDeadline = started + Math.min(timeoutMs, LIVEPLAY_REPLACEMENT_APPEAR_MS);
+  let replacementSeen = false;
   while (Date.now() < deadline) {
     const lock = readLiveplayLock();
     if (lock && lock.pid !== staleIdentity.pid &&
         lock.instanceToken === staleIdentity.instanceToken &&
         lock.accessToken === staleIdentity.accessToken &&
         isPidAlive(lock.pid)) {
+      replacementSeen = true;
       const replacement = await verifyLiveplayLock(lock);
       if (replacement) return adoptLiveplayIdentity(replacement);
     }
+    if (!replacementSeen && Date.now() >= appearDeadline) return null;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   return null;
@@ -956,14 +1139,15 @@ async function startLiveplayServerOnce() {
     if (cfg.mode !== 'local') return null;
   }
 
-  // Never signal, adopt, or overwrite a live PID that failed identity checks.
-  // The user can stop that process directly; spawning beside it risks two
-  // independent audio engines if the configured port also changed.
-  const unverifiedLock = [readLiveplayLock(), liveplayServerIdentity].find(
-    identity => identity && isPidAlive(identity.pid));
-  if (unverifiedLock) {
+  // Never signal, adopt, or overwrite a live PID that failed identity checks:
+  // spawning beside a server of ours risks two independent audio engines. A
+  // record that provably points at some other program is not such a server;
+  // it is discarded so a leftover lock can never keep the app from starting.
+  for (const candidate of [readLiveplayLock(), liveplayServerIdentity]) {
+    if (!candidate || !isPidAlive(candidate.pid)) continue;
+    if (await discardStaleLiveplayIdentity(candidate)) continue;
     console.error('[liveplay-server] refusing to launch beside unverified pid',
-                  unverifiedLock.pid);
+                  candidate.pid);
     notifyServerStateChange();
     return null;
   }
@@ -976,14 +1160,53 @@ async function startLiveplayServerOnce() {
     return;
   }
 
+  return launchLiveplayServerWithFallback(exePath, cfg);
+}
+
+// Start the server on the operator's port; if it declines to start there,
+// move it to a free port instead of leaving the operator with a dead app.
+async function launchLiveplayServerWithFallback(exePath, startConfig) {
+  let cfg = startConfig;
+  // A fresh launch always tries the operator's own port first.
+  if (cfg.localPort !== cfg.configuredLocalPort) {
+    writeLiveplayConfig({ ...cfg, localPort: cfg.configuredLocalPort });
+    cfg = readLiveplayConfig();
+  }
+  let launch = { identity: null, declined: true };
+  if (await isLoopbackPortFree(cfg.localPort)) {
+    launch = await launchLiveplayServerProcess(exePath, cfg.localPort);
+  } else {
+    console.warn('[liveplay-server] port', cfg.localPort, 'is in use by another program');
+  }
+  if (!launch.identity && launch.declined && readLiveplayConfig().mode === 'local') {
+    const fallbackPort = await findFreeLoopbackPort();
+    if (fallbackPort && fallbackPort !== cfg.localPort) {
+      console.warn('[liveplay-server] server would not start on port', cfg.localPort,
+                   '— retrying on free port', fallbackPort);
+      writeLiveplayConfig({ ...cfg, localPort: fallbackPort });
+      cfg = readLiveplayConfig();
+      launch = await launchLiveplayServerProcess(exePath, cfg.localPort);
+      if (!launch.identity && launch.declined) {
+        // The port was not the reason. Leave the configuration as it was.
+        writeLiveplayConfig({ ...cfg, localPort: cfg.configuredLocalPort });
+      }
+    }
+  }
+  notifyServerStateChange();
+  return launch.identity;
+}
+
+// One launch attempt. `declined` means the server ended itself before it was
+// ready with its own "could not start" status, as it does for a busy port.
+async function launchLiveplayServerProcess(exePath, port) {
   // Launch detached and headless; retain ownership even if readiness stalls.
   const lockPath = liveplayLockPath();
   const instanceToken = crypto.randomBytes(16).toString('hex');
   const accessToken = crypto.randomBytes(32).toString('hex');
   const allowedOrigins = app.isPackaged ? '' : 'http://localhost:3000';
-  console.log('[liveplay-server] launching in background', exePath, 'on port', cfg.localPort);
+  console.log('[liveplay-server] launching in background', exePath, 'on port', port);
   const serverArgs = [
-    '--port',           String(cfg.localPort),
+    '--port',           String(port),
     '--pidfile',        lockPath,
     '--instance-token', instanceToken,
   ];
@@ -1007,29 +1230,36 @@ async function startLiveplayServerOnce() {
   } catch (e) {
     console.error('[liveplay-server] spawn failed:', e);
     notifyServerStateChange();
-    return null;
+    return { identity: null, declined: false };
   }
 
-  const launchState = { error: null };
+  const launchState = { error: null, exitCode: null };
   launcher.once('error', (error) => {
     launchState.error = error;
     console.error('[liveplay-server] spawn failed:', error);
     notifyServerStateChange();
   });
+  // The server ends itself with status 1 when it cannot start where it was
+  // told to (a busy port above all). A crash ends differently and starts its
+  // own replacement, which the readiness wait below still adopts.
+  launcher.once('exit', (code) => { launchState.exitCode = code; });
 
   if (Number.isSafeInteger(launcher.pid) && launcher.pid > 0) {
-    adoptLiveplayIdentity({ pid: launcher.pid, port: cfg.localPort,
+    adoptLiveplayIdentity({ pid: launcher.pid, port,
       instanceToken, accessToken, legacy: false });
   }
   try { launcher.unref(); } catch {}
 
   // Readiness still requires the server's authenticated health response.
   const identity = await pollPidfileForServerPid(
-    lockPath, instanceToken, accessToken, cfg.localPort, launchState,
+    lockPath, instanceToken, accessToken, port, launchState,
   );
+  const declined = !identity && launchState.exitCode === 1;
+  // A server that has ended is not ours to keep track of.
+  if (declined && liveplayServerIdentity?.pid === launcher.pid) clearLiveplayIdentity();
 
   notifyServerStateChange();
-  return identity;
+  return { identity, declined };
 }
 
 // Watch the pidfile until the server publishes the expected generation (or we
@@ -1041,6 +1271,8 @@ async function pollPidfileForServerPid(
   const deadline = Date.now() + 8000;
   while (Date.now() < deadline) {
     if (launchState.error) return null;
+    // Declined to start: waiting out the clock would only delay the retry.
+    if (launchState.exitCode === 1) return null;
     const lock = readLiveplayLock();
     const health = lock ? await probeServerHealth(lock.port) : null;
     if (lock?.instanceToken === expectedInstanceToken &&
@@ -1065,7 +1297,16 @@ async function stopVerifiedLiveplayServer(identity) {
   const stopped = await terminateLiveplayPid(
     identity.pid, identity.port, identity.instanceToken, identity.legacy,
   );
-  if (stopped) clearLiveplayIdentity(identity);
+  if (stopped) {
+    clearLiveplayIdentity(identity);
+    // A server ended by force (always, on Windows) cannot remove its own lock.
+    // Left behind, it would later name whatever program inherits the id.
+    try {
+      if (readLiveplayLock()?.pid === identity.pid) fs.rmSync(liveplayLockPath(), { force: true });
+    } catch (error) {
+      console.warn('[liveplay-server] could not remove the stopped server lock:', error.message);
+    }
+  }
   notifyServerStateChange();
   return stopped;
 }
@@ -1078,11 +1319,12 @@ async function stopLiveplayServer() {
 async function stopLiveplayServerOnce() {
   const identity = await reconcileLiveplayServerIdentity(true);
   if (!identity) {
-    const unverifiedLock = [readLiveplayLock(), liveplayServerIdentity].find(
-      candidate => candidate && isPidAlive(candidate.pid));
-    if (unverifiedLock) {
+    // A record that provably points at another program is nothing to stop.
+    for (const candidate of [readLiveplayLock(), liveplayServerIdentity]) {
+      if (!candidate || !isPidAlive(candidate.pid)) continue;
+      if (await discardStaleLiveplayIdentity(candidate)) continue;
       console.error('[liveplay-server] refusing to stop unverified lock PID:',
-                    unverifiedLock.pid);
+                    candidate.pid);
       notifyServerStateChange();
       return false;
     }
@@ -1108,7 +1350,7 @@ function liveplayServerStatus() {
 
 function notifyServerStateChange() {
   const status = liveplayServerStatus();
-  for (const window of new Set([mainWindow, cartPlayerWindow, videoOutputWindow])) {
+  for (const window of new Set([mainWindow, detachedQuickPlayWindow, videoOutputWindow])) {
     if (window && !window.isDestroyed()) {
       window.webContents.send('liveplay-server:state', status);
     }
@@ -1140,6 +1382,12 @@ ipcMain.handle('liveplay-server:set-config', async (event, incoming) => {
   if (!Number.isInteger(next.localPort) || next.localPort < 1 || next.localPort > 65535) {
     next.localPort = LIVEPLAY_DEFAULT_PORT;
   }
+  // A fallback port stands in for the configured one. Saving settings that
+  // still show it must not turn it into the operator's choice; a different
+  // port is a new choice and ends the fallback.
+  next.configuredLocalPort = next.localPort === current.localPort
+    ? current.configuredLocalPort
+    : next.localPort;
   try {
     const remote = new URL(next.remoteUrl);
     if (!['http:', 'https:'].includes(remote.protocol) || remote.username || remote.password) {
@@ -1257,17 +1505,10 @@ ipcMain.handle('liveplay-server:shutdown', async (event) => {
 // answers. The welcome screen calls this when the user picks Local mode
 // so the renderer doesn't try to connect before the server is bound.
 // Returns { ok, port, accessToken?, error? } — never throws.
-ipcMain.handle('liveplay-server:ensure-running', async (event) => {
-  requireTrustedIpc(event);
-  const cfg = readLiveplayConfig();
-  if (cfg.mode !== 'local') {
-    return { ok: false, port: cfg.localPort, error: 'config mode is not local' };
-  }
-  try { await startLiveplayServer(); }
-  catch (e) { return { ok: false, port: cfg.localPort, error: String(e) }; }
-
-  // Poll health. The detached server process needs a moment to bind.
-  const deadline = Date.now() + 10000;
+// Wait for the server this app owns to answer on `cfg.localPort`. Resolves to
+// the result for the renderer, or null when the wait ran out.
+async function awaitLiveplayServerHealthy(cfg, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const lock = readLiveplayLock();
     const health = lock?.port === cfg.localPort
@@ -1292,8 +1533,207 @@ ipcMain.handle('liveplay-server:ensure-running', async (event) => {
     }
     await new Promise(r => setTimeout(r, 200));
   }
-  return { ok: false, port: cfg.localPort, error: 'server did not become healthy within 10s' };
+  return null;
+}
+
+async function ensureLiveplayServerRunning() {
+  let cfg = readLiveplayConfig();
+  if (cfg.mode !== 'local') {
+    return { ok: false, port: cfg.localPort, error: 'config mode is not local' };
+  }
+  if (!fs.existsSync(resolveServerBinaryPath())) {
+    return { ok: false, port: cfg.localPort, error: 'its program file is missing from this installation' };
+  }
+  try { await startLiveplayServer(); }
+  catch (e) { return { ok: false, port: cfg.localPort, error: String(e) }; }
+  // The launch may have moved the server to a free port.
+  cfg = readLiveplayConfig();
+  if (cfg.mode !== 'local') {
+    return { ok: false, port: cfg.localPort, error: 'config mode is not local' };
+  }
+
+  // The detached server process needs a moment to bind. With no server and no
+  // lock at all, the launch already failed and there is nothing to wait for.
+  let ready = (liveplayServerIdentity || readLiveplayLock())
+    ? await awaitLiveplayServerHealthy(cfg, 10000)
+    : null;
+  if (!ready) {
+    // Running but not answering. Restarting the computer used to be the only
+    // cure; restart just the server instead, once. Only a server proven to be
+    // ours is ever stopped (stopLiveplayServerOnce refuses anything else).
+    const stuck = liveplayServerIdentity;
+    if (stuck && isPidAlive(stuck.pid)) {
+      console.warn('[liveplay-server] server pid', stuck.pid, 'is running but not answering; restarting it');
+      liveplayServerStartPromise = null;
+      const restarted = await runLiveplayServerOperation(async () => {
+        // Every window asks at once. If another request already replaced the
+        // stuck server while this one waited its turn, do not replace it again.
+        if (liveplayServerIdentity?.pid !== stuck.pid) return true;
+        if (!(await stopLiveplayServerOnce())) return false;
+        await startLiveplayServerOnce();
+        return true;
+      }).catch(() => false);
+      if (restarted) {
+        cfg = readLiveplayConfig();
+        if (cfg.mode === 'local') ready = await awaitLiveplayServerHealthy(cfg, 10000);
+      }
+    }
+  }
+  if (ready) return ready;
+  // Say what the server itself reported, not just that time ran out.
+  const reported = lastLiveplayServerLogError();
+  return {
+    ok: false,
+    port: cfg.localPort,
+    error: reported ? `it reported: ${reported}` : 'it did not respond in time',
+  };
+}
+
+// What the running engine says about itself: its version and whether it is in use.
+function fetchEngineSummary(port, accessToken, timeoutMs = 2000) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => { if (!settled) { settled = true; resolve(value); } };
+    const req = require('http').get({
+      host: '127.0.0.1', port, path: '/api/state/summary', timeout: timeoutMs,
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        body += chunk;
+        if (body.length > 4 * 1024 * 1024) { res.destroy(); finish(null); }
+      });
+      res.on('end', () => {
+        try { finish(res.statusCode === 200 ? JSON.parse(body) : null); } catch { finish(null); }
+      });
+    });
+    req.on('timeout', () => { req.destroy(); finish(null); });
+    req.on('error', () => finish(null));
+  });
+}
+
+// The engine keeps running after the app quits, so an updated app can find the
+// previous version's engine still there and would talk to it in a newer
+// dialect. Swap it for the engine this app ships with, but only while it is
+// doing nothing: no show open, nothing loading, nothing playing. An engine in
+// use is never interrupted; it is replaced the next time it is found idle.
+let engineUpdateCheck = null;   // shared by every window asking at once
+let engineUpdateSettled = false;
+
+async function replaceOutdatedIdleEngine(ready) {
+  const summary = await fetchEngineSummary(ready.port, ready.accessToken);
+  const engineVersion = summary?.server?.version;
+  if (typeof engineVersion !== 'string') return ready;
+  if (engineVersion === app.getVersion()) {
+    engineUpdateSettled = true;
+    return ready;
+  }
+  const inUse = summary.project?.hasOpenProject !== false || summary.project?.audioLoading === true ||
+    !Array.isArray(summary.playing) || summary.playing.length > 0;
+  if (inUse) {
+    console.warn('[liveplay-server] engine', engineVersion, 'is older than this app but in use; leaving it running');
+    return ready;
+  }
+  // One swap per run: if the replacement reports the same version, the
+  // installation itself is mismatched and restarting again cannot help.
+  engineUpdateSettled = true;
+  console.log('[liveplay-server] replacing idle engine', engineVersion, 'with', app.getVersion());
+  if (!(await stopLiveplayServer())) return ready;
+  return ensureLiveplayServerRunning();
+}
+
+async function ensureCurrentEngineRunning() {
+  const ready = await ensureLiveplayServerRunning();
+  if (!ready?.ok || engineUpdateSettled) return ready;
+  if (!engineUpdateCheck) {
+    engineUpdateCheck = replaceOutdatedIdleEngine(ready)
+      .catch(() => ready)
+      .finally(() => { engineUpdateCheck = null; });
+  }
+  return engineUpdateCheck;
+}
+
+ipcMain.handle('liveplay-server:ensure-running', async (event) => {
+  requireTrustedIpc(event);
+  return ensureCurrentEngineRunning();
 });
+
+// ---------------------------------------------------------------------------
+// Engine self-test, used by the release build
+// ---------------------------------------------------------------------------
+// `--engine-self-test=<file>` starts the audio engine exactly the way choosing
+// "This computer" does, writes what happened to <file>, stops the engine and
+// exits (0 = healthy). The release build runs it against the packaged app so
+// an installer whose engine cannot start is never published.
+function engineSelfTestResultPath(argv) {
+  const prefix = '--engine-self-test=';
+  const arg = argv.find(value => typeof value === 'string' && value.startsWith(prefix));
+  const target = arg ? arg.slice(prefix.length) : '';
+  return path.isAbsolute(target) ? target : null;
+}
+
+function liveplayServerLogTail(maxBytes = 12288) {
+  let fd;
+  try {
+    const file = path.join(app.getPath('userData'), 'logs', 'dwcue-server.log');
+    const stat = fs.statSync(file);
+    const length = Math.min(stat.size, maxBytes);
+    const tail = Buffer.alloc(length);
+    fd = fs.openSync(file, 'r');
+    fs.readSync(fd, tail, 0, length, stat.size - length);
+    return tail.toString('utf8').replace(/\u001b\[[0-9;]*m/g, '');
+  } catch {
+    return '';
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* already closed */ } }
+  }
+}
+
+async function runEngineSelfTest(resultPath) {
+  const result = {
+    ok: false,
+    appVersion: app.getVersion(),
+    platform: `${process.platform}-${process.arch}`,
+    engineBinary: resolveServerBinaryPath(),
+  };
+  // A check that hangs must still end with a verdict.
+  setTimeout(() => {
+    result.error = 'the check did not finish within 90 seconds';
+    result.engineLog = liveplayServerLogTail();
+    try { fs.writeFileSync(resultPath, JSON.stringify(result, null, 2)); } catch { /* reported by exit code */ }
+    app.exit(1);
+  }, 90000).unref();
+  try {
+    writeLiveplayConfig({ ...readLiveplayConfig(), mode: 'local' });
+    const started = await ensureLiveplayServerRunning();
+    result.port = started?.port ?? null;
+    if (!started?.ok) {
+      result.error = started?.error || 'the engine did not start';
+    } else {
+      const summary = await fetchEngineSummary(started.port, started.accessToken, 5000);
+      result.engineVersion = summary?.server?.version ?? null;
+      if (!summary) result.error = 'the engine started but did not answer an authenticated request';
+      else if (result.engineVersion !== result.appVersion) {
+        result.error = `the packaged engine is version ${result.engineVersion}, the app is ${result.appVersion}`;
+      } else result.ok = true;
+    }
+  } catch (error) {
+    result.error = String(error?.message || error);
+  }
+  try {
+    result.stopped = await stopLiveplayServer();
+    if (result.ok && !result.stopped) { result.ok = false; result.error = 'the engine did not stop'; }
+  } catch (error) {
+    result.ok = false;
+    result.error = 'stopping the engine failed: ' + String(error?.message || error);
+  }
+  result.engineLog = liveplayServerLogTail();
+  try { fs.writeFileSync(resultPath, JSON.stringify(result, null, 2)); }
+  catch (error) { console.error('[engine-self-test] could not write the result:', error.message); }
+  console.log('[engine-self-test]', result.ok ? 'passed' : `failed: ${result.error}`);
+  app.exit(result.ok ? 0 : 1);
+}
 
 // ===========================================================================
 // LAN auto-discovery — listen for the C++ server's UDP beacon and surface
@@ -1511,91 +1951,146 @@ ipcMain.handle('liveplay-projects:recent-clear', (event) => {
   return list;
 });
 
-// Setup bundled ffmpeg - always use the bundled version to avoid
-// issues on OS's with strict security requirements
-async function checkAndSetupFfmpeg() {
+// ===========================================================================
+// ffmpeg + ffprobe for the YouTube and Spotify importers
+// ---------------------------------------------------------------------------
+// These are not in the installer. The first import that needs them downloads
+// the builds pinned in ffmpeg-tools.js into userData/bin; nothing is fetched
+// at startup, or ever for a show that does not use the importers. Both
+// programs share one folder because yt-dlp and spotDL look for ffprobe beside
+// ffmpeg. (The audio engine decodes with its own FFmpeg and needs neither.)
+// ===========================================================================
+const FFMPEG_TOOL_NAMES = Object.freeze(['ffmpeg', 'ffprobe']);
+
+function ffmpegBinDir() {
+  return path.join(app.getPath('userData'), 'bin');
+}
+
+function ffmpegToolPath(tool) {
+  return path.join(ffmpegBinDir(), toolFileName(tool, process.platform));
+}
+
+function ffmpegReceiptPath() {
+  return path.join(ffmpegBinDir(), 'ffmpeg-tools.json');
+}
+
+// What was installed, and from which pinned download.
+function readFfmpegReceipt() {
   try {
-    const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
-    ffmpegPath = ffmpegInstaller.path;
-    
-    // In packaged app, the path may be inside app.asar - resolve it
-    if (ffmpegPath.includes('app.asar')) {
-      ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
-    }
-    
-    // Verify bundled version works
-    await execFilePromise(ffmpegPath, ['-version'], { timeout: 5000 });
-    ffmpegAvailable = true;
-    console.log('Using bundled ffmpeg:', ffmpegPath);
-    
-    // Set ffprobe path from @ffprobe-installer/ffprobe
-    try {
-      const ffprobeInstaller = require('@ffprobe-installer/ffprobe');
-      let ffprobePath = ffprobeInstaller.path;
-      if (ffprobePath.includes('app.asar')) {
-        ffprobePath = ffprobePath.replace('app.asar', 'app.asar.unpacked');
-      }
-      ffmpeg.setFfprobePath(ffprobePath);
-      console.log('Using bundled ffprobe:', ffprobePath);
-    } catch (e) {
-      // Fallback: try ffprobe next to ffmpeg
-      const ffprobeFileName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
-      const ffprobePath = path.join(path.dirname(ffmpegPath), ffprobeFileName);
-      if (fs.existsSync(ffprobePath)) {
-        ffmpeg.setFfprobePath(ffprobePath);
-        console.log('Using ffprobe from ffmpeg directory:', ffprobePath);
-      } else {
-        // Fallback: try system-wide ffprobe from PATH
-        try {
-          const whichProbeCmd = process.platform === 'win32' ? 'where ffprobe' : 'which ffprobe';
-          const probeResult = await execPromise(whichProbeCmd, { timeout: 5000 });
-          const systemProbePath = probeResult.stdout.trim().split('\n')[0].trim();
-          ffmpeg.setFfprobePath(systemProbePath);
-          console.log('Using system ffprobe:', systemProbePath);
-        } catch (probeErr) {
-          console.warn('ffprobe not found, some features may be limited');
-        }
-      }
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('Failed to setup bundled ffmpeg:', error);
-    
-    // Fallback: try system-wide ffmpeg from PATH
-    try {
-      const whichCmd = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg';
-      const { stdout } = await execPromise(whichCmd, { timeout: 5000 });
-      const systemFfmpegPath = stdout.trim().split('\n')[0].trim();
-      
-      // Verify the system binary works
-      await execFilePromise(systemFfmpegPath, ['-version'], { timeout: 5000 });
-      ffmpegPath = systemFfmpegPath;
-      ffmpegAvailable = true;
-      console.log('Using system ffmpeg:', ffmpegPath);
-      
-      // Try to find system ffprobe too
-      try {
-        const whichProbeCmd = process.platform === 'win32' ? 'where ffprobe' : 'which ffprobe';
-        const probeResult = await execPromise(whichProbeCmd, { timeout: 5000 });
-        const systemFfprobePath = probeResult.stdout.trim().split('\n')[0].trim();
-        ffmpeg.setFfprobePath(systemFfprobePath);
-        console.log('Using system ffprobe:', systemFfprobePath);
-      } catch (probeErr) {
-        console.warn('System ffprobe not found, some features may be limited');
-      }
-      
-      return true;
-    } catch (systemError) {
-      console.error('System ffmpeg not found either:', systemError.message);
-      ffmpegAvailable = false;
-      return false;
-    }
+    const receipt = JSON.parse(fs.readFileSync(ffmpegReceiptPath(), 'utf8'));
+    return receipt && typeof receipt === 'object' && !Array.isArray(receipt) ? receipt : {};
+  } catch {
+    return {};
   }
 }
 
+async function ffmpegToolRuns(toolPath, timeout = 10000) {
+  try {
+    await execFilePromise(toolPath, ['-version'], { timeout, windowsHide: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// An installed tool is used only while it is the build this version of the
+// app pins and its file is unchanged since it was verified.
+async function installedFfmpegToolIsCurrent(tool, pinned, receipt) {
+  const entry = receipt[tool];
+  if (!entry || entry.source !== pinned.integrity || typeof entry.sha256 !== 'string') return false;
+  return await hasExpectedSha256(ffmpegToolPath(tool), entry.sha256) &&
+    await ffmpegToolRuns(ffmpegToolPath(tool));
+}
+
+async function installFfmpegTool(tool, pinned) {
+  const toolPath = ffmpegToolPath(tool);
+  const archivePath = path.join(ffmpegBinDir(), tool + '.download.tgz');
+  // The candidate keeps the program's own file name so it can be run for the
+  // check below on every platform.
+  const candidateDir = path.join(ffmpegBinDir(), tool + '.candidate');
+  const candidatePath = path.join(candidateDir, toolFileName(tool, process.platform));
+  fs.rmSync(candidateDir, { recursive: true, force: true });
+  fs.mkdirSync(candidateDir, { recursive: true });
+  try {
+    await downloadToFile(net.fetch, pinned.url, archivePath);
+    if (!await fileMatchesIntegrity(archivePath, pinned.integrity)) {
+      throw new Error(tool + ' download failed its integrity check');
+    }
+    const entryName = 'package/' + toolFileName(tool, process.platform);
+    if (!await extractTarballEntry(archivePath, entryName, candidatePath)) {
+      throw new Error(tool + ' was missing from its download');
+    }
+    if (process.platform !== 'win32') fs.chmodSync(candidatePath, 0o755);
+    // A security scan of a new program can make its first run slow.
+    if (!await ffmpegToolRuns(candidatePath, 30000)) {
+      throw new Error('downloaded ' + tool + ' did not run');
+    }
+    const sha256 = await sha256File(candidatePath);
+    replaceVerifiedFile(candidatePath, toolPath);
+    return { source: pinned.integrity, sha256 };
+  } finally {
+    fs.rmSync(archivePath, { force: true });
+    fs.rmSync(candidateDir, { recursive: true, force: true });
+  }
+}
+
+async function installPinnedFfmpeg(pinned) {
+  fs.mkdirSync(ffmpegBinDir(), { recursive: true });
+  const receipt = readFfmpegReceipt();
+  const results = await Promise.allSettled(FFMPEG_TOOL_NAMES.map(async (tool) => {
+    if (await installedFfmpegToolIsCurrent(tool, pinned[tool], receipt)) return;
+    console.log('Installing integrity-verified ' + tool + '...');
+    receipt[tool] = await installFfmpegTool(tool, pinned[tool]);
+  }));
+  // Keep whichever tool did install, so a retry only fetches what is missing.
+  fs.writeFileSync(ffmpegReceiptPath(), JSON.stringify(receipt, null, 2));
+  const failure = results.find(result => result.status === 'rejected');
+  if (failure) throw failure.reason;
+  return ffmpegToolPath('ffmpeg');
+}
+
+// Used only when the pinned build cannot be installed.
+async function findSystemFfmpeg() {
+  try {
+    const locate = process.platform === 'win32' ? 'where.exe' : 'which';
+    const { stdout } = await execFilePromise(locate, ['ffmpeg'], { timeout: 5000, windowsHide: true });
+    const candidate = stdout.split(/\r?\n/)[0].trim();
+    return candidate && await ffmpegToolRuns(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+async function initializeFfmpeg() {
+  ffmpegPath = null;
+  try {
+    const pinned = ffmpegToolsFor(process.platform, process.arch);
+    if (pinned) {
+      try {
+        ffmpegPath = await installPinnedFfmpeg(pinned);
+        console.log('ffmpeg ready:', ffmpegPath);
+        return true;
+      } catch (error) {
+        console.error('Failed to install verified ffmpeg:', error.message);
+      }
+    }
+    ffmpegPath = await findSystemFfmpeg();
+    if (ffmpegPath) console.log('Using system ffmpeg:', ffmpegPath);
+  } catch (error) {
+    console.error('Failed to set up ffmpeg:', error.message);
+  }
+  return Boolean(ffmpegPath);
+}
+
+// Shared by every import in flight; a failure is forgotten so the next import
+// tries again rather than staying broken until the app is restarted.
 function setupFfmpeg() {
-  if (!ffmpegSetupPromise) ffmpegSetupPromise = checkAndSetupFfmpeg();
+  if (!ffmpegSetupPromise) {
+    ffmpegSetupPromise = initializeFfmpeg().then((ready) => {
+      if (!ready) ffmpegSetupPromise = null;
+      return ready;
+    });
+  }
   return ffmpegSetupPromise;
 }
 
@@ -1710,7 +2205,10 @@ async function downloadVerifiedFile(url, destination, expectedSha256) {
   const temporaryPath = destination + '.download';
   if (fs.existsSync(temporaryPath)) fs.unlinkSync(temporaryPath);
   try {
-    await YTDlpWrap.downloadFile(url, temporaryPath);
+    // Electron's network stack follows the system proxy settings, and the
+    // download gives up when the connection stalls instead of hanging.
+    await app.whenReady();
+    await downloadToFile(net.fetch, url, temporaryPath);
     const actualSha256 = await sha256File(temporaryPath);
     if (actualSha256 !== expectedSha256) {
       throw new Error(
@@ -1929,8 +2427,33 @@ function setupSpotDl() {
 }
 
 // Start initialization immediately (concurrently; both are independent).
-void initializeYtDlp();
-const denoInitialization = initializeDeno();
+// yt-dlp and Deno are fetched in the background at startup so the first import
+// is quick. A computer that was offline then is not left without them: each
+// failed attempt is forgotten, and the next import simply tries again.
+let ytDlpSetupPromise = null;
+function setupYtDlp() {
+  if (!ytDlpSetupPromise) {
+    ytDlpSetupPromise = initializeYtDlp().then((ready) => {
+      if (!ready) ytDlpSetupPromise = null;
+      return ready;
+    });
+  }
+  return ytDlpSetupPromise;
+}
+
+let denoSetupPromise = null;
+function setupDeno() {
+  if (!denoSetupPromise) {
+    denoSetupPromise = initializeDeno().then((ready) => {
+      if (!ready) denoSetupPromise = null;
+      return ready;
+    });
+  }
+  return denoSetupPromise;
+}
+
+void setupYtDlp();
+const denoInitialization = setupDeno();
 
 let mainWindow = null;
 // Set by the updater after it completes shutdown preparation.
@@ -1941,9 +2464,9 @@ let currentProjectIdentity = null; // Separate ownership fence; never merged int
 let currentCaptureSession = null;
 let fileToOpen = null; // Store file path if app is opened with a file
 let stateViewerWindow = null; // Debug state viewer window
-let cartPlayerWindow = null;  // Detached cart player window
-const oneShotMutationBroker = createOneShotMutationBroker({
-  getCartWebContents: () => cartPlayerWindow?.webContents ?? null,
+let detachedQuickPlayWindow = null;  // Detached QuickPlay window
+const quickPlayMutationBroker = createQuickPlayMutationBroker({
+  getQuickPlayWebContents: () => detachedQuickPlayWindow?.webContents ?? null,
   getPrimaryWebContents: () => mainWindow?.webContents ?? null,
   getCurrentIdentity: () => currentProjectIdentity,
 });
@@ -2162,20 +2685,22 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    // Nothing reports for the show any more: let the computer sleep again.
+    releaseKeepAwake();
   });
 
 
   createMenu('en', isDevMode);
 }
 
-// Create detached QuickPlays window (IPC/query names stay backward compatible).
-function createCartPlayerWindow() {
-  if (cartPlayerWindow) {
-    cartPlayerWindow.focus();
+// Create the detached QuickPlays window.
+function createDetachedQuickPlayWindow() {
+  if (detachedQuickPlayWindow) {
+    detachedQuickPlayWindow.focus();
     return;
   }
 
-  cartPlayerWindow = new BrowserWindow({
+  detachedQuickPlayWindow = new BrowserWindow({
     width: 900,
     height: 700,
     minWidth: 380,
@@ -2195,36 +2720,38 @@ function createCartPlayerWindow() {
   });
 
   if (isDevMode) {
-    cartPlayerWindow.loadURL('http://localhost:3000/?cartWindow=1');
+    detachedQuickPlayWindow.loadURL('http://localhost:3000/?quickPlayWindow=1');
   } else {
     const indexPath = path.join(__dirname, '../.output/public/index.html');
-    cartPlayerWindow.loadFile(indexPath, { query: { cartWindow: '1' } });
+    detachedQuickPlayWindow.loadFile(indexPath, { query: { quickPlayWindow: '1' } });
   }
 
-  cartPlayerWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('[OneShotsWindow] Failed to load:', errorCode, errorDescription);
+  detachedQuickPlayWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('[QuickPlaysWindow] Failed to load:', errorCode, errorDescription);
   });
 
-  cartPlayerWindow.on('closed', () => {
-    cartPlayerWindow = null;
+  detachedQuickPlayWindow.on('closed', () => {
+    detachedQuickPlayWindow = null;
     if (mainWindow) {
-      mainWindow.webContents.send('cart-player-window-closed');
+      mainWindow.webContents.send('detached-quickplay-window-closed');
     }
   });
 
-  // Notify main window that cart window is open
-  cartPlayerWindow.webContents.once('did-finish-load', () => {
+  // Notify main window that QuickPlay window is open
+  detachedQuickPlayWindow.webContents.once('did-finish-load', () => {
     if (mainWindow) {
-      mainWindow.webContents.send('cart-player-window-opened');
+      mainWindow.webContents.send('detached-quickplay-window-opened');
     }
   });
 }
 // ===========================================================================
 // Video Output window (video playback, slice 1 — see VIDEO_PLAYBACK_V1.md).
 //
-// One session-scoped, borderless, always-on-top window fullscreen on the
-// display the operator assigned as the video output (typically the HDMI feed
-// to a switcher/projector). The Nuxt page at ?videoOutput=1 renders the layer
+// One session-scoped, borderless, always-on-top window covering the display
+// the operator assigned as the video output (typically the HDMI feed to a
+// switcher/projector), and only that display: which display that is, and how
+// the window takes it over on each platform, is decided in
+// video-output-window.js. The Nuxt page at ?videoOutput=1 renders the layer
 // stack (black / standby image / per-cue image / muted video); this block owns
 // the window, display assignment, shortcut forwarding, and show hygiene.
 //
@@ -2248,11 +2775,34 @@ let videoOutputRestarting = false;
 let videoOutputPictureHealth = null;
 const videoOutputDiagnostics = [];
 let videoOutputFrameTimer = null;
-const videoStandbyCaptures = createStandbyCaptureStore();
 let capturingVideoStandby = false;
 let displayIdentifierWindows = [];
 let displayIdentifierTimer = null;
 const videoOutputWindowsPreservingSession = new WeakSet();
+
+// Placement check for a physical output (see video-output-geometry.js). The
+// output page reports what it really covers; main puts back a window that is
+// on a screen it was not given (any platform) or that falls short of its
+// display (Windows), and records what it measured and did in
+// <userData>/video-output-geometry.json so a fault on someone else's machine
+// can be read afterwards instead of guessed at.
+const VIDEO_OUTPUT_GEOMETRY_FILENAME = 'video-output-geometry.json';
+const newVideoOutputGeometry = (fullscreenWanted = false) => ({
+  report: null,          // latest measurement from the output page
+  corrections: 0,        // attempts made on this window
+  fullscreenWanted,      // the operator's last choice, not our own transitions
+  busy: false,           // a correction is being applied
+  settleTimer: null,
+  uncovered: false,      // gave up: the operator is warned
+  compensated: false,    // bounds enlarged on purpose: no longer evidence of position
+  recorded: null,        // outcome last written to disk
+  actions: [],
+});
+let videoOutputGeometry = newVideoOutputGeometry();
+function resetVideoOutputGeometry(fullscreenWanted = false) {
+  clearTimeout(videoOutputGeometry.settleTimer);
+  videoOutputGeometry = newVideoOutputGeometry(fullscreenWanted);
+}
 
 let videoOutputTestCardConnection = null;
 const testCardPlayback = new TestCardPlayback({
@@ -2392,18 +2942,21 @@ function readVideoOutputConfig() {
     return {
       displayId: typeof parsed.displayId === 'string' ? parsed.displayId : null,
       captureDisplayId: typeof parsed.captureDisplayId === 'string' ? parsed.captureDisplayId : null,
-      captureTarget: parsed.captureTarget === 'cue' ? 'cue' : 'session',
       framing: readVideoFraming(parsed.framing) ?? DEFAULT_VIDEO_FRAMING,
       // Resolution+label hint for re-attach when the OS hands out a new display
       // id after a reconnect. Ambiguous for two identical projectors — the id
       // stays the primary key; the fingerprint is only a fallback hint.
       displayFingerprint: typeof parsed.displayFingerprint === 'string'
         ? parsed.displayFingerprint : null,
+      // Other screens of the same size and name that were connected next to
+      // the assigned display: never the output (resolveAssignedDisplay).
+      displayLookalikes: Array.isArray(parsed.displayLookalikes)
+        ? parsed.displayLookalikes.filter(id => typeof id === 'string').slice(0, 16) : [],
       testCardConfig: createTestCardConfig(parsed.testCardConfig),
     };
   } catch {
-    return { displayId: null, displayFingerprint: null, captureDisplayId: null,
-      captureTarget: 'session', framing: DEFAULT_VIDEO_FRAMING, testCardConfig: createTestCardConfig() };
+    return { displayId: null, displayFingerprint: null, displayLookalikes: [], captureDisplayId: null,
+      framing: DEFAULT_VIDEO_FRAMING, testCardConfig: createTestCardConfig() };
   }
 }
 
@@ -2438,18 +2991,39 @@ function videoOutputDisplays() {
   }));
 }
 
+// Screens of the same size and name as the assigned display, seen connected
+// next to it this session: known to be other screens.
+const videoOutputLookalikes = new Set();
+
+function videoOutputLookalikeIds(displays, assigned) {
+  const fingerprint = videoOutputFingerprint(assigned);
+  return displays.filter(display => display !== assigned && videoOutputFingerprint(display) === fingerprint)
+    .map(display => String(display.id));
+}
+
 function resolveVideoOutputDisplay(cfg) {
   const displays = screen.getAllDisplays();
-  if (cfg.displayId) {
-    const hit = displays.find((d) => String(d.id) === cfg.displayId);
-    if (hit) return hit;
+  const control = mainWindow && !mainWindow.isDestroyed()
+    ? screen.getDisplayMatching(mainWindow.getBounds()) : null;
+  const target = resolveAssignedDisplay({
+    displays,
+    displayId: cfg.displayId,
+    fingerprint: cfg.displayFingerprint,
+    fingerprintOf: videoOutputFingerprint,
+    lookalikeIds: [...(cfg.displayLookalikes || []), ...videoOutputLookalikes],
+    controlDisplayId: control ? control.id : null,
+  });
+  if (!target) return null;
+  if (String(target.id) !== cfg.displayId) {
+    // The assigned display came back under a new id. It is the assigned
+    // display from here on, so an identical screen plugged in later is a
+    // look-alike and not a rival that would close the output mid-show.
+    cfg.displayId = String(target.id);
+    cfg.displayLookalikes = [...new Set([...(cfg.displayLookalikes || []), ...videoOutputLookalikes])];
+    writeVideoOutputConfig(cfg);
   }
-  if (cfg.displayFingerprint) {
-    const hit = displays.find(
-      (d) => videoOutputFingerprint(d) === cfg.displayFingerprint);
-    if (hit) return hit;
-  }
-  return null;
+  for (const id of videoOutputLookalikeIds(displays, target)) videoOutputLookalikes.add(id);
+  return target;
 }
 
 function videoOutputStatus() {
@@ -2467,6 +3041,9 @@ function videoOutputStatus() {
       // Output and control on the same screen = mirrored displays or a
       // mis-assignment; the operator must know before showtime.
       warning = 'display-shared-with-control';
+    } else if (videoOutputGeometry.uncovered) {
+      // The window could not be made to fill its display.
+      warning = 'display-not-covered';
     }
   }
   return {
@@ -2474,7 +3051,6 @@ function videoOutputStatus() {
     open: videoOutputWindow !== null && !videoOutputWindow.isDestroyed(),
     displayId: cfg.displayId,
     captureDisplayId: cfg.captureDisplayId,
-    captureTarget: cfg.captureTarget,
     framing: cfg.framing,
     targetId: target ? String(target.id) : null,
     targetLabel: target ? (target.label || `Display ${target.id}`) : null,
@@ -2499,7 +3075,7 @@ function videoOutputStatus() {
     },
     fullscreen: videoOutputWindow !== null &&
                 !videoOutputWindow.isDestroyed() &&
-                videoOutputWindow.isFullScreen(),
+                isOutputFullscreen(videoOutputWindow, process.platform),
   };
 }
 
@@ -2525,12 +3101,14 @@ function videoOutputContextLabels() {
 function showVideoOutputContextMenu(outputWindow) {
   if (!outputWindow || outputWindow.isDestroyed()) return;
   const template = buildVideoOutputContextTemplate({
-    fullscreen: outputWindow.isFullScreen(),
+    fullscreen: isOutputFullscreen(outputWindow, process.platform),
+    canToggleFullscreen: canToggleOutputFullscreen(outputWindow, process.platform),
     testCard: videoOutputTestCard,
     labels: videoOutputContextLabels(),
     onToggleFullscreen: () => {
       if (!outputWindow.isDestroyed()) {
-        outputWindow.setFullScreen(!outputWindow.isFullScreen());
+        setOutputFullscreen(outputWindow, process.platform, !isOutputFullscreen(outputWindow, process.platform));
+        broadcastVideoOutputStatus();
       }
     },
     onToggleTestCard: (visible) => { void setVideoOutputTestCard(visible); },
@@ -2719,6 +3297,128 @@ async function restartVideoOutputWindow() {
   return videoOutputStatus();
 }
 
+function videoOutputTargetDisplay(outputWindow) {
+  const id = outputWindow?.videoOutputTargetDisplayId;
+  return id == null ? null : screen.getAllDisplays().find(display => display.id === id) ?? null;
+}
+
+// Evidence for a fault that only shows on someone else's machine. Display
+// labels and sizes only; nothing about the show.
+function recordVideoOutputGeometry(outputWindow, target, outcome) {
+  const geometry = videoOutputGeometry;
+  if (geometry.recorded === outcome) return;
+  geometry.recorded = outcome;
+  try {
+    const primaryId = screen.getPrimaryDisplay().id;
+    fs.writeFileSync(path.join(app.getPath('userData'), VIDEO_OUTPUT_GEOMETRY_FILENAME), JSON.stringify({
+      recordedAt: new Date().toISOString(),
+      outcome,
+      app: app.getVersion(),
+      electron: process.versions.electron,
+      platform: process.platform,
+      targetDisplayId: target.id,
+      displays: screen.getAllDisplays().map(display => ({
+        id: display.id, label: display.label || '', primary: display.id === primaryId,
+        bounds: display.bounds, size: display.size, workArea: display.workArea,
+        scaleFactor: display.scaleFactor, rotation: display.rotation, internal: display.internal === true,
+      })),
+      window: {
+        bounds: outputWindow.getBounds(),
+        contentSize: outputWindow.getContentSize(),
+        fullscreen: outputWindow.isFullScreen(),
+        onDisplayId: screen.getDisplayMatching(outputWindow.getBounds()).id,
+      },
+      viewport: geometry.report,
+      fullscreenWanted: geometry.fullscreenWanted,
+      corrections: geometry.actions,
+    }, null, 2));
+  } catch (error) {
+    console.warn('[video-output] could not record output geometry:', error.message);
+  }
+}
+
+function evaluateVideoOutputGeometry(outputWindow) {
+  const geometry = videoOutputGeometry;
+  if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed() || geometry.busy || !geometry.report) return;
+  // A preview window is an ordinary window; a vanished display is the watchdog's.
+  const target = videoOutputTargetDisplay(outputWindow);
+  if (!target) return;
+  const windowBounds = outputWindow.getBounds();
+  // Bounds this check enlarged on purpose say nothing about where the window
+  // really is; after that only what the page measures is evidence.
+  const positionTrusted = !geometry.compensated;
+  const plan = planGeometryCorrection({
+    platform: process.platform,
+    report: geometry.report,
+    corrections: geometry.corrections,
+    fullscreenWanted: geometry.fullscreenWanted && usesNativeFullscreen(process.platform),
+    onTargetDisplay: !positionTrusted || screen.getDisplayMatching(windowBounds).id === target.id,
+    windowBounds,
+    targetBounds: target.bounds,
+    otherBounds: positionTrusted
+      ? screen.getAllDisplays().filter(display => display.id !== target.id).map(display => display.bounds)
+      : [],
+  });
+
+  if (plan.action === 'none' || plan.action === 'give-up') {
+    const uncovered = plan.action === 'give-up';
+    const outcome = plan.covered ? (geometry.corrections ? 'covered-after-correction' : 'covered')
+      : uncovered ? (plan.misplaced ? 'on-another-screen' : 'not-covered')
+        : 'short-not-corrected-on-this-platform';
+    recordVideoOutputGeometry(outputWindow, target, outcome);
+    if (geometry.uncovered !== uncovered) {
+      geometry.uncovered = uncovered;
+      if (uncovered) {
+        console.error('[video-output] output is still not exactly on its display after corrections:',
+          JSON.stringify({ viewport: geometry.report, windowBounds, target: target.bounds }));
+      }
+      broadcastVideoOutputStatus();
+    }
+    return;
+  }
+
+  geometry.corrections += 1;
+  geometry.busy = true;
+  geometry.compensated = plan.action === 'compensate';
+  geometry.actions.push({
+    action: plan.action, bounds: plan.bounds, fullscreen: plan.fullscreen === true,
+    viewport: geometry.report, windowBounds, wasFullscreen: outputWindow.isFullScreen(),
+  });
+  console.warn('[video-output] output is not exactly on its display; applying', plan.action,
+    JSON.stringify({ viewport: geometry.report, windowBounds, target: target.bounds }));
+  const current = () => videoOutputWindow === outputWindow && !outputWindow.isDestroyed()
+    && videoOutputGeometry === geometry;
+  if (outputWindow.isFullScreen()) outputWindow.setFullScreen(false);
+  outputWindow.setBounds(plan.bounds);
+  setTimeout(() => {
+    if (!current()) return;
+    // A move between displays with different scaling needs a second
+    // placement, once the window is on the display, for the size to stick.
+    outputWindow.setBounds(plan.bounds);
+    if (plan.fullscreen) outputWindow.setFullScreen(true);
+    setTimeout(() => {
+      // The page reports again within two seconds and is judged afresh.
+      if (current()) geometry.busy = false;
+    }, 300);
+  }, 120);
+}
+
+function reportVideoOutputViewport(event, payload) {
+  requireVideoOutputIpc(event);
+  const report = readViewportReport(payload);
+  if (!report) throw new TypeError('Invalid viewport report.');
+  const outputWindow = videoOutputWindow;
+  const geometry = videoOutputGeometry;
+  geometry.report = report;
+  // Sizes arrive in a burst while a window settles; judge only the last one.
+  clearTimeout(geometry.settleTimer);
+  geometry.settleTimer = setTimeout(() => {
+    geometry.settleTimer = null;
+    if (videoOutputGeometry === geometry) evaluateVideoOutputGeometry(outputWindow);
+  }, 400);
+  return true;
+}
+
 function createVideoOutputWindow() {
   if (videoOutputWindow && !videoOutputWindow.isDestroyed()) return;
   videoOutputPlaybackError = null;
@@ -2754,34 +3454,18 @@ function createVideoOutputWindow() {
     },
   };
 
-  if (realOutput) {
-    // Raw display bounds: this is a physical output, so no DPI correction
-    // (correction is only for capture-only outputs, e.g. a future NDI sink).
-    Object.assign(options, {
-      x: target.bounds.x,
-      y: target.bounds.y,
-      width: target.bounds.width,
-      height: target.bounds.height,
-      frame: false,
-      fullscreen: true,
-      skipTaskbar: true,
-      resizable: false,
-      movable: false,
-      minimizable: false,
-      maximizable: false,
-      // Keep the Windows Alt+F4 escape hatch available even though this output
-      // has no frame. The closed handler disarms the session so it stays shut.
-      closable: true,
-      alwaysOnTop: true,
-    });
-  } else {
-    // Preview mode: single-display (or unassigned) machines get a normal
-    // window instead of a hostile fullscreen black takeover.
-    Object.assign(options, { useContentSize: true, width: 960, height: 540, minWidth: 320, minHeight: 180 });
-  }
+  // A physical output takes over its display and no other; anything else is
+  // an ordinary preview window.
+  Object.assign(options, realOutput
+    ? physicalOutputWindowOptions(process.platform, target.bounds)
+    : previewWindowOptions(process.platform));
 
   const outputWindow = new BrowserWindow(options);
+  claimSoleOutput(outputWindow);
   videoOutputWindow = outputWindow;
+  // Only a physical output must cover its display; the preview is a normal window.
+  resetVideoOutputGeometry(realOutput);
+  if (realOutput) outputWindow.videoOutputTargetDisplayId = target.id;
   // Native coverage survives renderer loss and hides the control page during hydration.
   const cover = new View();
   cover.setBackgroundColor('#000000');
@@ -2794,7 +3478,7 @@ function createVideoOutputWindow() {
   resizeCover();
   cover.setVisible(true);
   outputWindow.on('resize', resizeCover);
-  if (realOutput) outputWindow.setAlwaysOnTop(true, 'screen-saver');
+  if (realOutput) seatPhysicalOutput(outputWindow, process.platform, target.bounds);
   startVideoOutputFrames();
 
   outputWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
@@ -2836,8 +3520,13 @@ function createVideoOutputWindow() {
     if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
     if (!shouldForwardVideoOutputShortcut(input, process.platform)) return;
     const shortcut = toRendererShortcut(input);
-    if (shortcut.key === 'Escape' && outputWindow.isFullScreen()) {
-      outputWindow.setFullScreen(false);
+    // Escape is Stop All. On the preview window it also leaves fullscreen, as
+    // in any app. An audience display must never drop out of fullscreen
+    // because the operator stopped the show while it had keyboard focus.
+    if (shortcut.key === 'Escape' && outputWindow.videoOutputTargetDisplayId == null &&
+        isOutputFullscreen(outputWindow, process.platform)) {
+      setOutputFullscreen(outputWindow, process.platform, false);
+      broadcastVideoOutputStatus();
     }
     mainWindow.webContents.send('video-output:shortcut', shortcut);
     event.preventDefault();
@@ -2848,9 +3537,19 @@ function createVideoOutputWindow() {
     showVideoOutputContextMenu(outputWindow);
   });
 
-  outputWindow.on('enter-full-screen', broadcastVideoOutputStatus);
-  outputWindow.on('leave-full-screen', broadcastVideoOutputStatus);
+  // Remember the operator's own choice. Transitions made while re-seating the
+  // window are ours and must not be mistaken for it.
+  const rememberFullscreenChoice = (wanted) => {
+    if (videoOutputWindow === outputWindow && !videoOutputGeometry.busy) {
+      videoOutputGeometry.fullscreenWanted = wanted;
+    }
+    broadcastVideoOutputStatus();
+  };
+  outputWindow.on('enter-full-screen', () => rememberFullscreenChoice(true));
+  outputWindow.on('leave-full-screen', () => rememberFullscreenChoice(false));
 
+  // Closed from its own title bar or the keyboard: see closeVideoOutputWindow.
+  outputWindow.on('close', () => releaseOutputFullscreen(outputWindow, process.platform));
   outputWindow.on('closed', () => {
     const preserveSession = videoOutputWindowsPreservingSession.delete(outputWindow);
     if (videoOutputWindow !== outputWindow) return;
@@ -2879,6 +3578,7 @@ function closeVideoOutputWindow({ preserveSession = false, playbackError = null 
   videoOutputRecoveryRequired = false;
   videoOutputRestarting = false;
   videoOutputPictureHealth = null;
+  resetVideoOutputGeometry();
   const connection = videoOutputTestCardConnection;
   videoOutputTestCardConnection = null;
   void testCardPlayback.update(null, connection);
@@ -2889,6 +3589,8 @@ function closeVideoOutputWindow({ preserveSession = false, playbackError = null 
   }
   if (!outputWindow || outputWindow.isDestroyed()) return;
   if (preserveSession) videoOutputWindowsPreservingSession.add(outputWindow);
+  // A Mac preview covering its screen hides the menu bar and Dock; hand them back.
+  releaseOutputFullscreen(outputWindow, process.platform);
   outputWindow.destroy();
 }
 
@@ -2923,7 +3625,13 @@ function installVideoOutputWatchdog() {
         // Windows for the move to stick.)
         const wBounds = videoOutputWindow.getBounds();
         const tBounds = target.bounds;
-        if (JSON.stringify(wBounds) !== JSON.stringify(tBounds)) {
+        // On Windows a fullscreen window is sized by the OS: its logical
+        // bounds can differ from the display's by a rounding pixel under
+        // fractional scaling, and resizing it by hand takes it out of the
+        // fullscreen rectangle. The coverage check owns that case there.
+        const seated = process.platform === 'win32' && videoOutputWindow.isFullScreen() &&
+          screen.getDisplayMatching(wBounds).id === target.id;
+        if (!seated && JSON.stringify(wBounds) !== JSON.stringify(tBounds)) {
           videoOutputWindow.setBounds(tBounds);
           setTimeout(() => {
             if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
@@ -2965,6 +3673,7 @@ ipcMain.handle('video-output:restart', (event) => {
 });
 ipcMain.handle('video-output:renderer-ready', markVideoOutputReady);
 ipcMain.handle('video-output:picture-health', reportVideoPictureHealth);
+ipcMain.handle('video-output:viewport', reportVideoOutputViewport);
 ipcMain.handle('video-output:diagnostics', (event) => {
   requireTrustedIpc(event);
   return { runtime: { electron: process.versions.electron, chromium: process.versions.chrome,
@@ -2999,13 +3708,6 @@ function requireCaptureOwner(event) {
   requireTrustedIpc(event);
   if (event.sender !== mainWindow?.webContents) {
     throw new Error('Standby capture requires the main workspace.');
-  }
-}
-
-function notifyStandbyCaptureChanged() {
-  const output = videoOutputWindow;
-  if (output && !output.isDestroyed() && !output.webContents.isDestroyed()) {
-    output.webContents.send('video-output:standby-capture-changed');
   }
 }
 
@@ -3104,9 +3806,257 @@ ipcMain.handle('video-output:check-frame', async (event, request) => {
   }
 });
 
-ipcMain.handle('video-output:set-capture-settings', (event, displayId, target) => {
+// ---------------------------------------------------------------------------
+// Converting a video this machine cannot show
+// ---------------------------------------------------------------------------
+// The renderer names the cue; where its file is comes from the project data
+// held here. The copy is made beside the original with the converter the app
+// already downloads for online imports (see video-convert.js).
+let videoConversion = null;
+
+ipcMain.on('video-output:cancel-convert', (event, conversionId) => {
+  if (event.sender !== mainWindow?.webContents || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) return;
+  if (videoConversion?.id === conversionId) videoConversion.controller.abort();
+});
+
+ipcMain.handle('video-output:convert-cue', async (event, request) => {
+  requireVideoCheckOwner(event);
+  requireBoundedIpcObject(request, 'video conversion', 4096);
+  const id = requireIpcString(request?.id, 'conversionId', 64);
+  const sessionId = requireIpcString(request.sessionId, 'sessionId', 256);
+  const uuid = requireIpcString(request.uuid, 'itemUuid', 256);
+  const cue = sessionId === currentCaptureSession ? findCaptureCue(currentProjectData, uuid) : null;
+  if (!cue?.hasVideo) throw new Error('The video cue is no longer in the current show.');
+  if (videoConversion) throw new Error('A video conversion is already running.');
+  // The show's files are on this computer only when the engine is.
+  if (readLiveplayConfig().mode === 'remote') return { status: 'failed', reason: 'remote' };
+  const sourcePath = cueSourcePath(currentProjectData?.folderPath, cue);
+  if (!sourcePath) return { status: 'failed', reason: 'missing' };
+
+  const owner = event.sender;
+  const controller = new AbortController();
+  videoConversion = { id, controller };
+  const cancel = () => controller.abort();
+  owner.once('destroyed', cancel);
+  owner.once('render-process-gone', cancel);
+  try {
+    if (!await setupFfmpeg() || !ffmpegPath) return { status: 'failed', reason: 'no-converter' };
+    let reported = -1;
+    const result = await convertVideoForOutput({
+      ffmpegPath, sourcePath, signal: controller.signal,
+      onProgress: (value) => {
+        const percent = Math.floor(value * 100);
+        if (percent === reported || owner.isDestroyed()) return;
+        reported = percent;
+        owner.send('video-output:convert-progress', { id, uuid, percent });
+      },
+    });
+    if (result.status === 'converted' || result.status === 'reused') return { status: result.status, path: result.path };
+    if (result.status === 'failed') console.warn('[video-convert]', path.basename(sourcePath), result.reason, result.detail ?? '');
+    return { status: result.status, reason: result.reason ?? null };
+  } finally {
+    videoConversion = null;
+    if (!owner.isDestroyed()) {
+      owner.removeListener('destroyed', cancel);
+      owner.removeListener('render-process-gone', cancel);
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Clean Up Media: files in the show's media folder that nothing uses
+// ---------------------------------------------------------------------------
+// The window names files and nothing more. Which folder, which of its files
+// are unused and where each one is are worked out here, every time, from the
+// show as it is open, the show file, its backups and any other show saved in
+// the same folder (see unused-media.js). A file is only ever moved to the
+// Trash, where it can be put back; nothing here removes or rewrites a file.
+const MAX_CLEANUP_NAMES = 5000;
+const MAX_SHOW_DOCUMENT_BYTES = 64 * 1024 * 1024;
+// Few enough names at a time that a long search never holds this process up.
+const CLEANUP_SEARCH_BATCH = 25;
+let mediaCleanupRunning = false;
+const afterOtherWork = () => new Promise(resolve => setImmediate(resolve));
+
+function requireMediaCleanupOwner(event) {
+  requireTrustedIpc(event);
+  if (event.sender !== mainWindow?.webContents || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+    throw new Error('Media clean-up requires the main workspace.');
+  }
+}
+
+// A show document as parsed JSON. One that will not parse still counts, as
+// plain text: a file named anywhere in it is kept.
+async function readShowDocument(file) {
+  const stat = await fs.promises.stat(file);
+  if (!stat.isFile() || stat.size > MAX_SHOW_DOCUMENT_BYTES) throw new Error('The show document cannot be read.');
+  const text = await fs.promises.readFile(file, 'utf8');
+  // A byte-order mark at the start is not part of the JSON.
+  try { return JSON.parse(text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text); } catch { return text; }
+}
+
+// The show documents in a folder and in the Backups folder inside it
+// ("backups" is the same folder on Windows and macOS).
+async function showDocumentsIn(folder) {
+  const entries = await fs.promises.readdir(folder, { withFileTypes: true });
+  const documents = entries.filter(entry => entry.isFile() && isShowDocument(entry.name))
+    .map(entry => path.join(folder, entry.name));
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.toLowerCase() !== 'backups') continue;
+    const backups = path.join(folder, entry.name);
+    for (const backup of await fs.promises.readdir(backups, { withFileTypes: true })) {
+      if (backup.isFile() && isShowDocument(backup.name)) documents.push(path.join(backups, backup.name));
+    }
+  }
+  return documents;
+}
+
+// What the open show's media folder holds that nothing uses, worked out afresh.
+async function findUnusedShowMedia() {
+  // The show's files are on this computer only when the engine is.
+  if (readLiveplayConfig().mode === 'remote') return { available: false, reason: 'remote' };
+  const identity = currentProjectIdentity;
+  const showFolder = currentProjectData?.folderPath;
+  const showFile = identity?.projectPath;
+  const mediaFolder = mediaFolderFor(showFolder);
+  if (!mediaFolder || typeof showFile !== 'string' || !path.isAbsolute(showFile) ||
+      fileKindFor(showFile) !== ProjectFileKind.NativeProject) {
+    return { available: false, reason: 'no-folder' };
+  }
+
+  // The folder is read before the documents: a file that arrives while this
+  // runs is not in the list at all, and one changed since is too new to list.
+  const now = Date.now();
+  let entries = [];
+  try {
+    entries = await fs.promises.readdir(mediaFolder, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  const files = [];
+  for (const entry of entries) {
+    // A regular file directly in the folder: never a folder, never a link.
+    if (!entry.isFile()) continue;
+    try {
+      const stat = await fs.promises.lstat(path.join(mediaFolder, entry.name));
+      files.push({
+        name: entry.name, size: stat.size, modifiedAt: stat.mtimeMs, isFile: stat.isFile(),
+        changedAt: Math.max(stat.mtimeMs, stat.ctimeMs, stat.birthtimeMs),
+      });
+    } catch { /* gone since the folder was read */ }
+  }
+
+  const references = collectReferences([]);
+  const savedShow = path.resolve(showFile);
+  const unreadable = { available: false, reason: 'unreadable' };
+  try {
+    // Without the show as it was saved, nothing can be called unused.
+    const saved = await readShowDocument(savedShow);
+    if (!saved || typeof saved !== 'object') return unreadable;
+    collectReferences([saved], references);
+    for (const folder of new Set([path.resolve(showFolder), path.dirname(savedShow)])) {
+      for (const file of await showDocumentsIn(folder)) {
+        if (file === savedShow) continue;
+        try {
+          collectReferences([await readShowDocument(file)], references);
+        } catch (error) {
+          // A backup the engine pruned while this ran took its references with it.
+          if (error?.code !== 'ENOENT') throw error;
+        }
+        await afterOtherWork();
+      }
+    }
+  } catch {
+    return unreadable;
+  }
+
+  // The show as it is open now, read last so it is as current as it can be.
+  if (!currentProjectData || !sameIdentity(identity, currentProjectIdentity)) throw new Error('The open show changed.');
+  collectReferences([currentProjectData], references);
+  const unused = [];
+  for (let start = 0; start < files.length; start += CLEANUP_SEARCH_BATCH) {
+    unused.push(...findUnusedMedia({ files: files.slice(start, start + CLEANUP_SEARCH_BATCH), references, now }));
+    await afterOtherWork();
+  }
+  return { available: true, identity, showFolder, files: unused };
+}
+
+ipcMain.handle('media:list-unused', async (event) => {
+  requireMediaCleanupOwner(event);
+  const found = await findUnusedShowMedia();
+  if (!found.available) return found;
+  const files = found.files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  return { available: true, files, totalBytes: files.reduce((total, file) => total + file.size, 0) };
+});
+
+ipcMain.handle('media:trash-unused', async (event, request) => {
+  requireMediaCleanupOwner(event);
+  requireBoundedIpcObject(request, 'media clean-up', 4 * 1024 * 1024);
+  const names = request?.names;
+  if (!Array.isArray(names) || names.length === 0 || names.length > MAX_CLEANUP_NAMES) {
+    throw new TypeError(`names must list between 1 and ${MAX_CLEANUP_NAMES} files`);
+  }
+  for (const name of names) {
+    requireIpcString(name, 'file name', 255);
+    if (!isPlainFileName(name)) throw new TypeError('A file is named without a folder.');
+  }
+  if (mediaCleanupRunning) throw new Error('A media clean-up is already running.');
+  mediaCleanupRunning = true;
+  try {
+    // What was unused when the window listed it is not trusted: it is worked
+    // out again now, and only a name still on that list is touched.
+    const wanted = [...new Set(names)];
+    const found = await findUnusedShowMedia();
+    const trashed = [];
+    const failed = [];
+    const kept = [];
+    // Not on this computer, no folder, or a show file that cannot be read:
+    // nothing is touched, and the list the window reads next says which.
+    if (!found.available) return { trashed, failed, kept };
+    const unused = new Map(found.files.map(file => [file.name, file]));
+    // The open show has the last word on every file, at the moment it would
+    // be moved, however long the files before it took.
+    let openShow = null;
+    let openShowReferences = null;
+    const openShowUses = (name) => {
+      if (!currentProjectData || !sameIdentity(found.identity, currentProjectIdentity)) return true;
+      if (currentProjectData !== openShow) {
+        openShow = currentProjectData;
+        openShowReferences = collectReferences([openShow]);
+      }
+      return isReferenced(openShowReferences, name);
+    };
+    for (const name of wanted) {
+      const listed = unused.get(name);
+      const target = listed ? mediaFilePath(found.showFolder, name) : null;
+      if (!target || openShowUses(name)) {
+        kept.push(name);
+        continue;
+      }
+      try {
+        const stat = await fs.promises.lstat(target);
+        // Changed since it was looked at a moment ago: something is using it.
+        if (!stat.isFile() || stat.size !== listed.size || stat.mtimeMs !== listed.modifiedAt || openShowUses(name)) {
+          kept.push(name);
+          continue;
+        }
+        await shell.trashItem(target);
+        trashed.push(name);
+      } catch (error) {
+        failed.push(name);
+        console.warn('[media-cleanup] not moved to the Trash:', name, String(error?.message || error).split('\n')[0].slice(0, 200));
+      }
+    }
+    return { trashed, failed, kept };
+  } finally {
+    mediaCleanupRunning = false;
+  }
+});
+
+// Which other screen a capture may be taken from. What a capture is used for is
+// said at the moment it is taken, never remembered here.
+ipcMain.handle('video-output:set-capture-settings', (event, displayId) => {
   requireCaptureOwner(event);
-  if (target !== 'session' && target !== 'cue') throw new TypeError('Invalid standby capture destination.');
   const config = readVideoOutputConfig();
   if (displayId !== null) requireIpcString(displayId, 'displayId', 64);
   if (displayId !== config.captureDisplayId && displayId !== null &&
@@ -3114,15 +4064,16 @@ ipcMain.handle('video-output:set-capture-settings', (event, displayId, target) =
     throw new Error('The selected capture display is unavailable.');
   }
   config.captureDisplayId = displayId;
-  config.captureTarget = target;
   if (!writeVideoOutputConfig(config)) throw new Error('Could not save standby capture settings.');
   return broadcastVideoOutputStatus();
 });
 
+// Take a picture of the Video Output or of another screen and hand it back.
+// The main workspace saves it into the show and sets it as the standby
+// picture or a cue's picture, exactly as a picture chosen from a file is.
 ipcMain.handle('video-output:capture-standby', async (event, source, target) => {
   const cue = requireCaptureTarget(event, target);
-  if (cue?.imagePath) throw new Error('The selected cue already has an assigned image.');
-  if (capturingVideoStandby) throw new Error('A standby capture is already in progress.');
+  if (capturingVideoStandby) throw new Error('A capture is already in progress.');
   const media = cue?.mediaServerPath || cue?.mediaPath;
   let image;
   capturingVideoStandby = true;
@@ -3156,35 +4107,19 @@ ipcMain.handle('video-output:capture-standby', async (event, source, target) => 
       }
       image = sources.find(entry => entry.display_id === captureDisplayId)?.thumbnail;
       if (!image || image.isEmpty()) {
-        throw new Error('No picture was captured from the selected display. Check screen recording permission and try again.');
+        throw new Error('That screen could not be captured: this computer has not let the app see it.');
       }
     } else {
       throw new TypeError('Invalid standby capture source.');
     }
     const current = requireCaptureTarget(event, target);
-    if (current?.imagePath || (current?.mediaServerPath || current?.mediaPath) !== media) {
-      throw new Error('The selected cue changed during capture. Try again.');
+    if ((current?.mediaServerPath || current?.mediaPath) !== media) {
+      throw new Error('The cue changed during capture. Try again.');
     }
-    videoStandbyCaptures.put(target.sessionId, target.itemUuid, media, captureImageUrl(image));
-    notifyStandbyCaptureChanged();
+    return { image: captureImageUrl(image) };
   } finally {
     capturingVideoStandby = false;
   }
-});
-
-ipcMain.handle('video-output:clear-standby-capture', (event, target) => {
-  requireCaptureTarget(event, target);
-  if (capturingVideoStandby) throw new Error('Wait for the standby capture to finish before clearing it.');
-  videoStandbyCaptures.remove(target.sessionId, target.itemUuid);
-  notifyStandbyCaptureChanged();
-});
-
-ipcMain.handle('video-output:get-standby-capture', (event, sessionId, uuid, media) => {
-  requireVideoOutputIpc(event);
-  requireIpcString(sessionId, 'sessionId', 256);
-  if (uuid !== null) requireIpcString(uuid, 'itemUuid', 256);
-  if (media !== null) requireIpcString(media, 'media', 32768);
-  return videoStandbyCaptures.read(sessionId, uuid, media ?? undefined);
 });
 
 ipcMain.handle('video-output:set-display', (event, displayId) => {
@@ -3198,6 +4133,9 @@ ipcMain.handle('video-output:set-display', (event, displayId) => {
     ? screen.getAllDisplays().find((d) => String(d.id) === checked)
     : null;
   cfg.displayFingerprint = target ? videoOutputFingerprint(target) : null;
+  // A new assignment starts a clean record of its look-alikes.
+  cfg.displayLookalikes = target ? videoOutputLookalikeIds(screen.getAllDisplays(), target) : [];
+  videoOutputLookalikes.clear();
   writeVideoOutputConfig(cfg);
   if (videoOutputSessionEnabled && videoOutputWindow) {
     // Re-place on the new display; recreate is the only clean way to move a
@@ -3216,7 +4154,14 @@ ipcMain.handle('video-output:set-display', (event, displayId) => {
 ipcMain.handle('video-output:set-fullscreen', (event, on) => {
   requireTrustedIpc(event);
   if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
-    videoOutputWindow.setFullScreen(on === true);
+    // The output page only ever asks to leave fullscreen for its Escape key.
+    // That stays a preview-window convenience; an audience display leaves
+    // fullscreen only when the operator chooses it from the control window
+    // or the output's own menu.
+    const escapeOnAudienceDisplay = on !== true &&
+      event.sender === videoOutputWindow.webContents &&
+      videoOutputWindow.videoOutputTargetDisplayId != null;
+    if (!escapeOnAudienceDisplay) setOutputFullscreen(videoOutputWindow, process.platform, on === true);
   }
   return broadcastVideoOutputStatus();
 });
@@ -3224,7 +4169,8 @@ ipcMain.handle('video-output:set-fullscreen', (event, on) => {
 ipcMain.handle('video-output:toggle-fullscreen', (event) => {
   requireTrustedIpc(event);
   if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
-    videoOutputWindow.setFullScreen(!videoOutputWindow.isFullScreen());
+    setOutputFullscreen(videoOutputWindow, process.platform,
+      !isOutputFullscreen(videoOutputWindow, process.platform));
   }
   return broadcastVideoOutputStatus();
 });
@@ -3614,6 +4560,8 @@ const menuTranslations = Object.entries(localeFiles).reduce((acc, [code, data]) 
     noRecentProjects: data.menu.noRecentProjects || 'No Recent Projects',
     saveProject: data.menu.saveProject,
     exportProject: data.menu.exportProject,
+    exportCueSheet: data.menu.exportCueSheet || 'Export Cue Sheet (PDF)…',
+    cleanUpMedia: data.menu.cleanUpMedia || 'Clean Up Media…',
     importProject: data.menu.importProject,
     closeProject: data.menu.closeProject,
     openProjectFolder: data.menu.openProjectFolder,
@@ -3722,6 +4670,20 @@ function createMenu(locale = 'en', isDev = false) {
             mainWindow.webContents.send('menu-import-project');
           }
         },
+        {
+          label: t.exportCueSheet,
+          enabled: currentProject !== null,
+          click: () => {
+            mainWindow.webContents.send('menu-export-cue-sheet');
+          }
+        },
+        {
+          label: t.cleanUpMedia,
+          enabled: currentProject !== null,
+          click: () => {
+            mainWindow.webContents.send('menu-clean-up-media');
+          }
+        },
         { type: 'separator' },
         {
           label: t.openProjectFolder,
@@ -3768,7 +4730,9 @@ function createMenu(locale = 'en', isDev = false) {
           }
         },
         { type: 'separator' },
-        {
+        // macOS fullscreen is a Space, and one would blank the audience
+        // display (video-output-window.js): a Mac window fills its screen instead.
+        process.platform === 'darwin' ? { role: 'zoom' } : {
           label: t.fullscreen,
           accelerator: 'F11',
           click: () => {
@@ -3878,6 +4842,98 @@ ipcMain.handle('select-project-file', async (event) => {
   if (fileKindFor(selectedPath) !== ProjectFileKind.NativeProject) return null;
   rememberNativePickerFolder('project-open', path.dirname(selectedPath));
   return authorizeOpenableFilePath(selectedPath);
+});
+
+// File > Export Cue Sheet (PDF). Read-only: the renderer sends a plain summary
+// of the open show and nothing here touches the transport or the show file.
+// The sheet is printed by a hidden, sandboxed window with JavaScript off. It
+// loads a private temporary file because Chromium rejects data: URLs over
+// 2 MB, which a long playlist exceeds.
+const CUE_SHEET_RENDER_TIMEOUT_MS = 120000;
+let cueSheetExportActive = false;
+
+async function renderCueSheetPdf(html, pdfOptions) {
+  const folder = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'dwcue-cue-sheet-'));
+  let printWindow = null;
+  let timer = null;
+  try {
+    const htmlPath = path.join(folder, 'cue-sheet.html');
+    await fs.promises.writeFile(htmlPath, html, 'utf8');
+    printWindow = new BrowserWindow(cueSheetWindowOptions());
+    const printed = printWindow.loadFile(htmlPath)
+      .then(() => printWindow.webContents.printToPDF(pdfOptions));
+    // If the timeout wins, the abandoned print rejects when its window closes.
+    printed.catch(() => {});
+    return await Promise.race([
+      printed,
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Timed out while rendering the cue sheet')),
+          CUE_SHEET_RENDER_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    if (printWindow && !printWindow.isDestroyed()) printWindow.destroy();
+    await fs.promises.rm(folder, { recursive: true, force: true, maxRetries: 3 }).catch(() => {});
+  }
+}
+
+// Keep the computer awake during a show. The operator window reports whether
+// a show is open, whether it is in Show Mode and whether anything is playing;
+// keep-awake.js turns that into the holds to take. Independent of the Video
+// Output's own hold, which exists while that window does.
+const keepAwakeHolds = { system: null, display: null };
+
+function releaseKeepAwake() {
+  applyKeepAwake(powerSaveBlocker, keepAwakeHolds, { system: false, display: false });
+}
+
+ipcMain.handle('power:keep-awake', (event, state) => {
+  requireTrustedIpc(event);
+  requireBoundedIpcObject(state, 'keep-awake state', 1024);
+  // Only the operator window speaks for the show; the QuickPlays and Video
+  // Output windows see the same project and would only repeat it.
+  if (!mainWindow || event.sender !== mainWindow.webContents) return false;
+  applyKeepAwake(powerSaveBlocker, keepAwakeHolds, keepAwakePlan(state));
+  return true;
+});
+
+ipcMain.handle('export-cue-sheet', async (event, payload) => {
+  requireTrustedIpc(event);
+  if (payload === null) throw new TypeError('cue sheet must be an object');
+  requireBoundedIpcObject(payload, 'cue sheet', CUE_SHEET_LIMITS.maxPayloadBytes);
+  if (cueSheetExportActive) return { status: 'busy' };
+  cueSheetExportActive = true;
+  try {
+    const sheet = normalizeCueSheet(payload);
+    const labels = normalizeCueSheetLabels(payload.labels);
+    // The destination comes only from this dialog, never from the renderer.
+    const folder = nativePickerFolder('cue-sheet');
+    const fileName = cueSheetFileName(sheet.showName);
+    const result = await showNativeFilePicker(() => dialog.showSaveDialog({
+      defaultPath: folder ? path.join(folder, fileName) : fileName,
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      properties: ['createDirectory', 'showOverwriteConfirmation'],
+    }));
+    if (result.canceled || !result.filePath) return { status: 'cancelled' };
+
+    const language = { locale: currentLocale, direction: localeFiles[currentLocale]?._metadata?.direction };
+    const pdf = await renderCueSheetPdf(
+      buildCueSheetHtml(sheet, labels, { ...language, generatedAt: new Date() }),
+      cueSheetPdfOptions(sheet.showName, labels, language),
+    );
+    await fs.promises.writeFile(result.filePath, pdf);
+    rememberNativePickerFolder('cue-sheet', path.dirname(result.filePath));
+    return { status: 'saved', fileName: path.basename(result.filePath) };
+  } catch (error) {
+    const message = String(error?.message || error).split('\n')[0].slice(0, 200);
+    console.warn('[cue-sheet] export failed:', message);
+    return { status: 'failed', error: message };
+  } finally {
+    cueSheetExportActive = false;
+  }
 });
 
 const mediaPickerExtensions = [
@@ -4399,8 +5455,7 @@ ipcMain.on('sync-project-data', (event, projectData, identity, captureSession = 
   const nextCaptureSession = projectData ? captureSession : null;
   if (nextCaptureSession !== currentCaptureSession || (identity && !sameIdentity(identity, currentProjectIdentity))) {
     videoFrameProbe?.controller.abort();
-    videoStandbyCaptures.reset();
-    notifyStandbyCaptureChanged();
+    videoConversion?.controller.abort();
   }
   currentCaptureSession = nextCaptureSession;
   currentProjectData = projectData;
@@ -4424,9 +5479,9 @@ ipcMain.on('sync-project-data', (event, projectData, identity, captureSession = 
     currentProject = nextOpen;
   }
   // Forward every snapshot, including project closure, to the detached window.
-  if (cartPlayerWindow && !cartPlayerWindow.isDestroyed()
-      && !cartPlayerWindow.webContents.isDestroyed()) {
-    cartPlayerWindow.webContents.send('cart-window-project-update', {
+  if (detachedQuickPlayWindow && !detachedQuickPlayWindow.isDestroyed()
+      && !detachedQuickPlayWindow.webContents.isDestroyed()) {
+    detachedQuickPlayWindow.webContents.send('quickplay-window-project-update', {
       project: currentProjectData,
       identity: currentProjectIdentity,
       projectSessionId: currentCaptureSession,
@@ -4434,36 +5489,36 @@ ipcMain.on('sync-project-data', (event, projectData, identity, captureSession = 
   }
 });
 
-// Cart player window IPC handlers
-ipcMain.handle('open-cart-player-window', (event, projectFolderPath) => {
+// QuickPlay window IPC handlers
+ipcMain.handle('open-detached-quickplay-window', (event, projectFolderPath) => {
   requireTrustedIpc(event);
   if (projectFolderPath !== undefined) {
     requireIpcString(projectFolderPath, 'projectFolderPath', MAX_IPC_PATH_LENGTH);
   }
-  createCartPlayerWindow();
+  createDetachedQuickPlayWindow();
 });
 
-ipcMain.handle('toggle-cart-player-window', (event) => {
+ipcMain.handle('toggle-detached-quickplay-window', (event) => {
   requireTrustedIpc(event);
-  if (cartPlayerWindow) cartPlayerWindow.close();
-  else createCartPlayerWindow();
+  if (detachedQuickPlayWindow) detachedQuickPlayWindow.close();
+  else createDetachedQuickPlayWindow();
 });
 
-ipcMain.on('cart-player-window-attach', (event) => {
+ipcMain.on('detached-quickplay-window-attach', (event) => {
   try {
     requireTrustedIpc(event);
   } catch (error) {
-    console.warn('[cart-player-window-attach] rejected event:', error.message);
+    console.warn('[detached-quickplay-window-attach] rejected event:', error.message);
     return;
   }
-  if (cartPlayerWindow) {
-    cartPlayerWindow.close();
+  if (detachedQuickPlayWindow) {
+    detachedQuickPlayWindow.close();
   }
 });
 
 // UI mode (edit / "show mode") sync across windows. Each renderer owns its
 // own state, so broadcast a change from any window to every other window so
-// the detached cart player stays in lockstep with the main window.
+// the detached QuickPlay window stays in lockstep with the main window.
 ipcMain.on('ui-mode-changed', (event, mode) => {
   try {
     requireTrustedIpc(event);
@@ -4482,38 +5537,38 @@ ipcMain.on('ui-mode-changed', (event, mode) => {
   }
 });
 
-ipcMain.on('cart-grid-layouts-changed', (event, layouts) => {
+ipcMain.on('quickplay-grid-layouts-changed', (event, layouts) => {
   try {
     requireTrustedIpc(event);
     requireIpcString(layouts, 'layouts', 4096);
   } catch (error) {
-    console.warn('[cart-grid-layouts-changed] rejected event:', error.message);
+    console.warn('[quickplay-grid-layouts-changed] rejected event:', error.message);
     return;
   }
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.webContents.id === event.sender.id) continue;
     if (win.webContents && !win.webContents.isDestroyed()) {
-      win.webContents.send('cart-grid-layouts-set', layouts);
+      win.webContents.send('quickplay-grid-layouts-set', layouts);
     }
   }
 });
 
-ipcMain.handle('get-cart-window-project-data', (event) => {
+ipcMain.handle('get-quickplay-window-project-data', (event) => {
   requireTrustedIpc(event);
   return { project: currentProjectData, identity: currentProjectIdentity, projectSessionId: currentCaptureSession };
 });
 
-ipcMain.handle('one-shot-mutation:request', (event, request) => {
+ipcMain.handle('quickplay-mutation:request', (event, request) => {
   requireTrustedIpc(event);
-  return oneShotMutationBroker.request(event.sender, request);
+  return quickPlayMutationBroker.request(event.sender, request);
 });
 
-ipcMain.on('one-shot-mutation:complete', (event, result) => {
+ipcMain.on('quickplay-mutation:complete', (event, result) => {
   try {
     requireTrustedIpc(event);
-    oneShotMutationBroker.complete(event.sender, result);
+    quickPlayMutationBroker.complete(event.sender, result);
   } catch (error) {
-    console.warn('[one-shot-mutation:complete] rejected result:', error.message);
+    console.warn('[quickplay-mutation:complete] rejected result:', error.message);
   }
 });
 
@@ -4539,106 +5594,6 @@ ipcMain.on('update-app-state', (event, state) => {
 ipcMain.handle('is-dev-mode', (event) => {
   requireTrustedIpc(event);
   return isDevMode;
-});
-
-// Check FFmpeg availability
-ipcMain.handle('check-ffmpeg', async (event) => {
-  requireTrustedIpc(event);
-  await setupFfmpeg();
-  return {
-    available: ffmpegAvailable,
-    path: ffmpegPath || null
-  };
-});
-
-// Waveform generation
-ipcMain.handle('generate-waveform', async (event, audioFilePath, outputPath) => {
-  requireTrustedIpc(event);
-  audioFilePath = requireAuthorizedIpcPath(audioFilePath, 'audioFilePath');
-  outputPath = requireAuthorizedIpcPath(outputPath, 'outputPath', true);
-  if (!(await setupFfmpeg())) throw new Error('FFmpeg is unavailable');
-  return new Promise((resolve, reject) => {
-    console.log('Generating waveform for:', audioFilePath);
-    console.log('Output path:', outputPath);
-    
-    // Ensure output directory exists
-    const outputDir = path.dirname(outputPath);
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-    
-    // Use the detected ffmpeg path
-    if (ffmpegPath) {
-      ffmpeg.setFfmpegPath(ffmpegPath);
-    }
-    
-    // First, get the duration
-    ffmpeg.ffprobe(audioFilePath, (err, metadata) => {
-      if (err) {
-        console.error('FFprobe error:', err);
-        reject(err);
-        return;
-      }
-      
-      const duration = metadata.format.duration;
-      if (!duration) {
-        reject(new Error('Could not determine audio duration'));
-        return;
-      }
-      
-      // Calculate samples: 10 per second
-      const targetSamples = Math.ceil(duration * 10);
-      const samples = [];
-      const tempOutput = outputPath + '.temp.wav';
-      
-      // Extract raw audio data
-      ffmpeg(audioFilePath)
-        .audioChannels(1)
-        .audioFrequency(8000) // Lower frequency for smaller data
-        .format('s16le')
-        .on('error', (err) => {
-          console.error('FFmpeg waveform error:', err);
-          reject(err);
-        })
-        .on('end', () => {
-          // Read the temp file and process samples
-          try {
-            if (fs.existsSync(tempOutput)) {
-              const buffer = fs.readFileSync(tempOutput);
-              
-              // Process samples to get exactly 10 per second
-              const sampleInterval = Math.floor(buffer.length / (targetSamples * 2)); // 2 bytes per sample
-              
-              for (let i = 0; i < buffer.length - 1 && samples.length < targetSamples; i += sampleInterval * 2) {
-                const sample = buffer.readInt16LE(i) / 32768.0; // Normalize to -1 to 1
-                samples.push(Math.abs(sample));
-              }
-              
-              // Clean up temp file
-              fs.unlinkSync(tempOutput);
-              
-              // Save waveform data (including duration for convenience)
-              const waveformData = {
-                peaks: samples,
-                sampleRate: 10, // 10 samples per second
-                duration: duration // Include duration in seconds
-              };
-              
-              fs.writeFileSync(outputPath, JSON.stringify(waveformData));
-              console.log('Waveform generated successfully:', samples.length, 'samples @10/sec for', duration.toFixed(2), 'seconds');
-              
-              resolve({ success: true });
-            } else {
-              reject(new Error('Temporary audio file not created'));
-            }
-          } catch (error) {
-            console.error('Error processing waveform:', error);
-            reject(error);
-          }
-        })
-        .save(tempOutput);
-    });
-  });
 });
 
 const activeSpotifyDownloads = new Map();
@@ -5757,11 +6712,9 @@ ipcMain.handle('cancel-youtube-download', async (event, jobId) => {
 });
 
 async function waitForYtDlp() {
-  for (let attempts = 0; !ytDlpReady && attempts < 30; attempts++) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-  if (!ytDlpReady || !ytDlpPath) {
-    throw new Error('yt-dlp failed to initialize. Please restart the application.');
+  void setupDeno();   // optional; the download below waits briefly for it
+  if (!await setupYtDlp() || !ytDlpPath) {
+    throw new Error('The YouTube downloader could not be downloaded. The next import will try again.');
   }
 }
 
@@ -5899,7 +6852,7 @@ ipcMain.handle('download-youtube-audio', async (event, jobId, videoId, title, pr
     // Video mode needs ffmpeg to mux the separate video+audio streams; mp3
     // mode needs it for transcode.
     if ((outputMode === 'mp3' || outputMode === 'video') && !(await setupFfmpeg())) {
-      throw new Error('Bundled FFmpeg failed to initialize. Please restart the application.');
+      throw new Error('The converter this import needs could not be downloaded. The next import will try again.');
     }
 
     try {
@@ -6192,6 +7145,14 @@ if (!gotTheLock) {
       ].join('\n'),
     });
 
+    // The release build's engine check runs without any window: nothing else
+    // may start, stop or reconnect to the engine while it is being judged.
+    const engineSelfTest = engineSelfTestResultPath(process.argv);
+    if (engineSelfTest) {
+      void runEngineSelfTest(engineSelfTest);
+      return;
+    }
+
     createWindow();
 
     // Register this only after ready. macOS may emit `activate` during the
@@ -6200,14 +7161,6 @@ if (!gotTheLock) {
     app.on('activate', () => {
       if (mainWindow === null || mainWindow.isDestroyed()) {
         createWindow();
-      }
-    });
-
-    // Tool probing must never gate first paint. Feature handlers await the
-    // same bounded setup promise if the user reaches them immediately.
-    void setupFfmpeg().then((ready) => {
-      if (!ready) {
-        console.error('Warning: Bundled ffmpeg failed to initialize. Audio processing may be limited.');
       }
     });
 

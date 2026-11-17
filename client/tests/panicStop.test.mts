@@ -8,7 +8,7 @@ import * as Vue from 'vue';
 import ts from 'typescript';
 import { runExclusivePendingAction } from '../app/utils/acknowledgedAction.ts';
 import { DEFAULT_PLAYBACK_KEYS } from '../app/types/project.ts';
-import { bindingsMatch, eventToBinding, resolveKeyboardBindings } from '../app/composables/useCartHotkeys.ts';
+import { bindingsMatch, eventToBinding, resolveKeyboardBindings } from '../app/composables/useQuickPlayHotkeys.ts';
 
 function elementSource(component: string, tag: string, className?: string): string {
   const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
@@ -65,7 +65,7 @@ test('Stop All remains clickable when no project-backed cue is active', () => {
 });
 
 test('Detached QuickPlay Settings expose the normal Stop All action', () => {
-  const code = compile(elementSource('OneShotPanel', 'Btn', 'detached-quickplay-stop'), { mode: 'function' }).code;
+  const code = compile(elementSource('QuickPlayPanel', 'Btn', 'detached-quickplay-stop'), { mode: 'function' }).code;
   const render = Function('Vue', `${code}; return render;`)({ ...Vue, resolveComponent: () => 'button' });
   const calls: unknown[][] = [];
   const context = {
@@ -232,7 +232,7 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
   server.showVerification = false;
   projectLoad.value = 'create';
   currentProject.value.playbackKeys['stop-all'] = { key: 'F9', ctrlKey: false, shiftKey: false, altKey: false };
-  assert.equal(press('F9'), true, 'loading captures Stop All without the One Shots panel');
+  assert.equal(press('F9'), true, 'loading captures Stop All without the QuickPlays panel');
   assert.equal(press(' '), false, 'New Show leaves other shortcuts to their usual handlers');
   projectLoad.value = null;
   assert.equal(press('F9'), false, 'the trap defers to normal routing after loading');
@@ -339,7 +339,7 @@ test('Stop All takes priority in editors, recovery and project loading', () => {
 });
 
 function loadHandleKeydown(dependencies: Record<string, unknown>) {
-  const filename = new URL('../app/composables/useCartHotkeys.ts', import.meta.url);
+  const filename = new URL('../app/composables/useQuickPlayHotkeys.ts', import.meta.url);
   const source = readFileSync(filename, 'utf8');
   const start = source.indexOf('  const handleKeydown =');
   const end = source.indexOf('  const updateBinding =', start);
@@ -349,7 +349,7 @@ function loadHandleKeydown(dependencies: Record<string, unknown>) {
       const {
         currentProject,
         projectHydrationStatus,
-        oneShotPlaybackReady = { get value() { return projectHydrationStatus.value === 'ready'; } },
+        quickPlayPlaybackReady = { get value() { return projectHydrationStatus.value === 'ready'; } },
         dispatchPlaybackAction,
         findPlaybackActionForEvent,
         findSlotForEvent,
@@ -414,7 +414,7 @@ test('workspace shortcuts keep Stop All, repeat suppression, and text focus beha
     findSlotForEvent: () => 0,
     isForwardedFromVideoOutput: (event: { forwarded?: boolean }) => event.forwarded === true,
     isTextInputFocused: () => typing,
-    triggerSlot: () => actions.push('one-shot'),
+    triggerSlot: () => actions.push('quickplay'),
   });
   const press = (key: string, overrides = {}) => handleKeydown({
     key, preventDefault() {}, stopPropagation() {}, ...overrides,
@@ -428,14 +428,14 @@ test('workspace shortcuts keep Stop All, repeat suppression, and text focus beha
   typing = true;
   press('F9');
   press('1');
-  assert.deepEqual(actions, ['play-next', 'one-shot', 'stop-all']);
+  assert.deepEqual(actions, ['play-next', 'quickplay', 'stop-all']);
   press('F9', { forwarded: true });
 
   typing = false;
   press(' ');
   press('1');
   press('F9');
-  assert.deepEqual(actions, ['play-next', 'one-shot', 'stop-all', 'stop-all', 'play-next', 'one-shot', 'stop-all']);
+  assert.deepEqual(actions, ['play-next', 'quickplay', 'stop-all', 'stop-all', 'play-next', 'quickplay', 'stop-all']);
 });
 
 test('assigned show shortcuts keep priority after Tab focuses a workspace button', () => {
@@ -477,7 +477,7 @@ test('Shift+Q can close focused QuickPlays without relaxing the hydration guard 
 });
 
 test('QuickPlay number-row shortcuts work with shifted symbols and respect text focus', () => {
-  const filename = new URL('../app/composables/useCartHotkeys.ts', import.meta.url);
+  const filename = new URL('../app/composables/useQuickPlayHotkeys.ts', import.meta.url);
   const source = readFileSync(filename, 'utf8');
   const start = source.indexOf('  const findSlotForEvent =');
   const end = source.indexOf('  const findPlaybackActionForEvent =', start);
@@ -485,9 +485,9 @@ test('QuickPlay number-row shortcuts work with shifted symbols and respect text 
   const code = ts.transpileModule(source.slice(start, end), {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  const slots = Array.from({ length: 20 }, () => ({ oneShot: {} } as any));
+  const slots = Array.from({ length: 20 }, () => ({ quickPlay: {} } as any));
   const keyMappings = { value: resolveKeyboardBindings(slots).keyMappings };
-  const findSlotForEvent = Function('keyMappings', 'oneShotSlots', 'eventToBinding', 'bindingsMatch',
+  const findSlotForEvent = Function('keyMappings', 'quickPlayCells', 'eventToBinding', 'bindingsMatch',
     'QUICK_PLAY_DIGITS', `${code}\nreturn findSlotForEvent;`)(
     keyMappings, { value: slots }, eventToBinding, bindingsMatch, '1234567890');
   const played: number[] = [];
@@ -697,14 +697,13 @@ test('broadcast HTTP actions cannot execute side effects in client windows', () 
 });
 
 function loadSetNextCaller(
-  component: 'PlaylistItem' | 'CartSlot' | 'PlaybackControls' | 'WaveformTrimmer',
+  component: 'PlaylistItem' | 'PlaybackControls' | 'WaveformTrimmer',
   dependencies: Record<string, unknown>,
 ): () => Promise<boolean> {
   const filename = new URL(`../app/components/${component}.vue`, import.meta.url);
   const source = readFileSync(filename, 'utf8');
   const names = {
     PlaylistItem: 'handleSetAsNext',
-    CartSlot: 'handleSetAsNext',
     PlaybackControls: 'handleSetPreviewNext',
     WaveformTrimmer: 'setAuditionAsNext',
   } as const;
@@ -726,7 +725,7 @@ function loadSetNextCaller(
   return factory(dependencies);
 }
 
-test('playlist and cart toggle Set As Next while Preview and Waveform stay set-only', async () => {
+test('playlist and QuickPlay toggle Set As Next while Preview and Waveform stay set-only', async () => {
   const calls: Array<string | null> = [];
   const setNextItem = async (uuid: string | null) => {
     calls.push(uuid);
@@ -739,13 +738,6 @@ test('playlist and cart toggle Set As Next while Preview and Waveform stay set-o
   isManuallyQueued.value = true;
   await playlist();
 
-  props.item.uuid = 'cart-item';
-  isManuallyQueued.value = false;
-  const cart = loadSetNextCaller('CartSlot', { isManuallyQueued, props, setNextItem });
-  await cart();
-  isManuallyQueued.value = true;
-  await cart();
-
   const previewItemUuid = { value: 'preview-item' };
   const preview = loadSetNextCaller('PlaybackControls', { previewItemUuid, setNextItem });
   await preview();
@@ -757,7 +749,6 @@ test('playlist and cart toggle Set As Next while Preview and Waveform stay set-o
 
   assert.deepEqual(calls, [
     'row-item', null,
-    'cart-item', null,
     'preview-item', 'preview-item',
     'wave-item', 'wave-item',
   ]);
@@ -823,6 +814,7 @@ function loadNextItemFeedback(dependencies: Record<string, unknown>): {
   const factory = transpileFactory(`
     function buildNextItemFeedback(dependencies: Record<string, any>) {
       const { executeHttpRequest, masterGainDb, nextItemOverrideUuid } = dependencies;
+      const cueFollowOverrides = dependencies.cueFollowOverrides ?? { value: new Map() };
       let snapshot;
       let patch;
       const server = {
@@ -854,6 +846,33 @@ test('only server patch and reconnect snapshot change the displayed next target'
   assert.equal(masterGainDb.value, -4.5);
   feedback.patch({ op: 'next_item_set', itemUuid: '' });
   assert.equal(nextItemOverrideUuid.value, null);
+});
+
+test('the Cue to Continue toggle mirrors only server patches and reconnect snapshots', () => {
+  const cueFollowOverrides = { value: new Map<string, string>() };
+  const feedback = loadNextItemFeedback({
+    executeHttpRequest() {},
+    masterGainDb: { value: 0 },
+    nextItemOverrideUuid: { value: null },
+    cueFollowOverrides,
+  });
+
+  feedback.patch({ op: 'cue_follow_set', itemUuid: 'sting', follow: 'armed' });
+  assert.equal(cueFollowOverrides.value.get('sting'), 'armed');
+  feedback.patch({ op: 'cue_follow_set', itemUuid: 'sting', follow: 'suppressed' });
+  assert.equal(cueFollowOverrides.value.get('sting'), 'suppressed');
+  feedback.patch({ op: 'cue_follow_set', itemUuid: 'sting', follow: '' });
+  assert.equal(cueFollowOverrides.value.has('sting'), false, 'an empty state returns to the saved ending');
+  feedback.patch({ op: 'cue_follow_set', itemUuid: 'sting', follow: 'bogus' });
+  feedback.patch({ op: 'cue_follow_set', follow: 'armed' });
+  assert.equal(cueFollowOverrides.value.size, 0, 'unknown states and missing items are ignored');
+
+  feedback.patch({ op: 'cue_follow_set', itemUuid: 'ended-earlier', follow: 'armed' });
+  feedback.snapshot({ next_item_uuid: '', cues: [
+    { item_uuid: 'bed', follow: 'armed' }, { item_uuid: 'plain' }, { item_uuid: 'odd', follow: 'nope' },
+  ] });
+  assert.deepEqual([...cueFollowOverrides.value], [['bed', 'armed']],
+    'a reconnect snapshot replaces stale toggle state with what is playing now');
 });
 
 function loadMasterGainController(dependencies: Record<string, unknown>): {
@@ -930,12 +949,12 @@ test('Up Next follows playlist order when active cues arrived in reverse order',
     }
   `, 'buildNext');
   const items = ['a', 'b', 'c', 'd'].map((uuid, i) => ({ uuid, type: 'audio', index: [i], endBehavior: { action: 'next' } }));
-  const cart = { uuid: 'cart', type: 'audio', index: [-1, 0], endBehavior: { action: 'loop' } };
+  const quickPlay = { uuid: 'quickplay', type: 'audio', index: [-1, 0], endBehavior: { action: 'loop' } };
   const currentProject = Vue.ref({ items, settings: { autoCueNextWithoutEndBehavior: true } });
-  const activeCues = Vue.ref(new Map(['cart', 'c', 'a'].map(uuid => [uuid, {}])));
+  const activeCues = Vue.ref(new Map(['quickplay', 'c', 'a'].map(uuid => [uuid, {}])));
   const next = build({ computed: Vue.computed, currentProject, activeCues,
     getAllItemsFlat: () => currentProject.value.items,
-    findItemByUuid: (uuid: string) => [...currentProject.value.items, cart].find(item => item.uuid === uuid),
+    findItemByUuid: (uuid: string) => [...currentProject.value.items, quickPlay].find(item => item.uuid === uuid),
     findItemByIndex: ([index]: number[]) => currentProject.value.items[index],
   });
   assert.equal(next.value, 'b');

@@ -73,6 +73,7 @@ let offStatus: (() => void) | null = null;
 let statusRevision = 0;
 let infoTimer: ReturnType<typeof setInterval> | undefined;
 let healthTimer: ReturnType<typeof setInterval> | undefined;
+let viewportTimer: ReturnType<typeof setInterval> | undefined;
 
 async function refreshStatus() {
   const api = window.electronAPI?.videoOutput;
@@ -109,8 +110,20 @@ function onKeydown(event: KeyboardEvent) {
 function onDblClick() {
   void window.electronAPI?.videoOutput?.toggleFullscreen();
 }
+// Tell main what this page really covers. Only the page can see whether the
+// window fills the screen it is on; main corrects a short window on Windows.
+function reportViewport() {
+  void window.electronAPI?.videoOutput?.reportViewport?.({
+    innerWidth: Math.round(window.innerWidth),
+    innerHeight: Math.round(window.innerHeight),
+    screenWidth: Math.round(window.screen.width),
+    screenHeight: Math.round(window.screen.height),
+    pixelScale: window.devicePixelRatio || 1,
+  }).catch(() => { /* A closing output has no main-side window to report to. */ });
+}
 function updatePixelScale() {
   pixelScale.value = window.devicePixelRatio || 1;
+  reportViewport();
 }
 
 onMounted(async () => {
@@ -127,10 +140,14 @@ onMounted(async () => {
   // A minimized renderer can withhold animation callbacks behind the native cover.
   void api.rendererReady().catch(() => {});
   healthTimer = setInterval(() => { void api.reportPictureHealth(getPictureHealth()).catch(() => {}); }, 1000);
+  // A display can change size or scaling under a window without resizing
+  // it, so both are re-read rather than trusted from the last resize event.
+  viewportTimer = setInterval(updatePixelScale, 2000);
 });
 onBeforeUnmount(() => {
   clearInterval(infoTimer);
   clearInterval(healthTimer);
+  clearInterval(viewportTimer);
   offStatus?.();
   window.removeEventListener('resize', updatePixelScale);
   window.removeEventListener('keydown', onKeydown);

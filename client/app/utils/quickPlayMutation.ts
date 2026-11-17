@@ -1,0 +1,290 @@
+import type { AudioItem, GroupItem, Project } from '../types/project';
+import type {
+  QuickPlayMutableFields,
+  QuickPlayMutationIdentity,
+  QuickPlayMutationRequest,
+  QuickPlayMutationResult,
+} from '../types/quickPlayMutation';
+import { sameQuickPlayMutationIdentity } from '../types/quickPlayMutation';
+import { MAX_QUICK_PLAY_SLOTS, getQuickPlayEndMode, getQuickPlayPlaybackMode, setQuickPlayEndMode, setQuickPlayPlaybackMode } from './quickPlays';
+
+export interface QuickPlayMutationDocument {
+  project: Project;
+  quickPlayItems: Map<string, AudioItem>;
+}
+
+const fieldNames: Record<keyof QuickPlayMutableFields, true> = {
+  displayName: true, color: true, volume: true, playFade: true, stopFade: true, duckLevel: true,
+  duckFadeIn: true, duckFadeOut: true, deviceOverride: true, retrigger: true,
+  hotkey: true, playbackMode: true, endMode: true,
+};
+const finiteBetween = (value: unknown, min: number, max: number): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+const plainObject = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value)
+  && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+const validHotkey = (value: unknown): boolean => value === null || (plainObject(value)
+  && typeof value.key === 'string'
+  && value.key.length > 0
+  && ['ctrl', 'shift', 'alt', 'meta'].every(key => value[key] === undefined || typeof value[key] === 'boolean'));
+const validSlot = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < MAX_QUICK_PLAY_SLOTS;
+const validIndex = (value: unknown): value is number[] => Array.isArray(value)
+  && value.every(part => typeof part === 'number' && Number.isSafeInteger(part) && part >= 0);
+const hasOnlyKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
+  Object.keys(value).every(key => keys.includes(key));
+
+const validEndBehavior = (value: unknown): boolean => {
+  if (!plainObject(value) || typeof value.action !== 'string') return false;
+  if (value.action === 'goto-item') {
+    return hasOnlyKeys(value, ['action', 'targetUuid'])
+      && typeof value.targetUuid === 'string' && value.targetUuid.trim().length > 0;
+  }
+  if (value.action === 'goto-index') {
+    return hasOnlyKeys(value, ['action', 'targetIndex']) && validIndex(value.targetIndex);
+  }
+  return ['nothing', 'next', 'loop'].includes(value.action) && hasOnlyKeys(value, ['action']);
+};
+
+const validStartBehavior = (value: unknown): boolean => {
+  if (!plainObject(value) || typeof value.action !== 'string') return false;
+  if (value.action === 'play-item') {
+    return hasOnlyKeys(value, ['action', 'targetUuid'])
+      && typeof value.targetUuid === 'string' && value.targetUuid.trim().length > 0;
+  }
+  if (value.action === 'play-index') {
+    return hasOnlyKeys(value, ['action', 'targetIndex']) && validIndex(value.targetIndex);
+  }
+  return ['nothing', 'play-next'].includes(value.action) && hasOnlyKeys(value, ['action']);
+};
+
+const validCustomActionType = (value: unknown): boolean => {
+  if (!plainObject(value) || typeof value.type !== 'string') return false;
+  if (value.type === 'play-item') {
+    return hasOnlyKeys(value, ['type', 'uuid'])
+      && typeof value.uuid === 'string' && value.uuid.trim().length > 0;
+  }
+  if (value.type === 'play-index') {
+    return hasOnlyKeys(value, ['type', 'index']) && validIndex(value.index);
+  }
+  if (value.type === 'stop-all') return hasOnlyKeys(value, ['type']);
+  if (value.type !== 'http-request' || !hasOnlyKeys(value, ['type', 'request']) || !plainObject(value.request)) {
+    return false;
+  }
+  const request = value.request;
+  return hasOnlyKeys(request, ['method', 'url', 'contentType', 'body'])
+    && ['GET', 'POST', 'PUT', 'DELETE'].includes(String(request.method))
+    && typeof request.url === 'string' && request.url.trim().length > 0
+    && (request.contentType === 'form' || request.contentType === 'json')
+    && (request.body === undefined || plainObject(request.body));
+};
+
+const validDuckingBehavior = (value: unknown): boolean => plainObject(value)
+  && ['stop-all', 'no-ducking', 'duck-others'].includes(String(value.mode))
+  && (value.duckLevel === undefined || finiteBetween(value.duckLevel, 0, 1))
+  && (value.duckFadeIn === undefined || finiteBetween(value.duckFadeIn, 0, 10))
+  && (value.duckFadeOut === undefined || finiteBetween(value.duckFadeOut, 0, 10));
+
+const validQuickPlaySettings = (value: unknown, slot: number): boolean => plainObject(value)
+  && value.order === slot
+  && (value.retrigger === 'restart' || value.retrigger === 'ignore')
+  && (value.hotkey === undefined || validHotkey(value.hotkey))
+  && (value.sourceUuid === undefined || (typeof value.sourceUuid === 'string' && value.sourceUuid.trim().length > 0))
+  && (value.armed === undefined || typeof value.armed === 'boolean')
+  && (value.autoDisarm === undefined || typeof value.autoDisarm === 'boolean');
+
+const validAudioReplacement = (value: unknown, slot: number): value is AudioItem => {
+  if (!plainObject(value) || value.type !== 'audio') return false;
+  return typeof value.uuid === 'string' && value.uuid.trim().length > 0
+    && (validIndex(value.index) || (Array.isArray(value.index)
+      && value.index.length === 2 && value.index[0] === -1 && value.index[1] === slot))
+    && typeof value.mediaFileName === 'string'
+    && typeof value.mediaPath === 'string'
+    && (value.mediaServerPath === undefined || typeof value.mediaServerPath === 'string')
+    && [value.mediaPath, value.mediaServerPath].some(path => typeof path === 'string' && path.trim().length > 0)
+    && typeof value.waveformPath === 'string'
+    && finiteBetween(value.duration, 0, Number.MAX_SAFE_INTEGER)
+    && finiteBetween(value.inPoint, 0, Number.MAX_SAFE_INTEGER)
+    && finiteBetween(value.outPoint, 0, Number.MAX_SAFE_INTEGER)
+    && finiteBetween(value.fadeOutDuration, 0, 30)
+    && finiteBetween(value.playFade, 0, 30)
+    && finiteBetween(value.stopFade, 0, 30)
+    && finiteBetween(value.crossFade, 0, 30)
+    && validateFields({ displayName: value.displayName, color: value.color, volume: value.volume })
+    && validEndBehavior(value.endBehavior)
+    && validStartBehavior(value.startBehavior)
+    && Array.isArray(value.customActions)
+    && value.customActions.every(customAction => plainObject(customAction)
+      && hasOnlyKeys(customAction, ['timePoint', 'action'])
+      && finiteBetween(customAction.timePoint, 0, Number.MAX_SAFE_INTEGER)
+      && validCustomActionType(customAction.action))
+    && validDuckingBehavior(value.duckingBehavior)
+    && validQuickPlaySettings(value.quickPlay, slot);
+};
+
+const validateFields = (value: unknown): value is QuickPlayMutableFields => {
+  if (!plainObject(value) || Object.keys(value).some(key => !(key in fieldNames))) return false;
+  return Object.entries(value).every(([key, field]) => {
+    switch (key as keyof QuickPlayMutableFields) {
+      case 'displayName': return typeof field === 'string' && field.trim().length > 0 && field.length <= 512;
+      case 'color': return typeof field === 'string' && /^#[0-9a-f]{6}$/i.test(field);
+      case 'volume': return finiteBetween(field, 0, 4);
+      case 'playFade': case 'stopFade': return finiteBetween(field, 0, 30);
+      case 'duckLevel': return finiteBetween(field, 0, 1);
+      case 'duckFadeIn': case 'duckFadeOut': return finiteBetween(field, 0, 10);
+      case 'deviceOverride': return field === null || (typeof field === 'string' && field.length <= 512);
+      case 'retrigger': return field === 'restart' || field === 'ignore';
+      case 'hotkey': return validHotkey(field);
+      case 'playbackMode': return field === 'overlay' || field === 'duck' || field === 'replace';
+      case 'endMode': return field === 'stop' || field === 'loop' || field === 'next';
+    }
+  });
+};
+
+const findItem = (items: readonly (AudioItem | GroupItem)[], uuid: string): AudioItem | GroupItem | null => {
+  for (const item of items) {
+    if (item.uuid === uuid) return item;
+    if (item.type === 'group') {
+      const nested = findItem(item.children, uuid);
+      if (nested) return nested;
+    }
+  }
+  return null;
+};
+
+const findQuickPlay = (document: QuickPlayMutationDocument, uuid: string): AudioItem | null => {
+  const item = document.quickPlayItems.get(uuid) ?? findItem(document.project.items, uuid);
+  return item?.type === 'audio' && item.quickPlay ? item : null;
+};
+
+const findQuickPlayByOrder = (document: QuickPlayMutationDocument, order: number): AudioItem | null => {
+  for (const item of document.quickPlayItems.values()) {
+    if (item.quickPlay?.order === order) return item;
+  }
+  const visit = (items: readonly (AudioItem | GroupItem)[]): AudioItem | null => {
+    for (const item of items) {
+      if (item.type === 'audio' && item.quickPlay?.order === order) return item;
+      if (item.type === 'group') {
+        const nested = visit(item.children);
+        if (nested) return nested;
+      }
+    }
+    return null;
+  };
+  return visit(document.project.items);
+};
+
+const applyFields = (item: AudioItem, fields: QuickPlayMutableFields): void => {
+  if ('displayName' in fields) item.displayName = fields.displayName!;
+  if ('color' in fields) item.color = fields.color!;
+  if ('volume' in fields) item.volume = fields.volume!;
+  if ('playFade' in fields) item.playFade = fields.playFade!;
+  if ('stopFade' in fields) item.stopFade = fields.stopFade!;
+  if ('duckLevel' in fields) item.duckingBehavior.duckLevel = fields.duckLevel!;
+  if ('duckFadeIn' in fields) item.duckingBehavior.duckFadeIn = fields.duckFadeIn!;
+  if ('duckFadeOut' in fields) item.duckingBehavior.duckFadeOut = fields.duckFadeOut!;
+  // Keep null in the serialized item patch so the engine clears its old route.
+  if ('deviceOverride' in fields) item.deviceOverride = fields.deviceOverride || null;
+  if ('retrigger' in fields) item.quickPlay!.retrigger = fields.retrigger!;
+  if ('hotkey' in fields) {
+    item.quickPlay!.hotkey = fields.hotkey ? structuredClone(fields.hotkey) : null;
+  }
+  if ('playbackMode' in fields && fields.playbackMode !== getQuickPlayPlaybackMode(item)) {
+    setQuickPlayPlaybackMode(item, fields.playbackMode!);
+  }
+  if ('endMode' in fields && fields.endMode !== getQuickPlayEndMode(item)) {
+    setQuickPlayEndMode(item, fields.endMode!);
+  }
+};
+
+export const applyQuickPlayMutation = (
+  document: QuickPlayMutationDocument,
+  request: QuickPlayMutationRequest,
+): { accepted: boolean; error?: string } => {
+  if (!plainObject(request.payload)) return { accepted: false, error: 'Invalid mutation payload.' };
+  if (request.kind === 'replace-slot') {
+    const { slot, item: replacement } = request.payload;
+    if (Object.keys(request.payload).some(key => key !== 'slot' && key !== 'item')
+      || !validSlot(slot) || !validAudioReplacement(replacement, slot)) {
+      return { accepted: false, error: 'Invalid replacement payload.' };
+    }
+    if (document.quickPlayItems.has(replacement.uuid) || findItem(document.project.items, replacement.uuid)) {
+      return { accepted: false, error: 'Replacement cue already exists.' };
+    }
+    const copy = structuredClone(replacement);
+    const prior = findQuickPlayByOrder(document, slot);
+    if (prior && document.quickPlayItems.has(prior.uuid)) document.quickPlayItems.delete(prior.uuid);
+    else if (prior) delete prior.quickPlay;
+    document.quickPlayItems.set(copy.uuid, copy);
+    return { accepted: true };
+  }
+
+  const item = request.itemUuid ? findQuickPlay(document, request.itemUuid) : null;
+  if (!item) return { accepted: false, error: 'QuickPlay no longer exists.' };
+
+  switch (request.kind) {
+    case 'set-fields':
+      if (Object.keys(request.payload).some(key => key !== 'fields') || !validateFields(request.payload.fields)) {
+        return { accepted: false, error: 'Invalid QuickPlay fields.' };
+      }
+      applyFields(item, request.payload.fields);
+      return { accepted: true };
+    case 'move-slot': {
+      const { sourceSlot, targetSlot } = request.payload;
+      if (Object.keys(request.payload).some(key => key !== 'sourceSlot' && key !== 'targetSlot')
+        || !validSlot(sourceSlot) || !validSlot(targetSlot)
+        || item.quickPlay!.order !== sourceSlot) return { accepted: false, error: 'Invalid slot move.' };
+      const target = findQuickPlayByOrder(document, targetSlot);
+      item.quickPlay!.order = targetSlot;
+      if (target?.quickPlay) target.quickPlay.order = sourceSlot;
+      return { accepted: true };
+    }
+    case 'remove-slot':
+      if (Object.keys(request.payload).length !== 0) return { accepted: false, error: 'Invalid remove payload.' };
+      if (document.quickPlayItems.has(item.uuid)) document.quickPlayItems.delete(item.uuid);
+      else delete item.quickPlay;
+      return { accepted: true };
+  }
+};
+
+export interface DetachedMutationBridge {
+  requestQuickPlayMutation(request: QuickPlayMutationRequest): Promise<QuickPlayMutationResult>;
+}
+
+type WithoutMutationIdentity<Request> = Request extends unknown
+  ? Omit<Request, 'requestId' | 'identity'>
+  : never;
+export type QuickPlayMutationDraft = WithoutMutationIdentity<QuickPlayMutationRequest>;
+export type DetachedQuickPlayMutationClient = (
+  request: QuickPlayMutationDraft,
+) => Promise<QuickPlayMutationResult>;
+const toIpcDto = <Value>(value: Value): Value => JSON.parse(JSON.stringify(value)) as Value;
+
+export const createDetachedQuickPlayMutationClient = (
+  bridge: DetachedMutationBridge,
+  getIdentity: () => QuickPlayMutationIdentity | null,
+): DetachedQuickPlayMutationClient => {
+  let tail = Promise.resolve<unknown>(undefined);
+  return (request): Promise<QuickPlayMutationResult> => {
+    const identity = getIdentity();
+    const requestId = crypto.randomUUID();
+    if (!identity) return Promise.resolve({
+      requestId,
+      identity: { projectPath: '', projectEpoch: -1, ownerSessionId: '' },
+      accepted: false,
+      persisted: false,
+      error: 'The main project window is unavailable.',
+    });
+    const complete = async () => {
+      const mutation = toIpcDto({ ...request, requestId, identity } as QuickPlayMutationRequest);
+      const result = await bridge.requestQuickPlayMutation(mutation);
+      if (result.requestId !== requestId || !sameQuickPlayMutationIdentity(result.identity, identity)) {
+        return { requestId, identity, accepted: false, persisted: false, error: 'Stale mutation response.' };
+      }
+      return result;
+    };
+    const result = tail.then(complete, complete);
+    tail = result;
+    return result;
+  };
+};

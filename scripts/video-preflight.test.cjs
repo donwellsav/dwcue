@@ -24,6 +24,12 @@ if (process.versions.electron) {
 
     assert.equal(await check('good'), 'ok');
     assert.equal(await check('good', 1.25), 'ok');
+    // A file whose first picture is a little after zero plays, so it passes:
+    // the playhead settles on that first picture instead of exactly on zero.
+    assert.equal(await check('late'), 'ok');
+    // A picture Chromium cannot decode fails, and its converted copy passes.
+    assert.notEqual(await check('unsupported'), 'ok');
+    assert.equal(await check('converted'), 'ok');
     const lateFailure = check('good', 0.2, undefined, 5000, 1.6);
     const lateProbe = BrowserWindow.getAllWindows().find(win => win !== operator);
     const exec = lateProbe.webContents.executeJavaScript.bind(lateProbe.webContents);
@@ -78,9 +84,37 @@ if (process.versions.electron) {
     await encode('good.mp4', ['-i', 'testsrc2=size=320x180:rate=30', '-t', '2', '-an',
       '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart']);
     await encode('audio.mp4', ['-i', 'sine=frequency=440:sample_rate=48000', '-t', '2', '-c:a', 'aac']);
+    await encode('late.mp4', ['-i', 'testsrc2=size=320x180:rate=25', '-t', '2', '-an',
+      '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-output_ts_offset', '0.08']);
+    // MPEG-2 with sound: readable by the converter, not by Chromium.
+    await promisify(execFile)(ffmpeg, ['-hide_banner', '-loglevel', 'error',
+      '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=25', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000',
+      '-t', '2', '-c:v', 'mpeg2video', '-b:v', '1M', '-c:a', 'mp2', path.join(folder, 'unsupported.mpg')]);
+    const { convertVideoForOutput, convertedPathFor } = require('../client/electron/video-convert');
+    const source = path.join(folder, 'unsupported.mpg');
+    let progress = 0;
+    const made = await convertVideoForOutput({ ffmpegPath: ffmpeg, sourcePath: source, onProgress: value => { progress = value; } });
+    assert.deepEqual(made, { status: 'converted', path: convertedPathFor(source) });
+    assert.equal(progress, 1);
+    // The copy made from this file is used again rather than made twice.
+    assert.equal((await convertVideoForOutput({ ffmpegPath: ffmpeg, sourcePath: source })).status, 'reused');
+    // A copy is never converted again, and a stopped conversion leaves nothing behind.
+    assert.deepEqual(await convertVideoForOutput({ ffmpegPath: ffmpeg, sourcePath: made.path }),
+      { status: 'failed', reason: 'already-converted' });
+    await fs.copyFile(source, path.join(folder, 'stopped.mpg'));
+    const stop = new AbortController();
+    const stopped = convertVideoForOutput({ ffmpegPath: ffmpeg, sourcePath: path.join(folder, 'stopped.mpg'), signal: stop.signal });
+    setTimeout(() => stop.abort(), 30);
+    assert.deepEqual(await stopped, { status: 'canceled' });
+    assert.deepEqual((await fs.readdir(folder)).filter(name => name.startsWith('stopped')), ['stopped.mpg']);
+    assert.deepEqual(await convertVideoForOutput({ ffmpegPath: ffmpeg, sourcePath: path.join(folder, 'gone.mpg') }),
+      { status: 'failed', reason: 'missing' });
     const media = {
       '/good': await fs.readFile(path.join(folder, 'good.mp4')),
       '/audio': await fs.readFile(path.join(folder, 'audio.mp4')),
+      '/late': await fs.readFile(path.join(folder, 'late.mp4')),
+      '/unsupported': await fs.readFile(source),
+      '/converted': await fs.readFile(made.path),
       '/corrupt': Buffer.from('not a video'),
     };
     const server = http.createServer((request, response) => {

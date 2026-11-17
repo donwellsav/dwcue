@@ -39,6 +39,8 @@
       <!-- Appears the moment the socket drops; spins for as long as we retry. -->
       <ConnectionStatusPill />
 
+      <!-- The same controls in Edit Mode and Show Mode: nothing here changes
+           size, place or shape when the mode does. -->
       <Btn :text="t('settings.title')" :aria-expanded="showProjectSettings"
         @click="showProjectSettings = !showProjectSettings" />
       <Btn v-if="update.version" class="update-indicator" :text="t('update.updateAvailable')"
@@ -49,12 +51,7 @@
         :class="{ 'video-toggle--active': videoOutputOpen }"
         @click="toggleVideoOutput"
       />
-      <Btn
-        :text="t('levelCheck.title')"
-        :class="{ 'level-check-toggle--active': levelCheckActive }"
-        :disabled="levelCheckCount === 0"
-        @click="toggleLevelCheck"
-      />
+      <!-- Level Check and Pre-show check open from Settings › Audio Routing. -->
 
       <!-- Autosave toggle: on by default; when off the project is only saved
            via File > Save and an "Unsaved Changes" pill appears by the title. -->
@@ -73,8 +70,8 @@
         </span>
       </button>
 
-      <!-- Show Mode toggle: flips the whole workspace into the touch-friendly
-           playback layout (edit buttons hidden, larger touch targets) and back.
+      <!-- Show Mode toggle: takes the editing controls out of the workspace and
+           puts them back. Nothing changes size or place.
            Persisted per-device, not in the project. -->
       <button
         type="button"
@@ -101,6 +98,12 @@
           <span class="clock-label">{{ t('project.timeLeft') }}</span>
           <span class="clock-value" :style="{ color: timeLeftColor ?? undefined }">{{ timeLeft }}</span>
         </div>
+        <!-- Running time from here to the end of the playlist. -->
+        <div class="digital-clock clock--list-left" :class="listLeftSeconds === null ? 'clock--inactive' : 'clock--active'"
+          :title="t('project.listLeftHint')">
+          <span class="clock-label">{{ t('project.listLeft') }}</span>
+          <span class="clock-value">{{ listLeft }}</span>
+        </div>
         <div class="digital-clock clock--large clock--wall">
           <span class="clock-label">{{ t('project.clock') }}</span>
           <span class="clock-value">{{ currentTime }}</span>
@@ -118,12 +121,13 @@
 <script setup lang="ts">
 import Btn from './Btn.vue';
 import VideoConfidenceChip from './VideoConfidenceChip.vue';
-import { useVideoOutputToggle } from '~/composables/useCartHotkeys';
-import { countdownColorForSeconds, type AudioItem } from '~/types/project';
+import { useVideoOutputToggle } from '~/composables/useQuickPlayHotkeys';
+import { countdownColorForSeconds, countdownInk, type AudioItem } from '~/types/project';
+import { formatClockSeconds, playlistRemainingSeconds } from '~/utils/playlistRemaining';
 
-const { currentProject, findItemByUuid, findItemByIndex, autoSaveEnabled, hasUnsavedChanges, saveFailed, saveProject, setAutoSave } = useProject();
+const { currentProject, findItemByUuid, findItemByIndex, getAllItemsFlat, autoSaveEnabled, hasUnsavedChanges, saveFailed, saveProject, setAutoSave } = useProject();
 const { t } = useLocalization();
-const { activeCues } = useAudioEngine();
+const { activeCues, effectiveNextUuid } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
 const { warning, silenceRemaining } = useHeaderWarnings();
 
@@ -165,10 +169,19 @@ const timeLeft = computed(() => {
     ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
     : `${String(minutes).padStart(2, '0')}:${seconds}`;
 });
-const timeLeftColor = computed(() => countdownColorForSeconds(
+// List Left: the rest of the playing cue plus Up Next and all after it.
+const playlistFlat = computed(() => (currentProject.value ? getAllItemsFlat() : []));
+const listLeftSeconds = computed(() => playlistRemainingSeconds(
+  playlistFlat.value as AudioItem[],
+  [...activeCues.value.values()],
+  effectiveNextUuid.value,
+));
+const listLeft = computed(() => formatClockSeconds(listLeftSeconds.value));
+const theme = useState('theme', () => 'dark');
+const timeLeftColor = computed(() => countdownInk(countdownColorForSeconds(
   displayedRemainingSeconds.value,
   (currentProject.value as any)?.settings?.countdownColorBands,
-));
+), theme.value));
 
 // ---- Silence warning -------------------------------------------------------
 
@@ -319,21 +332,6 @@ let stopVideoStatus: (() => void) | null = null;
 
 const toggleVideoOutput = useVideoOutputToggle();
 
-// Level Check: soundcheck walk through each cue's loudest window on the
-// PROGRAM output (the external mixer must see it — preview routes elsewhere).
-// The bar lives in MainWorkspace; this only toggles the mode.
-const {
-  active: levelCheckActive,
-  items: levelCheckItems,
-  start: startLevelCheck,
-  exit: exitLevelCheck,
-} = useLevelCheck();
-const levelCheckCount = computed(() => levelCheckItems.value.length);
-const toggleLevelCheck = () => {
-  if (levelCheckActive.value) void exitLevelCheck();
-  else startLevelCheck();
-};
-
 onMounted(async () => {
   if (!import.meta.client || !(window as any).electronAPI?.videoOutput) return;
   const api = (window as any).electronAPI.videoOutput;
@@ -433,24 +431,24 @@ onMounted(() => {
 }
 
 /* Settings and shortcuts are useful, but the live clocks and transport own
-   this band. Keep these secondary controls quiet until the operator hovers. */
+   this band. Keep these secondary controls quiet: a hairline outline says
+   "button" without competing with the clocks. */
 .header-right :deep(.btn) {
   min-height: 32px;
   padding: 5px 8px;
   color: var(--color-text-secondary);
   background-color: transparent;
-  border-color: transparent;
+  border-color: var(--color-border);
   border-radius: var(--control-radius);
   box-shadow: none;
 }
 
-.header-right :deep(.video-toggle--active),
-.header-right :deep(.level-check-toggle--active) {
-  color: var(--color-accent);
+.header-right :deep(.video-toggle--active) {
+  color: var(--color-accent-text);
 }
 
 .header-right :deep(.update-indicator) {
-  color: var(--state-up-next);
+  color: var(--color-warning);
 }
 
 .header-right :deep(.btn:hover:not(:disabled)),
@@ -472,8 +470,8 @@ onMounted(() => {
   font-weight: 600;
   white-space: nowrap;
   flex-shrink: 0;
-  background-color: var(--state-up-next);
-  color: var(--state-up-next-text);
+  background-color: var(--color-warning);
+  color: var(--color-warning-text);
 }
 
 .save-failure {
@@ -572,6 +570,28 @@ onMounted(() => {
   width: clamp(104px, 9vw, 120px);
 }
 
+/* A smaller clock than Time Left: it is for planning, not for the next GO. */
+.clock--list-left .clock-value {
+  font-size: 18px;
+}
+
+.clock--list-left.clock--active .clock-value {
+  color: var(--color-text-primary);
+}
+
+/* A longer label in another language may widen the box a little, no more. */
+.clock--list-left {
+  max-width: 132px;
+}
+
+.clock--list-left .clock-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .clock--wall {
   color: var(--color-text-primary);
 }
@@ -584,8 +604,10 @@ onMounted(() => {
   color: color-mix(in srgb, var(--color-accent) 72%, var(--color-text-primary));
 }
 
+/* White while there is time in hand; the countdown colours take over near
+   the end. */
 .clock--time-left.clock--active .clock-value {
-  color: var(--state-playing);
+  color: var(--color-text-primary);
 }
 
 .clock--inactive {
@@ -598,9 +620,9 @@ onMounted(() => {
   align-items: center;
   gap: 3px;
   font-family: var(--font-mono);
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   line-height: 1;
   margin-bottom: 3px;
@@ -617,7 +639,7 @@ onMounted(() => {
 }
 
 .clock--large .clock-label {
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .clock--large .clock-value {
@@ -628,13 +650,13 @@ onMounted(() => {
   box-sizing: border-box;
   max-width: 100%;
   padding: var(--spacing-xs) var(--spacing-sm);
-  border: 2px solid var(--state-up-next);
+  border: 2px solid var(--color-warning);
   border-radius: var(--control-radius);
   background-color: var(--color-surface-raised);
   font-weight: 700;
   font-size: 14px;
   line-height: 1.25;
-  color: var(--state-up-next);
+  color: var(--color-warning);
 }
 
 .silence-warning__seconds {
@@ -642,6 +664,28 @@ onMounted(() => {
   inline-size: 2ch;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+/* List Left needs room: a mid-width window trims the two big clocks for it. */
+@media (max-width: 1480px) {
+  .digital-clock.clock--large {
+    width: 160px;
+    min-width: 160px;
+  }
+}
+
+/* The Video Output thumbnail takes the room List Left would have had, and a
+   narrow window keeps only the clocks a show cannot run without. Both modes. */
+@media (max-width: 1340px) {
+  .clock-pair:has(.confidence-chip) .clock--list-left {
+    display: none;
+  }
+}
+
+@media (max-width: 1200px) {
+  .clock--list-left {
+    display: none;
+  }
 }
 
 @media (max-width: 1320px) {

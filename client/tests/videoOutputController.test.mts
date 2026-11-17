@@ -80,11 +80,11 @@ function audioItem(
   };
 }
 
-function project(items: unknown[], cartOnlyItems: unknown[] = []) {
+function project(items: unknown[], quickPlayItems: unknown[] = []) {
   return {
     folderPath: '/shows/current',
     items,
-    cartOnlyItems,
+    quickPlayItems,
     settings: { videoStandbyImage: 'images/standby.png' },
   };
 }
@@ -223,25 +223,23 @@ function createHarness(initialProject: unknown, connected = true, captureApi = {
   };
 }
 
-test('session capture fills gaps while assigned cue art wins and cue switches clear old stills', async () => {
-  const still = (value: string) => 'data:image/jpeg;base64,' + value;
+test('the pictures shown are the ones saved in the show: the cue picture, else the standby picture', async () => {
+  // A captured picture is saved into the show and set as one of these two, so
+  // nothing held outside the show can appear on the output.
+  let asked = 0;
   const h = createHarness({
-    ...project([audioItem('authored', { imagePath: 'images/manual.png' }), audioItem('captured')]),
+    ...project([audioItem('authored', { imagePath: 'images/manual.png' }), audioItem('plain')]),
     server: { projectSessionId: 'show' },
-  }, true, {
-    getStandbyCapture: async (session: string, uuid: string | null) => {
-      assert.equal(session, 'show');
-      return { standby: still('session'), cue: uuid ? still(uuid) : null };
-    },
-  });
+  }, true, { getStandbyCapture: async () => { asked += 1; return { standby: 'data:x', cue: 'data:y' }; } });
   await flush();
-  assert.equal(h.controller.standbySrc.value, still('session'));
-  h.emitCue(snapshotCue('captured', 'cue1', 1));
+  assert.match(h.controller.standbySrc.value ?? '', /standby\.png/);
+  h.emitCue(snapshotCue('plain', 'cue1', 1));
   await flush();
-  assert.equal(h.controller.cueImageSrc.value, still('captured'));
+  assert.equal(h.controller.cueImageSrc.value, null);
   h.emitCue(snapshotCue('authored', 'cue2', 2));
   await flush();
   assert.match(h.controller.cueImageSrc.value ?? '', /manual\.png/);
+  assert.equal(asked, 0);
   h.stop();
 });
 
@@ -559,30 +557,30 @@ test('an old document fetch cannot restore projection after project close', asyn
   h.stop();
 });
 
-test('resolves canonical group children and cart-only video through item_uuid', async () => {
+test('resolves canonical group children and QuickPlay-only video through item_uuid', async () => {
   const groupChild = audioItem('group-child', { hasVideo: true, mediaPath: 'media/group.mp4' });
-  const cartOnly = audioItem('cart-only', {
+  const quickPlayOnly = audioItem('quickplay-only', {
     hasVideo: true,
-    mediaServerPath: '/Volumes/media/cart.mp4',
+    mediaServerPath: '/Volumes/media/quickplay.mp4',
   });
   const harness = createHarness(project([{
     uuid: 'group',
     type: 'group',
     children: [groupChild],
-  }], [cartOnly]));
+  }], [quickPlayOnly]));
   await flush();
 
   harness.emitSnapshot({
-    cues: [snapshotCue('group-child', 'cue-group', 1, 2), snapshotCue('cart-only', 'cue-cart', 2, 3)],
+    cues: [snapshotCue('group-child', 'cue-group', 1, 2), snapshotCue('quickplay-only', 'cue-quickplay', 2, 3)],
     preview: null,
     next_item_uuid: '',
   });
   await flush();
 
-  const cartUrl = new URL(harness.controller.videoSrc.value!);
-  assert.equal(cartUrl.pathname, '/api/media');
-  assert.equal(cartUrl.searchParams.get('item_uuid'), 'cart-only');
-  assert.equal(cartUrl.searchParams.has('path'), false, 'absolute server paths never leak into video URLs');
+  const quickPlayUrl = new URL(harness.controller.videoSrc.value!);
+  assert.equal(quickPlayUrl.pathname, '/api/media');
+  assert.equal(quickPlayUrl.searchParams.get('item_uuid'), 'quickplay-only');
+  assert.equal(quickPlayUrl.searchParams.has('path'), false, 'absolute server paths never leak into video URLs');
 
   harness.emitCue(snapshotCue('group-child', 'cue-group', 3, 6));
   assert.equal(new URL(harness.controller.videoSrc.value!).searchParams.get('item_uuid'), 'group-child');

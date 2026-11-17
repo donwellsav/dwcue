@@ -13,7 +13,7 @@
 <script setup lang="ts">
 withDefaults(defineProps<{
   icon?: string;
-  symbol?: 'preview' | 'one-shots' | 'ltc' | 'video-output';
+  symbol?: 'preview' | 'quickplays' | 'ltc' | 'video-output';
   text: string;
   disabled?: boolean;
 }>(), {

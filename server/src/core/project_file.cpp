@@ -1,6 +1,7 @@
 #include "liveplay/core/project_file.hpp"
 
-#include "liveplay/core/one_shot_migration.hpp"
+#include "liveplay/core/legacy_quick_play_names.hpp"
+#include "liveplay/core/quick_play_migration.hpp"
 #include "liveplay/util/unicode_path.hpp"
 
 #include <algorithm>
@@ -134,9 +135,10 @@ bool is_client_document(const json& document) {
             return true;
         }
     }
-    return document.contains("cartItems") ||
-           document.contains("cartSlotKeys") ||
-           document.contains("cartOnlyItems");
+    return document.contains("quickPlaySlots") ||
+           document.contains("quickPlaySlotKeys") ||
+           document.contains("quickPlayItems") ||
+           has_legacy_quick_play_names(document);
 }
 
 DocumentRepair repair_client_document(json& document) {
@@ -161,8 +163,8 @@ DocumentRepair repair_client_document(json& document) {
         }
     }
 
-    if (document.contains("cartOnlyItems") &&
-        document["cartOnlyItems"].is_array()) {
+    if (document.contains("quickPlayItems") &&
+        document["quickPlayItems"].is_array()) {
         std::unordered_set<std::string> seen;
         if (document.contains("items")) {
             std::unordered_map<std::string, int> counts;
@@ -170,12 +172,12 @@ DocumentRepair repair_client_document(json& document) {
             for (const auto& [uuid, _] : counts) seen.insert(uuid);
         }
         const int removed =
-            remove_duplicate_items(document["cartOnlyItems"], seen);
+            remove_duplicate_items(document["quickPlayItems"], seen);
         if (removed > 0) {
             repair.repaired = true;
             repair.issues.push_back(
                 "Removed " + std::to_string(removed) +
-                " duplicate item(s) from the cart");
+                " duplicate item(s) from QuickPlay");
         }
     }
 
@@ -194,6 +196,9 @@ bool prepare_client_document(
 
     prepared = PreparedDocument{};
     prepared.document = source;
+    // Old shows enter here under their old field names. From this line on the
+    // document, and everything the engine does with it, uses only current names.
+    convert_legacy_quick_play_names(prepared.document);
     if (folder_override) {
         prepared.document["folderPath"] =
             util::path_to_utf8(*folder_override);
@@ -226,8 +231,8 @@ bool prepare_client_document(
             }
         };
         if (prepared.document.contains("items")) validate_items(prepared.document["items"]);
-        if (prepared.document.contains("cartOnlyItems") && prepared.document["cartOnlyItems"].is_array())
-            validate_items(prepared.document["cartOnlyItems"]);
+        if (prepared.document.contains("quickPlayItems") && prepared.document["quickPlayItems"].is_array())
+            validate_items(prepared.document["quickPlayItems"]);
         if (prepared.document.contains("settings") && prepared.document["settings"].is_object()) {
             const auto& settings = prepared.document["settings"];
             (void)settings.value("outputTarget", std::string{"ebu-r128"});
@@ -239,7 +244,7 @@ bool prepare_client_document(
                     (void)settings["meterBallisticsCustom"].value(key, 1.0);
             }
         }
-        prepared.cart_migrated = migrate_legacy_cart_to_one_shots(prepared.document);
+        prepared.quick_play_migrated = migrate_to_independent_quick_plays(prepared.document);
         prepared.repair = repair_client_document(prepared.document);
     } catch (const std::exception& ex) {
         error = ex.what();
@@ -254,9 +259,9 @@ bool prepare_client_document(
             {"ltcDevice", nullptr},
         };
     }
-    if (!prepared.document.contains("cartOnlyItems") ||
-        !prepared.document["cartOnlyItems"].is_array()) {
-        prepared.document["cartOnlyItems"] = json::array();
+    if (!prepared.document.contains("quickPlayItems") ||
+        !prepared.document["quickPlayItems"].is_array()) {
+        prepared.document["quickPlayItems"] = json::array();
     }
     if (!prepared.document.contains("theme") ||
         !prepared.document["theme"].is_object()) {

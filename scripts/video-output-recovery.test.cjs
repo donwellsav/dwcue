@@ -20,7 +20,12 @@ async function runElectronFixture() {
     'restartVideoOutputWindow', 'requireVideoOutputIpc', 'startVideoOutputFrames',
     'stopVideoOutputFrames', 'createVideoOutputWindow', 'closeVideoOutputWindow',
     'orderedVideoOutputDisplays', 'videoOutputDisplays', 'closeDisplayIdentifierWindows',
-    'escapeDisplayIdentifierText', 'identifyVideoOutputDisplays'];
+    'escapeDisplayIdentifierText', 'identifyVideoOutputDisplays', 'resetVideoOutputGeometry'];
+  // Opening and closing the output reset its coverage-check state.
+  const geometryState = ast.statements.filter(node => ts.isVariableStatement(node) &&
+    node.declarationList.declarations.every(declaration =>
+      /^(newVideoOutputGeometry|videoOutputGeometry)$/.test(declaration.name.getText(ast))))
+    .map(node => node.getText(ast)).join('\n');
   const fixturePath = path.join(root, 'output.html');
   fs.writeFileSync(fixturePath, '<!doctype html><title>Isolated output recovery test</title><body style="background:#900"></body>');
   let operator;
@@ -39,11 +44,12 @@ async function runElectronFixture() {
     videoOutputWindowsPreservingSession: new WeakSet(),
     testCardPlayback: { update: async () => {} }, reconcileTestCardPlayback() {},
     shouldForwardVideoOutputShortcut: () => false, showVideoOutputContextMenu() {},
+    ...require('../client/electron/video-output-window'), process,
     videoOutputStatus: () => ({ open: !!context.videoOutputWindow, recoveryRequired: context.videoOutputRecoveryRequired }),
     broadcastVideoOutputStatus: () => context.videoOutputStatus(),
     console, Date, setInterval, clearInterval, setTimeout, clearTimeout,
   };
-  vm.runInNewContext(functions.filter(node => names.includes(node.name?.text))
+  vm.runInNewContext(geometryState + '\n' + functions.filter(node => names.includes(node.name?.text))
     .map(node => node.getText(ast)).join('\n'), context);
   ipcMain.handle('video-output:identify-displays', context.identifyVideoOutputDisplays);
   if (context.markVideoOutputReady) ipcMain.handle('video-output:renderer-ready', context.markVideoOutputReady);

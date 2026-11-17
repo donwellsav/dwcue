@@ -10,9 +10,11 @@
       'is-sticky-group': item.type === 'group' && isExpanded && depth === 0,
       'is-audio': item.type === 'audio',
       'is-playing': isPlaying,
+      'no-preview-lane': item.type === 'audio' && !hasPreviewDevice,
       'is-paused': isPaused,
       'is-up-next': isQueuedNext,
       'show-mode': showMode,
+      'is-search-hit': isSearchHit,
       'drag-over-top': dragPosition === 'top',
       'drag-over-bottom': dragPosition === 'bottom',
       'drag-over-group': dragPosition === 'group',
@@ -51,7 +53,7 @@
     <div
       class="item-content"
       @click="handleSelect"
-      :draggable="!showMode"
+      :draggable="!showMode && !editingNote"
       @dragstart="handleDragStart"
       @dragend="handleDragEnd"
     >
@@ -90,8 +92,10 @@
             :aria-pressed="isManuallyQueued"
           />
         </div>
+        <!-- Without a preview device the headphones button has nothing to do;
+             it is left out and the title takes its lane. -->
         <ActionButton
-          v-if="item.type === 'audio'"
+          v-if="item.type === 'audio' && hasPreviewDevice"
           class="preview-action"
           symbol="preview"
           highlight-color="var(--state-preview)"
@@ -109,16 +113,33 @@
             <span class="material-symbols-rounded" aria-hidden="true">folder</span>
           </span>
 
+          <!-- A note rides with the title on the playlist only: it is not the
+               cue's name, is not shown on the transport, QuickPlays or the
+               video output, and never touches the media file. Double-click
+               the title (or F2) to write one in Edit Mode. -->
+          <input
+            v-if="editingNote"
+            ref="noteInput"
+            v-model="noteDraft"
+            class="item-name item-name--editing"
+            type="text"
+            maxlength="120"
+            :placeholder="t('playlist.notePlaceholder', { name: item.displayName })"
+            :aria-label="t('playlist.notePlaceholder', { name: item.displayName })"
+            @click.stop @dblclick.stop @pointerdown.stop @mousedown.stop
+            @keydown.stop="onNoteKeydown" @keyup.stop
+            @blur="commitNote"
+          />
           <button
-            v-if="mediaFileName && mediaFileName !== item.displayName"
+            v-else-if="mediaFileName && mediaFileName !== item.displayName"
             type="button"
             class="item-name"
             :aria-pressed="showFileName"
-            :title="[visibleTitle, t(showFileName ? 'actions.showCueTitle' : 'actions.showMediaFilename')].join('\n')"
-            :style="{ color: durationColor ?? undefined }"
+            :title="[visibleTitle, item.note, t(showFileName ? 'actions.showCueTitle' : 'actions.showMediaFilename'), showMode ? '' : t('playlist.noteHint')].filter(Boolean).join('\n')"
             @click="toggleFileName"
-          >{{ visibleTitle }}</button>
-          <span v-else class="item-name" :title="item.displayName" :style="{ color: durationColor ?? undefined }">{{ item.displayName }}</span>
+            @dblclick.stop="startNote"
+          >{{ visibleTitle }}<span v-if="item.note" class="item-note">{{ item.note }}</span></button>
+          <span v-else class="item-name" :title="[item.displayName, item.note, showMode ? '' : t('playlist.noteHint')].filter(Boolean).join('\n')" @dblclick.stop="startNote">{{ item.displayName }}<span v-if="item.note" class="item-note">{{ item.note }}</span></span>
           <span
             v-if="isPeaking"
             class="material-symbols-rounded peak-warning-icon"
@@ -132,7 +153,7 @@
 
         <div class="item-state">
           <span v-if="isPaused" class="status-pill paused">{{ t('status.paused') }}</span>
-          <span v-else-if="isPlaying" class="status-pill playing" :style="{ backgroundColor: durationColor ?? undefined }">{{ t('status.playing') }}</span>
+          <span v-else-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
           <span v-if="isPreviewing" class="status-pill preview">{{ t('status.previewing') }}</span>
 
           <!-- Behavior indicators (for audio items) -->
@@ -185,6 +206,9 @@
               :title="t('behaviors.endLoop')"
             >replay</span>
           </div>
+          <!-- Level, on every row: a cue's Volume or a group's Group level,
+               the same values Properties edits (see ItemLevel). -->
+          <ItemLevel :item="item" :read-only="showMode" :disabled="!projectControlsReady" />
         </div>
 
         <span v-if="item.type === 'audio'" class="item-duration" :style="{ color: durationColor ?? undefined }">{{ durationDisplay }}</span>
@@ -208,13 +232,15 @@
           :disabled="item.children.length < 2 || shufflePending || !projectControlsReady || server.cueStartsBlocked"
           @click.stop="shuffleItems(item, status => showHeaderWarning(t(`shuffle.${status}`)))"
         />
+        <!-- Show Mode: the shuffle button's place, kept empty. -->
+        <span v-else-if="item.type === 'group'" class="group-shuffle-action group-shuffle-action--place" aria-hidden="true"></span>
 
         <div class="item-transport">
           <ActionButton
             v-if="item.type === 'group' && ((groupBackup?.type === 'group' && groupBackup.uuid !== item.uuid) || item.keepMusicGoing)"
             class="group-music-toggle"
             icon="music_note"
-            highlight-color="var(--state-playing)"
+            highlight-color="var(--state-ready)"
             active-text-color="var(--color-background)"
             type="button"
             :is-active="item.keepMusicGoing === true"
@@ -229,7 +255,7 @@
             v-if="isPlaying && item.type === 'audio'"
             class="restart-action"
             icon="restart_alt"
-            :highlight-color="durationColor ?? 'var(--state-playing)'"
+            highlight-color="var(--color-text-secondary)"
             context="Playlist"
             type="button"
             @click.stop="handleRestart"
@@ -238,8 +264,9 @@
           />
           <ActionButton
             class="play-action"
+            :class="{ 'is-stop': isPlaying }"
             :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :highlight-color="isPlaying ? 'var(--color-danger)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-playing)')"
+            :highlight-color="isPlaying ? 'var(--stop-edge)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-ready)')"
             context="Playlist"
             @click.stop="isPlaying ? handleStop() : handlePlay()"
             :title="isPlaying ? t('actions.stop') : t('actions.play')"
@@ -249,8 +276,11 @@
         <!-- Keep transport beside the clock, with Play Next in the far-right
              arm lane; preview remains beside the cue number and edit/delete
              stay hidden in Show Mode. -->
-        <div v-if="!showMode" class="item-actions">
+        <!-- The lane is always there, so nothing beside it moves when Show
+             Mode takes the two buttons out. -->
+        <div class="item-actions" :class="{ 'item-actions--single': !isSelected }">
           <ActionButton
+            v-if="!showMode"
             class="edit-action"
             icon="settings"
             highlight-color="var(--color-accent)"
@@ -259,7 +289,9 @@
             :title="t('actions.edit')"
           />
           <ActionButton
+            v-if="!showMode"
             class="delete-action"
+            :class="{ 'delete-action--parked': !isSelected }"
             icon="delete"
             highlight-color="var(--color-danger)"
             context="Playlist"
@@ -282,11 +314,12 @@
 </template>
 
 <script setup lang="ts">
-import { countdownColorForSeconds, type AudioItem, type GroupItem, type BaseItem } from '~/types/project';
+import { countdownColorForSeconds, countdownInk, type AudioItem, type GroupItem, type BaseItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
+import ItemLevel from './ItemLevel.vue';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
 import { exceedsTruePeakCeiling } from '~/utils/audio';
-import { cloneAsPlaylistItem } from '~/utils/oneShots';
+import { cloneAsPlaylistItem } from '~/utils/quickPlays';
 
 const props = defineProps<{
   item: AudioItem | GroupItem;
@@ -347,6 +380,44 @@ const { uiMode } = useUiMode();
 // and warnings identical to edit mode.
 const showMode = computed(() => uiMode.value === 'playback');
 const projectControlsReady = computed(() => projectHydrationStatus.value === 'ready');
+
+// The row the playlist search jumped to (see PlaylistSearch).
+const searchHit = useState<string | null>('playlistSearchHit', () => null);
+const isSearchHit = computed(() => searchHit.value === props.item.uuid);
+
+// Playlist note: an optional line beside the title. It is its own field, so
+// the cue's title and the media file's name stay exactly as they are.
+const editingNote = ref(false);
+const noteDraft = ref('');
+const noteInput = ref<HTMLInputElement | null>(null);
+const noteEditRequest = useState<string | null>('playlistNoteEditRequest', () => null);
+function startNote() {
+  if (showMode.value || !projectControlsReady.value || editingNote.value) return;
+  noteDraft.value = props.item.note ?? '';
+  editingNote.value = true;
+  void nextTick(() => { noteInput.value?.focus(); noteInput.value?.select(); });
+}
+function commitNote() {
+  if (!editingNote.value) return;
+  editingNote.value = false;
+  const note = noteDraft.value.trim();
+  if (note === (props.item.note ?? '')) return;
+  if (note) props.item.note = note;
+  else delete props.item.note;          // clearing the field removes the note
+  void saveProject();
+}
+function onNoteKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') { event.preventDefault(); commitNote(); }
+  // Escape only abandons the edit here; it is not Stop All while a note is open.
+  else if (event.key === 'Escape') { event.preventDefault(); editingNote.value = false; }
+}
+// F2 on the selected row (see MainWorkspace).
+watch(noteEditRequest, (uuid) => {
+  if (uuid !== props.item.uuid) return;
+  noteEditRequest.value = null;
+  startNote();
+});
+
 
 const { isRevealed, forgetReveal } = usePlaylistReveal();
 
@@ -606,15 +677,16 @@ const playbackDuration = computed(() => {
   }
   return 0;
 });
+const theme = useState('theme', () => 'dark');
 const durationColor = computed(() => {
   if (!isPlaying.value || props.item.type !== 'audio') return null;
   const duration = playbackDuration.value;
   const current = currentPlaybackTime.value;
   if (!Number.isFinite(duration) || !Number.isFinite(current) || duration <= 0) return null;
-  return countdownColorForSeconds(
+  return countdownInk(countdownColorForSeconds(
     Math.max(0, Math.ceil(duration - current)),
     (currentProject.value as any)?.settings?.countdownColorBands,
-  );
+  ), theme.value);
 });
 const playbackProgress = computed(() => {
   const d = playbackDuration.value;
@@ -637,8 +709,7 @@ const warningState = computed(() => {
 const itemStyle = computed(() => {
   const depthOffset = props.depth > 0 ? 24 : 0;
   return {
-    marginLeft: showMode.value ? '0px' : `${depthOffset}px`,
-    '--item-depth-offset': `${depthOffset}px`,
+    marginLeft: `${depthOffset}px`,
     '--folder-background': 'var(--color-surface-raised)',
     '--waveform-color': props.item.color || 'var(--color-text-tertiary)',
   };
@@ -722,7 +793,7 @@ const handleDragStart = (e: DragEvent) => {
     e.dataTransfer.setData('item-uuid', props.item.uuid);
     e.dataTransfer.setData('playlist-reorder', 'true');
     if (props.item.type === 'audio') {
-      // One Shot targets use this explicit type to treat a playlist drag as
+      // QuickPlay targets use this explicit type to treat a playlist drag as
       // a copy while playlist rows continue to use item-uuid for reordering.
       e.dataTransfer.setData('playlist-audio-uuid', props.item.uuid);
     }
@@ -752,8 +823,8 @@ const handleDragOver = (e: DragEvent) => {
   }
   if (!e.dataTransfer) return;
   
-  const isOneShotCopy = e.dataTransfer.types.includes('one-shot-uuid');
-  e.dataTransfer.dropEffect = isOneShotCopy ? 'copy' : 'move';
+  const isQuickPlayCopy = e.dataTransfer.types.includes('quickplay-uuid');
+  e.dataTransfer.dropEffect = isQuickPlayCopy ? 'copy' : 'move';
   
   // Determine drop position based on mouse position
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -786,60 +857,18 @@ const handleDrop = (e: DragEvent) => {
   if (showMode.value) return;
   if (!e.dataTransfer || !currentProject.value) return;
 
-  // A One Shot dragged back into the playlist creates a normal playlist cue
+  // A QuickPlay dragged back into the playlist creates a normal playlist cue
   // and leaves the source cell armed. This is intentionally a copy: the live
   // quick-fire surface must not disappear because a tech reorganized a show.
-  const oneShotUuid = e.dataTransfer.getData('one-shot-uuid');
-  if (oneShotUuid) {
-    if (oneShotUuid === props.item.uuid) return;
-    const source = findItemByUuid(oneShotUuid);
+  const quickPlayUuid = e.dataTransfer.getData('quickplay-uuid');
+  if (quickPlayUuid) {
+    if (quickPlayUuid === props.item.uuid) return;
+    const source = findItemByUuid(quickPlayUuid);
     if (!source || source.type !== 'audio') return;
     insertPlaylistCloneAtTarget(
       cloneAsPlaylistItem(source as AudioItem, crypto.randomUUID()),
       e,
     );
-    return;
-  }
-
-  // A cart slot dragged onto the playlist → promote it to an independent
-  // playlist item (fresh uuid) and free the cart slot. A cart cue is a
-  // self-contained copy, so this mirrors the playlist→cart clone in reverse
-  // (rather than sharing one identity across both lists). Detected via the
-  // 'cart-slot' payload that only CartSlot sets.
-  if (e.dataTransfer.getData('cart-slot')) {
-    const cartUuid = e.dataTransfer.getData('item-uuid');
-    const cartSrc = findItemByUuid(cartUuid);
-    if (!cartSrc || cartSrc.type !== 'audio') return;
-
-    const clone: AudioItem = { ...(cartSrc as AudioItem), uuid: crypto.randomUUID() } as AudioItem;
-
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const height = rect.height;
-    const { updateIndices, deleteCartItems } = useProject();
-
-    if (props.item.type === 'group' && y > height * 0.3 && y < height * 0.7) {
-      const groupItem = props.item as GroupItem;
-      groupItem.children.push(clone);
-      updateIndices(groupItem.children, groupItem.index);
-    } else {
-      const insertAfter = y >= height / 2;
-      let parentArray = currentProject.value.items;
-      let parentIndex: number[] = [];
-      if (props.item.index.length > 1) {
-        const parentGroup = findItemByIndex(props.item.index.slice(0, -1));
-        if (parentGroup && parentGroup.type === 'group') {
-          parentArray = (parentGroup as GroupItem).children;
-          parentIndex = (parentGroup as GroupItem).index;
-        }
-      }
-      const pos = parentArray.findIndex(i => i.uuid === props.item.uuid);
-      parentArray.splice(insertAfter ? pos + 1 : pos, 0, clone);
-      updateIndices(parentArray, parentIndex);
-    }
-
-    // Unassign the originating cart slot (also persists via saveProject).
-    deleteCartItems([cartUuid]);
     return;
   }
 
@@ -997,7 +1026,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 <style scoped>
 .playlist-item {
   --current-playlist-row-height: var(--playlist-row-height, 44px);
-  --folder-play-action: color-mix(in srgb, var(--state-playing) 82%, var(--color-accent));
+  --folder-play-action: color-mix(in srgb, var(--state-ready) 82%, var(--color-accent));
   --folder-next-action: color-mix(in srgb, var(--state-up-next) 84%, var(--color-accent));
   --cue-cell-height: 28px;
   --cue-text-size: 16px;
@@ -1082,15 +1111,69 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 }
 
 .playlist-item.is-up-next:not(.is-playing) {
-  border-color: color-mix(in srgb, var(--state-up-next) 72%, var(--color-border));
+  /* Next: var(--state-up-next) as a green edge and a green number chip. The
+     title stays white: words are easier to read in white than in colour. */
+  border-color: var(--state-up-next);
+  box-shadow: inset 0 0 0 2px var(--state-up-next);
 }
 
 .playlist-item.is-playing {
-  border-color: color-mix(in srgb, var(--state-playing) 78%, var(--color-border));
+  /* On air: var(--state-playing) as a red edge, a red number chip and the
+     Playing badge. The row stays dark and its words stay white, which is the
+     easiest thing to read; solid colour is what the eye finds. */
+  border-color: var(--state-playing-edge);
+  box-shadow:
+    inset 0 0 0 3px var(--state-playing-edge),
+    0 0 12px color-mix(in srgb, var(--state-playing-edge) 45%, transparent);
+  z-index: 1;
+}
+
+/* Stop on the live row: the striped edge of Stop All, never the live red. */
+.playlist-item .item-transport .play-action.is-stop.is-stop {
+  border: var(--stop-button-border);
+  background: var(--stop-button-background);
+  color: var(--stop-edge);
+}
+
+/* The cue number becomes a solid chip: red on air, green for what is next. */
+.playlist-item.is-playing:not(.is-paused) > .item-content .item-index {
+  border-color: var(--state-playing);
+  background: var(--state-playing);
+  color: var(--state-playing-on);
+}
+
+.playlist-item.is-up-next:not(.is-playing) > .item-content .item-index {
+  border-color: var(--state-up-next);
+  background: var(--state-up-next);
+  color: var(--state-up-next-text);
+}
+
+/* A shape as well as a colour, for anyone who cannot tell red from green: a
+   play arrow on the live chip, and on the chip of what is next the same
+   double arrow as the Play Next button. */
+.playlist-item.is-playing:not(.is-paused) > .item-content .item-index::before,
+.playlist-item.is-up-next:not(.is-playing) > .item-content .item-index::before {
+  content: 'play_arrow' / '';
+  flex: none;
+  margin-inline: -3px 1px;
+  font-family: 'Material Symbols Rounded';
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  font-variation-settings: 'FILL' 1;
+  font-feature-settings: 'liga';
+}
+
+.playlist-item.is-up-next:not(.is-playing) > .item-content .item-index::before {
+  content: 'fast_forward' / '';
 }
 
 .playlist-item.is-playing.is-paused {
   border-color: var(--color-text-tertiary);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 3px var(--color-text-tertiary);
 }
 
 .playlist-item.is-group + .playlist-item.is-group {
@@ -1258,6 +1341,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   grid-template-columns: var(--cue-number-width, 36px) max-content minmax(0, 1fr);
 }
 
+
 .item-index {
   grid-column: 1;
   justify-content: center;
@@ -1393,7 +1477,7 @@ button.item-name {
   justify-self: start;
   max-width: 100%;
   box-sizing: border-box;
-  color: var(--state-playing);
+  color: var(--color-text-primary);
 }
 
 .playlist-item.is-paused > .item-content .item-name {
@@ -1422,8 +1506,9 @@ button.item-name {
   font-size: var(--cue-text-size);
   font-weight: 700;
   letter-spacing: 0.04em;
-  color: var(--color-danger);
-  border-color: color-mix(in srgb, var(--color-danger) 70%, var(--color-border));
+  /* Neutral: red on a row means it is live. Only a failed check turns red. */
+  color: var(--color-text-secondary);
+  border-color: var(--color-border-strong);
   flex-shrink: 0;
   cursor: default;
   line-height: 1;
@@ -1431,6 +1516,7 @@ button.item-name {
 .video-badge-icon--failed {
   background: color-mix(in srgb, var(--color-danger) 20%, var(--color-control));
   border-color: var(--color-danger);
+  color: var(--color-danger);
 }
 
 .item-state {
@@ -1456,7 +1542,7 @@ button.item-name {
   /* Fixed-width, right-aligned column so the leading "-" shown during the
      playing countdown widens the text without shoving the flags around, and
      so the duration lines up vertically from row to row. */
-  min-width: 3.5em;
+  min-width: min(3.5em, var(--cue-time-width, 96px));
   text-align: right;
   flex-shrink: 0;
 }
@@ -1493,7 +1579,7 @@ button.item-name {
 
   &.playing {
     background-color: var(--state-playing);
-    color: black;
+    color: var(--state-playing-on);
   }
 
 
@@ -1524,7 +1610,7 @@ button.item-name {
 
 .item-left :deep(.action-btn--playlist) {
   height: var(--cue-cell-height);
-  min-height: 26px;
+  min-height: 32px;
 }
 
 .item-left :deep(.set-next-action.action-btn--playlist) {
@@ -1544,9 +1630,25 @@ button.item-name {
 }
 
 .preview-action { grid-area: expand; }
+
+/* The leading lane stays in the grid (groups keep their arrow there); a cue
+   with no headphones button lets its number and title slide into it. */
+.playlist-item.no-preview-lane > .item-content .item-identity {
+  --freed-lane: calc(var(--cue-leading-width, 34px) + var(--row-lane-gap, var(--spacing-sm)));
+  margin-left: calc(-1 * var(--freed-lane));
+  width: calc(100% + var(--freed-lane));
+  max-width: none;
+}
+
 .group-shuffle-action {
   grid-area: video;
   justify-self: end;
+}
+
+/* Show Mode: the button's place without the button. */
+.group-shuffle-action--place {
+  width: 32px;
+  height: 32px;
 }
 
 .group-shuffle-action:disabled {
@@ -1565,8 +1667,53 @@ button.item-name {
 
 .play-action,
 .group-music-toggle { flex-shrink: 0; }
-.edit-action { grid-column: 1; }
-.delete-action { grid-column: 2; }
+/* Delete sits away from Play, with Edit between them, and is offered only on
+   a selected row: the row a stray click lands on is rarely the selected one. */
+.delete-action { grid-column: 1; grid-row: 1; }
+.edit-action { grid-column: 2; grid-row: 1; }
+/* An unselected row gives Delete's place back to the title. */
+.delete-action--parked { display: none; }
+.item-actions--single { grid-template-columns: 32px; }
+.item-actions--single .edit-action { grid-column: 1; }
+
+/* The note reads as an aside to the title, not as part of the name. */
+.item-note {
+  margin-inline-start: 0.6em;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  font-size: 0.86em;
+}
+
+.item-note::before {
+  content: '— ';
+  color: var(--color-text-tertiary);
+}
+
+.item-name--editing {
+  width: 100%;
+  min-width: 12ch;
+  padding: 2px 6px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--control-radius);
+  background: var(--color-control);
+  color: var(--color-text-primary);
+  font: inherit;
+  cursor: text;
+}
+
+.item-name--editing:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Search hit: a ring just inside the row's own edge, so the red of a live row
+   and the green of Up Next still show around it. The focus-ring colour, not the
+   accent: an operator may pick a red, green or yellow accent, and those colours
+   mean live, Up Next and warning here. */
+.playlist-item.is-search-hit > .item-content {
+  outline: 3px solid var(--color-focus-ring);
+  outline-offset: -6px;
+}
 
 .playlist-item:not(.show-mode) .item-actions,
 .playlist-item:not(.show-mode) .item-arm {
@@ -1593,166 +1740,26 @@ button.item-name {
   padding-top: 2px;
 }
 
-.playlist-item:not(.show-mode) > .group-children {
+.playlist-item > .group-children {
   padding-left: var(--spacing-md);
 }
 
-.playlist-item:not(.show-mode).is-group > .item-content .expand-btn {
+.playlist-item.is-group > .item-content .expand-btn {
   /* Keep the arrow aligned to the child rail without covering the number. */
   transform: translateX(min(10px, calc(2px + var(--folder-column-gap, var(--spacing-sm)))));
 }
 
-/* ------------------------------------------------------------------ */
-/* Show Mode — larger, touch-friendly rows. Same operator information, */
-/* bigger hit areas: taller rows, stable number/time lanes, and chunky */
-/* play/stop / set-next buttons. The independent cue-colour rail,      */
-/* waveform, behavior flags, and warnings remain visible.              */
-/* ------------------------------------------------------------------ */
-.playlist-item.show-mode {
-  --current-playlist-row-height: var(--show-playlist-row-height, 68px);
-  --cue-leading-width: 44px;
-
-  .item-content {
-    padding: 6px var(--spacing-md);
-  }
-
-  .item-color-rail {
-    left: var(--item-depth-offset, 0px);
-  }
-
-  &.is-group {
-    --current-playlist-row-height: var(--folder-playlist-row-height, 60px);
-  }
-  .item-left {
-    grid-template-columns: 44px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
-    grid-template-areas: 'expand identity state video actions transport duration arm';
-    gap: var(--spacing-sm);
-  }
-
-  .expand-btn {
-    width: 44px;
-    height: 44px;
-
-    .material-symbols-rounded {
-      font-size: 24px;
-    }
-  }
-
-  &.is-group .expand-btn {
-    transform: translateX(-8px);
-  }
-
-  .item-identity {
-    gap: var(--spacing-sm);
-  }
-
-  .item-index {
-    font-size: 18px;
-  }
-
-  .item-icon .material-symbols-rounded {
-    font-size: 22px;
-  }
-
-  .item-name,
-  &.is-group .item-name {
-    font-size: 18px;
-  }
-
-  &.is-audio .item-name {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    height: auto;
-    line-height: 1.12;
-    white-space: normal;
-  }
-
-  .item-duration {
-    font-size: calc(var(--cue-cell-height) - 4px);
-    line-height: 1;
-  }
-
-  .status-pill {
-    font-size: var(--cue-text-size);
-    height: 28px;
-    padding: 2px 10px;
-  }
-
-  .behavior-icon {
-    font-size: 18px;
-  }
-
-  /* Enlarge the playback action buttons (play/stop, set-next) for touch —
-     double width vs. height so they're easier to hit without misjudging
-     horizontal position. :deep() reaches into the ActionButton child. */
-  :deep(.action-btn--playlist) {
-    width: var(--playlist-set-next-width, 92px);
-    height: var(--cue-cell-height);
-    min-height: 44px;
-    flex-shrink: 0;
-
-    .material-symbols-rounded {
-      font-size: clamp(18px, calc(var(--current-playlist-row-height, 44px) * 0.42), 36px);
-    }
-  }
-  :deep(.preview-action.action-btn--playlist) {
-    --current-playlist-row-height: var(--playlist-row-height, 44px);
-    width: 32px;
-    min-width: 32px;
-    height: var(--cue-cell-height);
-    min-height: 26px;
-    flex-shrink: 0;
-
-    .material-symbols-rounded {
-      font-size: clamp(18px, calc(var(--current-playlist-row-height, 44px) * 0.42), 36px);
-    }
-  }
-
-  :deep(.group-music-toggle.action-btn--playlist) {
-    width: 44px;
-  }
-
-  :deep(.restart-action.action-btn--playlist) {
-    width: 40px;
-    height: 40px;
-
-    .material-symbols-rounded {
-      font-size: 20px;
-    }
-  }
-
-
-  /* Not selectable — row is a playback surface, not a list to click into. */
-  .item-content {
-    cursor: default;
-  }
+/* Show Mode is Edit Mode with the editing taken out: the same rows, at the
+   same size, in the same places. The one difference in how a row is drawn is
+   the pointer, because a row there is a playback surface and not something
+   to select or drag. */
+.playlist-item.show-mode .item-content {
+  cursor: default;
 }
 
-/* Keep a full title lane when the side panels leave less room for the playlist. */
-@container (max-width: 700px) {
-  .playlist-item > .item-content .item-left {
-    --folder-column-gap: var(--spacing-xs);
-    grid-template-columns: var(--cue-leading-width, 34px) minmax(0, 1fr) max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px);
-    grid-template-areas:
-      'expand identity identity identity identity state video'
-      '. . shuffle actions transport duration arm';
-    gap: var(--spacing-xs);
-  }
-
-  .group-shuffle-action { grid-area: shuffle; }
-  .video-badge-icon { justify-self: end; }
-
-  .item-state,
-  .behavior-indicators {
-    flex-wrap: wrap;
-  }
-
-  .behavior-indicators {
-    max-width: 100%;
-    justify-content: flex-end;
-  }
-}
+/* A row is one line at every width: when the side panels leave less room,
+   the title is cut short (its full text is the tooltip, and the Play Next
+   and live boxes show it whole). Nothing moves to a second line. */
 
 @container playlist-scroll (max-height: 220px) {
   /* A pinned group would cover most of a short playlist. */

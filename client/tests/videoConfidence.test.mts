@@ -14,7 +14,7 @@ test('fresh captures do not claim frame progress and sparse/paused pictures do n
   const scope = Vue.effectScope();
   const chip = scope.run(() => build({ ...Vue, defineProps: () => ({ open: true }),
     useLocalization: () => ({ t: (key: string, args: unknown) => `${key}:${JSON.stringify(args)}` }),
-    useVideoStandbyCapture: () => ({ captureStandby() {}, standbyCapturePending: Vue.ref(false) }),
+    useVideoStandbyCapture: () => ({ openCapturePanel() {}, standbyCapturePending: Vue.ref(false) }),
     onMounted() {}, onUnmounted() {},
   }));
   chip.now.value = 100000;

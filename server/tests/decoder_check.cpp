@@ -19,6 +19,9 @@ struct test_case {
     // Video-only containers intentionally render as zeros (silent-video
     // transport); everything else must contain audible samples.
     bool expect_silence = false;
+    // MIDI playback was removed: such a file must fail to open like any other
+    // unsupported file instead of reaching a backend.
+    bool expect_rejected = false;
 };
 
 std::vector<test_case> self_test_files() {
@@ -30,6 +33,9 @@ std::vector<test_case> self_test_files() {
         'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1, 0, 96,
         'M', 'T', 'r', 'k', 0, 0, 0, 15,
         0, 0xc0, 0, 0, 0x90, 60, 100, 96, 0x80, 60, 0, 0, 0xff, 0x2f, 0};
+    std::ofstream mid(directory / "note.mid", std::ios::binary);
+    mid.write(reinterpret_cast<const char*>(midi.data()), midi.size());
+    mid.close();
     std::ofstream rmi(directory / "note.rmi", std::ios::binary);
     const std::uint32_t riff_size = static_cast<std::uint32_t>(12 + midi.size());
     const std::uint32_t data_size = static_cast<std::uint32_t>(midi.size());
@@ -71,8 +77,9 @@ std::vector<test_case> self_test_files() {
     std::ofstream vid(directory / "video_only.mp4", std::ios::binary);
     vid.write(reinterpret_cast<const char*>(kVideoOnlyMp4), kVideoOnlyMp4Len);
     vid.close();
-    return {{directory / "note.rmi"}, {directory / "disc.cue"},
-            {directory / "mixed.cue"}, {directory / "video_only.mp4", true}};
+    return {{directory / "note.mid", false, true}, {directory / "note.rmi", false, true},
+            {directory / "disc.cue"}, {directory / "mixed.cue"},
+            {directory / "video_only.mp4", true}};
 }
 
 int main(int argc, char** argv) {
@@ -90,7 +97,7 @@ int main(int argc, char** argv) {
     }
 
     int failures = 0;
-    for (const auto& [path, expect_silence] : files) {
+    for (const auto& [path, expect_silence, expect_rejected] : files) {
         std::size_t before_count = 0;
         for (const auto& entry : fs::directory_iterator{path.parent_path()}) {
             if (entry.is_regular_file()) ++before_count;
@@ -98,6 +105,14 @@ int main(int argc, char** argv) {
         const auto config = liveplay::audio::decoder_config(ma_format_f32, 0, 48000);
         ma_decoder decoder{};
         const ma_result opened = liveplay::audio::decoder_init_file(path, config, decoder);
+        if (expect_rejected) {
+            if (opened == MA_SUCCESS) {
+                ma_decoder_uninit(&decoder);
+                std::cerr << path << ": unsupported format opened\n";
+                ++failures;
+            }
+            continue;
+        }
         if (opened != MA_SUCCESS) {
             std::cerr << path << ": open failed\n";
             ++failures;
@@ -157,16 +172,13 @@ int main(int argc, char** argv) {
         std::string extension = path.extension().string();
         std::transform(extension.begin(), extension.end(), extension.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        const bool is_midi = extension == ".mid" || extension == ".midi" ||
-                             extension == ".smf" || extension == ".kar" ||
-                             extension == ".rmi";
         const bool is_playlist = extension == ".m3u" || extension == ".m3u8" ||
                                  extension == ".pls" || extension == ".ram" ||
                                  extension == ".cue" || extension == ".xspf" ||
                                  extension == ".asx" || extension == ".wax" ||
                                  extension == ".wvx" || extension == ".smil" ||
                                  extension == ".smi";
-        if (is_midi || is_playlist) {
+        if (is_playlist) {
             ma_uint64 length = 0;
             if (ma_decoder_get_length_in_pcm_frames(&decoder, &length) != MA_SUCCESS ||
                 length == 0) {
@@ -182,11 +194,6 @@ int main(int argc, char** argv) {
             }
             if (result != MA_AT_END) {
                 std::cerr << path << ": did not reach its natural end\n";
-                ++failures;
-            }
-            if (is_midi && total != length) {
-                std::cerr << path << ": ended at " << total
-                          << " frames instead of its declared " << length << " frames\n";
                 ++failures;
             }
         }

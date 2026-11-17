@@ -702,7 +702,7 @@ onBeforeUnmount(() => {
 
 .plan-label {
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -767,7 +767,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  max-height: clamp(115px, 24vh, 230px);
+  /* Results are the point of this panel: show many at once. */
+  max-height: clamp(230px, 52vh, 640px);
   overflow: auto;
   overscroll-behavior: contain;
 }
@@ -842,7 +843,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--color-danger);
   border-radius: 3px;
   color: var(--color-danger);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
 }
@@ -924,7 +925,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
-  max-height: clamp(124px, 26vh, 240px);
+  max-height: clamp(160px, 34vh, 420px);
   overflow: auto;
   overscroll-behavior: contain;
 }

@@ -102,7 +102,7 @@ function readDoc(value: unknown): DocMirror | null {
     }
   };
   walk(record.items);
-  walk(record.cartOnlyItems);
+  walk(record.quickPlayItems);
   const settings = record.settings;
   return {
     folderPath: readString(record.folderPath),
@@ -144,8 +144,9 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   const showHeldFrame = ref(false);
   let pictureTimer: number | undefined;
   const assignedCueImageSrc = ref<string | null>(null);
-  const captured = shallowRef<VideoStandbyStill>({ standby: null, cue: null });
-  const cueImageSrc = computed(() => assignedCueImageSrc.value ?? captured.value.cue);
+  // A captured picture is saved into the show and set as the cue's picture or
+  // the standby picture, so the two below are all there is to show.
+  const cueImageSrc = computed(() => assignedCueImageSrc.value);
 
   const doc = shallowRef<DocMirror | null>(null);
   let refetchTimer: number | undefined;
@@ -313,29 +314,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     return `${base}/api/media?${params}`;
   }
 
-  const standbySrc = computed(() => captured.value.standby ?? pathMediaUrl(doc.value?.standbyImage ?? null));
-
-  const captureApi = typeof window === 'undefined' ? undefined : window.electronAPI?.videoOutput;
-  const captureRevision = ref(0);
-  const offCapture = captureApi?.onStandbyCaptureChanged?.(() => { captureRevision.value += 1; });
-  const captureMedia = computed(() => {
-    const item = doc.value?.items.get(activeItemUuid.value ?? '');
-    return item?.mediaServerPath || item?.mediaPath || null;
-  });
-  watch([() => doc.value?.sessionId, activeItemUuid, captureMedia, captureRevision],
-    async ([session, uuid, media], previous, onCleanup) => {
-      if (session !== previous?.[0]) captured.value = { standby: null, cue: null };
-      else if (uuid !== previous?.[1] || media !== previous?.[2]) {
-        captured.value = { standby: captured.value.standby, cue: null };
-      }
-      if (!session || !captureApi?.getStandbyCapture) return;
-      let current = true;
-      onCleanup(() => { current = false; });
-      try {
-        const still = await captureApi.getStandbyCapture(session, uuid, media);
-        if (current) captured.value = still;
-      } catch { /* authored images remain available */ }
-    }, { immediate: true });
+  const standbySrc = computed(() => pathMediaUrl(doc.value?.standbyImage ?? null));
 
   function cancelFrameClockCheck() {
     if (videoFrameCallbackId !== null && videoFrameCallbackElement
@@ -1004,7 +983,6 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   }, { immediate: true });
 
   onScopeDispose(() => {
-    offCapture?.();
     clearTimeout(refetchTimer);
     clearTimeout(metadataRetryTimer);
     docRequest?.controller.abort();

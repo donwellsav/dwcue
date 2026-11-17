@@ -16,7 +16,7 @@
     <p class="srm-project">{{ currentProject?.name }}</p>
     <Btn
       v-if="showStopAll"
-      class="srm-stop-all"
+      class="srm-stop-all stop-all-btn"
       type="button"
       icon="stop_circle"
       :text="t('controls.stopAll')"

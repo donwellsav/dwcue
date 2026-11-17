@@ -65,12 +65,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Project management
   setCurrentProject: (projectPath) => ipcRenderer.invoke('set-current-project', projectPath),
+  // Printable summary of the open show; main picks the file and writes the PDF.
+  exportCueSheet: (sheet) => ipcRenderer.invoke('export-cue-sheet', sheet),
+  // Clean Up Media. Main works out which files in the show's media folder
+  // nothing uses; the window names the ones to move to the Trash, by file name
+  // only, and main checks every name again before it moves anything.
+  media: {
+    listUnused: () => ipcRenderer.invoke('media:list-unused'),
+    trashUnused: (names) => ipcRenderer.invoke('media:trash-unused', { names }),
+  },
+  keepAwake: (state) => ipcRenderer.invoke('power:keep-awake', state),
 
   // Waveform generation
-  generateWaveform: (audioPath, outputPath) => ipcRenderer.invoke('generate-waveform', audioPath, outputPath),
 
   // FFmpeg check
-  checkFfmpeg: () => ipcRenderer.invoke('check-ffmpeg'),
 
   // YouTube features
   searchYouTube: (query) => ipcRenderer.invoke('search-youtube', query),
@@ -125,6 +133,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onMenuOpenProject: (callback) => replaceIpcListener('menu-open-project', callback),
   onMenuSaveProject: (callback) => replaceIpcListener('menu-save-project', callback),
   onMenuExportProject: (callback) => replaceIpcListener('menu-export-project', callback),
+  onMenuExportCueSheet: (callback) => replaceIpcListener('menu-export-cue-sheet', callback),
+  onMenuCleanUpMedia: (callback) => replaceIpcListener('menu-clean-up-media', callback),
   onMenuImportProject: (callback) => replaceIpcListener('menu-import-project', callback),
   onMenuCloseProject: (callback) => replaceIpcListener('menu-close-project', callback),
   onMenuOpenRecentProject: (callback) => replaceIpcListener('menu-open-recent-project', callback),
@@ -162,7 +172,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onHeaderWarning: (callback) => replaceIpcListener('header-warning', (_event, message) => callback(message)),
   onMenuCheckForUpdates: (callback) => ipcRenderer.on('menu-check-for-updates', callback),
 
-  // Project data sync between the primary and detached One Shots windows.
+  // Project data sync between the primary and detached QuickPlays windows.
   syncProjectData: (data, identity, ...captureSession) =>
     ipcRenderer.send('sync-project-data', data, identity, ...captureSession),
   
@@ -173,31 +183,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // (cold start). Returns { filePath, kind } | null.
   getPendingOpenFile: () => ipcRenderer.invoke('get-pending-open-file'),
   
-  // Cart player window — detach/attach
-  openCartPlayerWindow: (projectFolderPath) => ipcRenderer.invoke('open-cart-player-window', projectFolderPath),
-  toggleCartPlayerWindow: () => ipcRenderer.invoke('toggle-cart-player-window'),
-  attachCartPlayerWindow: () => ipcRenderer.send('cart-player-window-attach'),
-  getCartWindowProjectData: () => ipcRenderer.invoke('get-cart-window-project-data'),
-  onCartPlayerWindowOpened: (callback) => replaceIpcListener('cart-player-window-opened', callback),
-  onCartPlayerWindowClosed: (callback) => replaceIpcListener('cart-player-window-closed', callback),
-  onCartWindowProjectUpdate: (callback) => {
+  // QuickPlay window — detach/attach
+  openDetachedQuickPlayWindow: (projectFolderPath) => ipcRenderer.invoke('open-detached-quickplay-window', projectFolderPath),
+  toggleDetachedQuickPlayWindow: () => ipcRenderer.invoke('toggle-detached-quickplay-window'),
+  attachDetachedQuickPlayWindow: () => ipcRenderer.send('detached-quickplay-window-attach'),
+  getQuickPlayWindowProjectData: () => ipcRenderer.invoke('get-quickplay-window-project-data'),
+  onDetachedQuickPlayWindowOpened: (callback) => replaceIpcListener('detached-quickplay-window-opened', callback),
+  onDetachedQuickPlayWindowClosed: (callback) => replaceIpcListener('detached-quickplay-window-closed', callback),
+  onQuickPlayWindowProjectUpdate: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);
-    ipcRenderer.on('cart-window-project-update', listener);
-    return () => ipcRenderer.removeListener('cart-window-project-update', listener);
+    ipcRenderer.on('quickplay-window-project-update', listener);
+    return () => ipcRenderer.removeListener('quickplay-window-project-update', listener);
   },
-  requestOneShotMutation: (request) => ipcRenderer.invoke('one-shot-mutation:request', request),
-  onOneShotMutationRequest: (callback) => {
+  requestQuickPlayMutation: (request) => ipcRenderer.invoke('quickplay-mutation:request', request),
+  onQuickPlayMutationRequest: (callback) => {
     const listener = (_event, request) => callback(request);
-    ipcRenderer.on('one-shot-mutation-request', listener);
-    return () => ipcRenderer.removeListener('one-shot-mutation-request', listener);
+    ipcRenderer.on('quickplay-mutation-request', listener);
+    return () => ipcRenderer.removeListener('quickplay-mutation-request', listener);
   },
-  completeOneShotMutation: (result) => ipcRenderer.send('one-shot-mutation:complete', result),
+  completeQuickPlayMutation: (result) => ipcRenderer.send('quickplay-mutation:complete', result),
 
   // UI mode ("show mode") sync across windows
   broadcastUiMode: (mode) => ipcRenderer.send('ui-mode-changed', mode),
   onUiModeSet: (callback) => ipcRenderer.on('ui-mode-set', callback),
-  broadcastCartGridLayouts: (layouts) => ipcRenderer.send('cart-grid-layouts-changed', layouts),
-  onCartGridLayoutsSet: (callback) => ipcRenderer.on('cart-grid-layouts-set', callback),
+  broadcastQuickPlayGridLayouts: (layouts) => ipcRenderer.send('quickplay-grid-layouts-changed', layouts),
+  onQuickPlayGridLayoutsSet: (callback) => ipcRenderer.on('quickplay-grid-layouts-set', callback),
 
   // State viewer - send state updates to main process
   updateAppState: (state) => ipcRenderer.send('update-app-state', state),
@@ -278,6 +288,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     restart:      ()           => ipcRenderer.invoke('video-output:restart'),
     rendererReady: ()          => ipcRenderer.invoke('video-output:renderer-ready'),
     reportPictureHealth: (health) => ipcRenderer.invoke('video-output:picture-health', health),
+    reportViewport: (viewport) => ipcRenderer.invoke('video-output:viewport', viewport),
     diagnostics: () => ipcRenderer.invoke('video-output:diagnostics'),
     listDisplays: ()           => ipcRenderer.invoke('video-output:list-displays'),
     identifyDisplays: ()       => ipcRenderer.invoke('video-output:identify-displays'),
@@ -285,16 +296,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setFraming:   (framing)    => ipcRenderer.invoke('video-output:set-framing', framing),
     checkFrame: (request) => ipcRenderer.invoke('video-output:check-frame', request),
     cancelFrameCheck: (id) => ipcRenderer.send('video-output:cancel-frame-check', id),
-    setCaptureSettings: (displayId, target) => ipcRenderer.invoke('video-output:set-capture-settings', displayId, target),
-    captureStandby: (source, target) => ipcRenderer.invoke('video-output:capture-standby', source, target),
-    clearStandbyCapture: (target) => ipcRenderer.invoke('video-output:clear-standby-capture', target),
-    getStandbyCapture: (sessionId, uuid, media) =>
-      ipcRenderer.invoke('video-output:get-standby-capture', sessionId, uuid, media),
-    onStandbyCaptureChanged: (callback) => {
-      const listener = () => callback();
-      ipcRenderer.on('video-output:standby-capture-changed', listener);
-      return () => ipcRenderer.removeListener('video-output:standby-capture-changed', listener);
+    convertCue: (request) => ipcRenderer.invoke('video-output:convert-cue', request),
+    cancelConvert: (id) => ipcRenderer.send('video-output:cancel-convert', id),
+    onConvertProgress: (callback) => {
+      const listener = (_event, progress) => callback(progress);
+      ipcRenderer.on('video-output:convert-progress', listener);
+      return () => ipcRenderer.removeListener('video-output:convert-progress', listener);
     },
+    setCaptureSettings: (displayId) => ipcRenderer.invoke('video-output:set-capture-settings', displayId),
+    captureStandby: (source, target) => ipcRenderer.invoke('video-output:capture-standby', source, target),
     setTestCard:  (show)       => ipcRenderer.invoke('video-output:test-card', show),
     setTestCardConfig: (config) => ipcRenderer.invoke('video-output:test-card-config', config),
     setTestCardConnection: (connection) => ipcRenderer.invoke('video-output:test-card-connection', connection),

@@ -23,7 +23,7 @@
 // Wired once per renderer from plugins/liveplay-server.client.ts.
 // =====================================================================
 
-import { bindingsMatch, eventToBinding } from './useCartHotkeys';
+import { bindingsMatch, eventToBinding } from './useQuickPlayHotkeys';
 import { DEFAULT_PLAYBACK_KEYS, type Project } from '~/types/project';
 
 // Renderer-scoped: the plugin calls this once, but guard anyway so a component
@@ -162,7 +162,7 @@ export const useConnectionGuard = () => {
   // The callback fires from a WebSocket event, outside any Nuxt context, so
   // useState/useProject would throw there — runWithContext restores it.
   const nuxtApp = useNuxtApp();
-  const isDetachedWindow = import.meta.client && new URLSearchParams(window.location.search).get('cartWindow') === '1';
+  const isDetachedWindow = import.meta.client && new URLSearchParams(window.location.search).get('quickPlayWindow') === '1';
   server.onReconnected((signal) => {
     void nuxtApp.runWithContext(async () => {
       if (signal.aborted) return;

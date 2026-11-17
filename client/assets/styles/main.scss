@@ -30,8 +30,18 @@
 }
 
 
-// The rounded Material font is bundled locally from the declared package.
-// app.vue imports only rounded.css; no runtime network fetch is required.
+// The icon font is bundled locally, cut down to the icons the app names: the
+// full font holds about 4,000 icons and weighs 5 MB. After using an icon the
+// app has not used before, run scripts/subset-icon-font.py; the client checks
+// fail until the font holds it.
+@font-face {
+  font-family: 'Material Symbols Rounded';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: block;
+  src: url('../fonts/material-symbols/material-symbols-rounded-subset.woff2') format('woff2');
+}
+
 .material-symbols-rounded {
   font-family: 'Material Symbols Rounded';
   font-weight: normal;
@@ -47,6 +57,7 @@
   -webkit-font-feature-settings: 'liga';
   font-feature-settings: 'liga';
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button > .material-symbols-rounded {
@@ -131,6 +142,10 @@ button > .material-symbols-rounded {
   --signal-blue-hover: #507f99;
   --signal-blue-soft: rgba(65, 108, 134, 0.16);
   --color-accent: var(--color-accent-custom, var(--signal-blue));
+  // Accent used as text or icon colour. The accent itself can be too dark
+  // (or too light) to read on the surface behind it, so it is tinted toward
+  // the text colour of the theme.
+  --color-accent-text: color-mix(in srgb, var(--color-accent) 50%, #ffffff);
   --color-accent-hover: var(--signal-blue-hover);
   --color-accent-soft: var(--signal-blue-soft);
   --color-accent-bg: var(--signal-blue-soft);
@@ -138,14 +153,62 @@ button > .material-symbols-rounded {
   --color-text: var(--color-text-primary);
   --color-focus-ring: #91bdd5;
 
-  --state-playing: var(--color-success);
-  --state-up-next: var(--color-warning);
-  --state-up-next-text: #171b25;
+  // Tally colours, as on a vision mixer: red is live (on air), green is next.
+  // Amber is left to warnings, and the headphones preview keeps the accent so
+  // "preview" is never mistaken for "next". The colours are used as solid
+  // blocks and edges; words stay white, or dark on a solid block, because
+  // coloured words on a dark row are hard to read.
+  --state-playing: #ff5a5f;
+  // The edge of whatever is on air.
+  --state-playing-edge: #ff5a5f;
+  // Words on a solid live-red block.
+  --state-playing-on: #14090a;
+  --state-up-next: #3ecf7a;
+  --state-up-next-text: #0c1a11;
+  // Ready to go: Play buttons and switches that are on. Never the live red.
+  --state-ready: var(--color-success);
   --state-preview: var(--color-accent);
+  // Text on a solid warning-coloured pill.
+  --color-warning-text: #171b25;
+
+  // Stop is never red, because red means live. It wears the yellow-and-black
+  // diagonal stripes of hazard tape: a striped frame around Stop All and a
+  // fine striped edge on each cue's own Stop button. Yellow already means
+  // "take care" everywhere else in the app.
+  --stop-ink: #ffd000;
+  --stop-ground: #0b0b0e;
+  --stop-label: #ffffff;
+  --stop-edge: var(--stop-ink);
+  // The frame around Stop All, and the edge of a cue's own Stop button.
+  --stop-frame: 16px;
+  --stop-stripes: repeating-linear-gradient(-45deg, var(--stop-ink) 0 11px, var(--stop-ground) 11px 22px);
+  --stop-button-border: 6px solid transparent;
+  --stop-button-background:
+    linear-gradient(var(--color-control), var(--color-control)) padding-box,
+    repeating-linear-gradient(-45deg, var(--stop-ink) 0 5px, var(--stop-ground) 5px 10px) border-box;
+}
+
+// Every small Stop All button (panel headers, the recovery and reconnect
+// panels, the detached QuickPlays window) wears the striped edge of a cue's
+// own Stop, and keeps it while the pointer is over it. None of them is red.
+.stop-all-btn.stop-all-btn.stop-all-btn,
+.stop-all-btn.stop-all-btn.stop-all-btn:hover:not(:disabled) {
+  // The striped edge is thicker than a plain border; the padding gives way so
+  // the button stays the height of its neighbours.
+  padding-block: 1px;
+  border: var(--stop-button-border);
+  background: var(--stop-button-background);
+  color: var(--color-text-primary);
 }
 
 // Light console: the same hierarchy without forcing a dark work surface.
 [data-theme='light'] {
+  --state-playing: #d0142c;
+  --state-playing-edge: #d0142c;
+  --state-playing-on: #ffffff;
+  --stop-edge: var(--stop-ground);
+  --state-up-next: #17803f;
+  --state-up-next-text: #ffffff;
   --color-background: #e6ecef;
   --color-surface: #f5f8f9;
   --color-surface-raised: #ffffff;
@@ -158,12 +221,13 @@ button > .material-symbols-rounded {
   --color-text-tertiary: #5c707c;
   --color-text-disabled: #84939b;
   --color-accent: var(--color-accent-custom, var(--signal-blue));
+  --color-accent-text: color-mix(in srgb, var(--color-accent) 72%, #000000);
   --color-accent-hover: var(--signal-blue-hover);
   --color-focus-ring: #345d76;
   --color-danger: #b62f3e;
   --color-success: #186d4c;
   --color-warning: #8c6416;
-  --state-up-next-text: var(--color-text-on-accent);
+  --color-warning-text: var(--color-text-on-accent);
 }
 
 // Neutral chrome shares the #16161d hue; colour is reserved for cue data and
@@ -181,6 +245,7 @@ button > .material-symbols-rounded {
   --color-text-tertiary: #9898ab;
   --color-text-disabled: #666678;
   --color-accent: var(--color-accent-custom, var(--signal-blue));
+  --color-accent-text: color-mix(in srgb, var(--color-accent) 50%, #ffffff);
   --color-accent-hover: var(--signal-blue-hover);
   --color-danger: #ed6c78;
   --color-success: #64c49b;
@@ -211,14 +276,14 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   // All text is selectable/copyable by default — error messages that can't be
-  // copied are useless. Cue/cart reordering uses native HTML5 drag
+  // copied are useless. Cue/QuickPlay reordering uses native HTML5 drag
   // (draggable=true), which never starts a text selection; genuine drag
   // surfaces (faders, trim handles, grab zones) opt out with their own
   // user-select: none rules.
 }
 
 // Shared chrome for the three workspace columns. Keeping this global makes
-// Cart, Playlist, Monitor, and Output land on the same baseline in every mode.
+// QuickPlay, Playlist, Monitor, and Output land on the same baseline in every mode.
 .workspace-panel-header {
   display: flex;
   align-items: center;

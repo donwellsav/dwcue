@@ -1,6 +1,6 @@
 # DonWells Cue
 
-DonWells Cue **2.6.24** adds live playlist and group shuffle, group level control, and QuickPlay continuation into Up Next. Import, show management, routing, and recovery controls use the lower panel. Video Output can recover picture during the active cue, and the pre-show check samples the authored cue range.
+DonWells Cue **2.7.0** makes a running show easier to read (red is live, green is next, Stop is striped), keeps Video Output on the one display it was given, converts videos the computer cannot show, and adds a pre-show check, show backups and a printable cue sheet. QuickPlays have the full Properties panel. See the [2.7.0 release notes](docs/release-notes/v2.7.0.md), and read their first section before updating a machine that shares shows with others.
 
 **Enter** sets Up Next and **Space** runs it after the engine confirms the target. **Q** toggles QuickPlays and **Shift+Q** toggles the detached window. The number row triggers slots **1–10**, and holding **Shift** triggers **11–20**. **S** opens Settings, **Shift+S** opens Properties, and **V** toggles Video Output. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification and the deferred line-level audio and 1080p HDMI checks.
 
@@ -10,7 +10,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> The current source builds **v2.6.24**. Match the installed About version to the release notes before rehearsal.
+> The current source builds **v2.7.0**. Match the installed About version to the release notes before rehearsal.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -28,8 +28,8 @@ The screenshots in this README are representative captures and may lag the newes
 - **⚡ Fire QuickPlays** — use a configurable grid for stings, SFX, announcements, walk-on music and beds. In Edit and Show Mode, fire a cue from its Play button, keyboard shortcut, or MIDI mapping. In the current source, 1–9 and 0 default to slots 1–10 and Shift+1 through Shift+0 default to slots 11–20. A playing tile shows Stop and the remaining time. Drop media or copy a playlist cue into the bank in Edit Mode. The bank can detach, and the primary window verifies and persists detached edits.
 - **🔎 Prepare cues precisely** — imports preserve source level and timing. Properties provides a detailed peak/RMS waveform, separate program and Preview playheads, click-to-seek, editable In/Out and Start Next markers, transport controls, explicit Trim Silence, loudness normalization, and attenuation-only peak reduction.
 - **🎧 Preview safely** — assign a monitor output and audition a cue away from the program bus. The lower Preview panel supports transport, seeking, quick Set In/Out, saving trim, Start Next markers, and Set As Next.
-- **📺 Show Mode** — switch to a simplified, touch-friendly playback view for the actual performance. Preview remains available as the lighter-weight way to inspect and prepare a cue during a show.
-- **⏭ Smooth transitions** — automatic advance, crossfades, and radio-style "Start Next" segue markers with an on-screen countdown. **Cue to Continue** is a one-play runtime override: it never changes the saved end behaviour, and Stop or replay cancels it. **Set As Next** changes only after the server accepts the UUID (or an explicit clear), and GO consumes that target only after playback is accepted. Rejected or not-yet-loaded targets remain ready for retry, and repeated identical inputs are coalesced.
+- **📺 Show Mode** — switch to a simplified playback view for the actual performance: the same layout at the same size, with the editing controls taken out. Preview remains available as the lighter-weight way to inspect and prepare a cue during a show.
+- **⏭ Smooth transitions** — automatic advance, crossfades, and radio-style "Start Next" segue markers with an on-screen countdown. **Cue to Continue** is a one-play runtime override: it never changes the saved end behaviour, and Stop or replay cancels it. On a QuickPlay it is a toggle on the tile that hands over to Up Next when the QuickPlay finishes; a QuickPlay can also be saved with **End Behavior → Play Next**. **Set As Next** changes only after the server accepts the UUID (or an explicit clear), and GO consumes that target only after playback is accepted. Rejected or not-yet-loaded targets remain ready for retry, and repeated identical inputs are coalesced.
 - **🔊 Sounds great, stays safe** — pick an **Output Target** for your show (Broadcast / EBU R128, Streaming, Radio, Netflix / OTT, or Live console), explicitly normalize cues to a chosen loudness, and use peak reduction and the adjustable true-peak limiter as safety ceilings. Safe cues are never raised to those ceilings.
 - **📊 See your levels** — real-time metering at every stage (per-cue, per-channel and master), shown in LUFS, dBFS, true-peak or RMS.
 - **🎚 Choose show outputs** — configure program and Preview devices in Settings, then choose an output device (and LTC routing when needed) per cue in Properties. The server exposes a richer multi-device routing API, but the current client does not mount its Routing Matrix component as an operator screen.
@@ -55,12 +55,12 @@ Video cues are ordinary audio cues whose media file also carries a picture (H.26
 - **Identify the physical screens** before assigning one: click **Identify displays** to show a large number, OS display name and resolution on every connected screen for five seconds. You can choose the display while the output is closed. If no independent display is assigned, DonWells Cue opens a normal preview window rather than taking over the control screen with fullscreen black.
 - **Picture framing** — 16:9 Full HD is the default. **Settings → Video Output** offers common HD, UHD, projector, stage and signage sizes, plus custom dimensions. Fit to display or cap the frame at its selected size and scale it proportionally. Choose the HDMI resolution and refresh rate in the operating system.
 - **Output display, Canvas, and Scaling** expand in the lower panel. The playlist and **GO** stay available. **Escape** runs Stop All even if you changed its shortcut. Use **Apply framing** to save the Canvas and Scaling changes.
-- **Recover from the output itself** by right-clicking it. The context menu can enter or leave fullscreen, show the test card, or **Exit Video Output**. On Windows, **Alt+F4** also closes only the Video Output window; **Esc** leaves fullscreen. Closing it disarms the output for the rest of the session until you open it again.
+- **Recover from the output itself** by right-clicking it. The context menu can enter or leave fullscreen, show the test card, or **Exit Video Output**. On a Mac the assigned output always covers its display, and only that display, so its menu has no fullscreen item. On Windows, **Alt+F4** also closes only the Video Output window. **Esc** is Stop All: on an assigned display the picture stays full screen, and only the single-screen preview window leaves fullscreen. Closing it disarms the output for the rest of the session until you open it again.
 - **Keep using shortcuts** even if the Video Output window owns keyboard focus. DonWells Cue forwards application and QuickPlay shortcuts to the control window while preserving operating-system and native app shortcuts such as Windows Alt+F4 and the normal Ctrl/Cmd file commands.
 - **Standby stills** — press **G** to capture Video Output or **Shift+G** to capture the display chosen in **Settings → Video Output**. Capture for the selected cue or use a session-wide fallback. Clicking the confidence thumbnail captures Video Output for the selected cue. The picture falls back through assigned cue art, captured cue art, captured session standby, saved project standby and black.
 - **In sync with audio** — the picture follows the native engine clock, including file-absolute paused seeks, loops, and authored Out points. It freezes when native progress stops and resumes only with fresh progress; it does not free-run through an audio stall.
 - **Silent videos** — a video file with no audio track still plays: the engine runs a silent transport of the container's duration so the cue advances, auto-follows and reports progress exactly like an audible cue.
-- **Grouped cues and QuickPlays** — nested video/image cues and cart-only video are supported; video uses the same media resolution as native audio. Reopening the output restores the most recently fired program source, not arbitrary cue-list order.
+- **Grouped cues and QuickPlays** — nested video/image cues and QuickPlay-only video are supported; video uses the same media resolution as native audio. Reopening the output restores the most recently fired program source, not arbitrary cue-list order.
 - **Visible failures** — unsupported or undecodable video tracks produce an error in the control window and do not leave a misleading picture on the audience output. A healthy replacement source clears the error.
 - **Cue handoffs and recovery** — cancelled play attempts cannot mark a later cue as failed, background cues retain their current native position, and a failed output renderer stays under a native black cover with its reason shown in the control window; **Restart Output** is operator-controlled. [Video reliability checks and limits](docs/video-playback-reliability.md).
 - **Audio output recovery** — a stalled callback clock produces an operator warning. **Retry now** restarts that device in place, preserving its identity, routes, and loaded cues. Request acceptance is not success: the warning clears only after the matching restart receives a real callback. A failed attempt remains retryable.
@@ -159,7 +159,7 @@ In **Settings → Audio Routing**, the Audio, Preview and LTC device choices and
 
 The cue’s **Output device** and **Ducking** choices open inside Properties. The playlist and **GO** stay usable, and **Escape** runs Stop All while either list is open.
 
-**QuickPlay Settings** expands Playback, Retrigger, Ending, and Output choices inside the panel, attached or detached. **Escape** runs Stop All with a list open, and the detached settings header has a **Stop All** button. During reconnect, the detached window shows the notice below the tiles and **Stop All** in the window header. QuickPlay starts wait for show verification. If the engine has no show or a different show, restore or open it in the main window. The detached bank unlocks when it receives the fresh, verified show.
+In the main window a QuickPlay's gear (Edit Mode only) opens the same **Properties** panel as a playlist cue, with a QuickPlay column for retrigger, shortcut, and duck times. The detached window keeps a compact **QuickPlay Settings** panel that expands Playback, Retrigger, Ending, and Output choices inside the panel. **Escape** runs Stop All with a list open, and the detached settings header has a **Stop All** button. During reconnect, the detached window shows the notice below the tiles and **Stop All** in the window header. QuickPlay starts wait for show verification. If the engine has no show or a different show, restore or open it in the main window. The detached bank unlocks when it receives the fresh, verified show.
 
 Video Capture, Test Card options, cue LTC frame rate, the file type filter, import options, and the remaining Settings choices also expand in place. Normalize and Reduce Peaks share one section, and MIDI reassignment stays in the MIDI panel. About opens below the welcome screen during startup.
 
@@ -207,8 +207,8 @@ Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.
 |  Electron + Nuxt 4 + Vue 3     | <----- transport / route cmds --- |  C++20, miniaudio, Crow, TagLib   |
 |                                |        REST  (http://host:4480)   |                                   |
 |  - Playlist / QuickPlays / output controls | <----- list / load / waveform --> |  - AudioEngine (mixer + limiter)  |
-|  - WaveformCanvas              |                                   |  - ProjectState (.dwcue I/O)      |
-|  - LiveMeterBar                |                                   |  - ControlServer (REST + WS)      |
+|  - WaveformTrimmer             |                                   |  - ProjectState (.dwcue I/O)      |
+|  - StereoMeter                 |                                   |  - ControlServer (REST + WS)      |
 |                                |                                   |  - Metadata + waveform services   |
 |  No audio plays in the         |                                   |                                   |
 |  renderer process.             |                                   |  Win → WASAPI · Mac → CoreAudio   |
@@ -216,7 +216,7 @@ Made with some help from Claude Sonnet 4.5, Claude Sonnet 4.6 and Claude Opus 4.
 +--------------------------------+                                   +-----------------------------------+
 ```
 
-Client and server can run on **the same machine** (the desktop installer bundles both, spawns the server on `127.0.0.1:4480`, and supplies a per-generation managed token) or on **different machines** on a LAN — e.g. the show laptop driving a stage-side mini-PC that's wired to the actual sound interfaces.
+Client and server can run on **the same machine** (the desktop installer bundles both, spawns the server on `127.0.0.1:4480`, or by itself on a free port when another program already holds 4480, and supplies a per-generation managed token) or on **different machines** on a LAN — e.g. the show laptop driving a stage-side mini-PC that's wired to the actual sound interfaces.
 
 For the deep architectural docs (mixer tiers, routing matrix, LTC, limiter, metering, network event lifecycle, project-file backwards compatibility), see [`server/README.md`](server/README.md).
 
@@ -389,11 +389,11 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.6.24**. Find published artefacts and checksums on the release page.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.7.0**. Find published artefacts and checksums on the release page.
 
 ### Triggering a release
 
-1. Use `npm run bump -- patch|minor|major` to update the root, client and server versions. Match the root and workspace versions in `package-lock.json` and update the operator manual.
+1. Use `npm run bump -- patch|minor|major` to update the root, client and server versions. Match the root and workspace versions in `package-lock.json` and update the operator manual. Write the operator-facing notes in `docs/release-notes/v<version>.md`; the published release shows them above the list of commits.
 2. Push the release branch and open a pull request; after review, merge it to `main`.
 3. The `build-release` workflow detects the version change and runs the platform matrix:
    - **Windows x64** (MSVC, WASAPI)

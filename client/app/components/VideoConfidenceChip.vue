@@ -5,9 +5,9 @@
     class="confidence-chip"
     :class="{ 'confidence-chip--stale': stale }"
     :title="confidenceTitle"
-    :aria-label="t('standbyCapture.captureForCue')"
+    :aria-label="t('standbyCapture.openPanel')"
     :disabled="standbyCapturePending"
-    @click="captureStandby('output', 'cue')"
+    @click="openCapturePanel"
     @keydown.enter.space.stop
   >
     <span class="confidence-chip__frame">
@@ -24,7 +24,9 @@
 const props = defineProps<{ open: boolean }>();
 
 const { t } = useLocalization();
-const { captureStandby, standbyCapturePending } = useVideoStandbyCapture();
+// A click opens the capture panel. It used to capture at once, for whichever
+// cue happened to be selected, and overwrite that cue's picture.
+const { openCapturePanel, standbyCapturePending } = useVideoStandbyCapture();
 
 const frameUrl = ref('');
 const lastFrameAt = ref(0);
@@ -54,7 +56,7 @@ const confidenceTitle = computed(() => `${t('videoConfidence.title')} · ${pictu
   + t('videoConfidence.captureAge', { seconds: secondsAgo.value })
   + (health.value?.preparedSeconds != null ? ` · ${t('videoConfidence.prepared', { seconds: health.value.preparedSeconds })}` : '')
   + (health.value ? ` · PTS ${health.value.mediaTime ?? '?'} · ${t('videoConfidence.dropped', { count: health.value.droppedFrames ?? '?' })}` : '')
-  + ` · ${t('standbyCapture.captureForCue')}`);
+  + ` · ${t('standbyCapture.openPanel')}`);
 watch(() => props.open, (open) => {
   if (!open) {
     frameUrl.value = '';
@@ -130,6 +132,6 @@ onUnmounted(() => {
   display: block;
 }
 
-.confidence-chip__health { max-width: 110px; font-size: 10px; }
+.confidence-chip__health { max-width: 110px; font-size: 11px; }
 
 </style>

@@ -93,21 +93,22 @@ assert.match(
   /MSVC[\s\S]*CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE[\s\S]*InstallRequiredSystemLibraries[\s\S]*copy_if_different[\s\S]*CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS[\s\S]*TARGET_FILE_DIR:liveplay-server/,
   'Windows packages must stage the MSVC runtime beside the native server',
 );
-const vgmstreamPort = read('server/ports/vgmstream/portfile.cmake');
-for (const plugin of ['FB2K', 'WINAMP', 'XMPLAY']) {
-  assert.match(
-    vgmstreamPort,
-    new RegExp(`-DBUILD_${plugin}=OFF`),
-    `the vgmstream library build must not require the Windows ${plugin} plugin SDK`,
-  );
+// MIDI files, tracker modules and game-console music were removed from the
+// engine: they cost three extra libraries, a 6 MB SoundFont and their own
+// build patches for formats a live show does not use.
+const serverManifest = JSON.parse(read('server/vcpkg.json'));
+const serverDependencyNames = serverManifest.dependencies.map(dep => typeof dep === 'string' ? dep : dep.name);
+for (const removed of ['fluidsynth', 'game-music-emu', 'vgmstream']) {
+  assert.ok(!serverDependencyNames.includes(removed), `${removed} must not return to the engine`);
 }
-assert.match(
-  vgmstreamPort,
-  /vcpkg_check_linkage\(ONLY_STATIC_LIBRARY\)/,
-  'vgmstream must stay static when the Windows triplet defaults to shared libraries',
+assert.ok(
+  !serverManifest.dependencies.some(dep => dep.name === 'ffmpeg' && dep.features.includes('openmpt')),
+  'the engine FFmpeg must be built without the tracker-module library',
 );
-assert.match(vgmstreamPort, /miniz-config\.patch/,
-  'vgmstream must disable bundled miniz archive APIs before linking the project ZIP reader');
+assert.doesNotMatch(serverCmake, /VCPKG_OVERLAY_PORTS|SOUNDFONT|TimGM6mb/,
+  'the engine build must not depend on private ports or a bundled SoundFont');
+assert.doesNotMatch(JSON.stringify(pkg.build), /TimGM6mb|\.sf2/,
+  'the installer must not package a SoundFont');
 assert.doesNotMatch(read('server/assets/server.rc'), /RT_MANIFEST/,
   'the Windows resource script must not duplicate CMake manifest embedding');
 assert.match(serverCmake, /LIVEPLAY_RC[\s\S]*assets\/server\.manifest/,
@@ -194,6 +195,16 @@ const waveformTrimmer = read('client/app/components/WaveformTrimmer.vue');
 const waveformTypes = read('client/app/types/project.ts');
 const audioUtils = read('client/app/utils/audio.ts');
 const playlistView = read('client/app/components/PlaylistView.vue');
+assert.match(
+  playlistView,
+  /class="locate-btn locate-live"[\s\S]{0,260}:disabled="readOnly \|\| !locatableLiveUuid" @click="locateLive"[\s\S]{0,120}class="locate-btn locate-next"[\s\S]{0,260}@click="locateUpNext"[\s\S]{0,900}<PlaylistSearch/,
+  'the playlist header keeps both locators, live then Up Next, ahead of the search and outside the edit-only actions',
+);
+assert.match(
+  playlistView,
+  /\.locate-live:not\(:disabled\)\s*\{[^}]*var\(--state-playing\)[\s\S]{0,200}\.locate-next:not\(:disabled\)\s*\{[^}]*var\(--state-up-next\)/,
+  'the locators wear the colours of the rows they jump to: red for live, green for Up Next',
+);
 const propertiesPanel = read('client/app/components/PropertiesPanel.vue');
 const liveMeters = read('client/app/composables/useLiveMeters.ts');
 const uiMode = read('client/app/composables/useUiMode.ts');
@@ -259,10 +270,37 @@ assert.match(
   /grid-template-areas:\s*'expand identity state video actions transport duration arm'/,
   'Normal Mode must place video, edit controls, transport, clock, and Play Next in order',
 );
+// Show Mode is Edit Mode with the editing taken out. It has no sizes of its
+// own: the same rows, tiles and transport, at the same size, in both modes.
+// Show Mode is Edit Mode with controls taken out. scripts/mode-layout.test.cjs
+// proves it in the packaged app by measuring every element in both modes; this
+// is the cheap guard that runs everywhere: no style rule keyed to Show Mode
+// may set anything that sizes or moves a box.
+{
+  const styleFiles = ['client/assets/styles/main.scss'];
+  const collect = (dir) => {
+    for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+      if (entry.isDirectory()) collect(`${dir}/${entry.name}`);
+      else if (entry.name.endsWith('.vue')) styleFiles.push(`${dir}/${entry.name}`);
+    }
+  };
+  collect('client/app');
+  const BOX = /(?:^|[;{\s])(?:width|height|min-width|min-height|max-width|max-height|font-size|line-height|padding|margin|gap|inset|top|right|bottom|left|flex|flex-basis|grid-template[a-z-]*|grid-auto[a-z-]*|grid-area|grid-column|grid-row|display|position|transform|--[a-z-]*(?:width|height|size))[a-z-]*\s*:/;
+  const offenders = [];
+  for (const file of styleFiles) {
+    const source = read(file);
+    const styles = file.endsWith('.vue') ? (source.match(/<style[^>]*>[\s\S]*?<\/style>/g) ?? []).join('\n') : source;
+    for (const [, selector, body] of styles.matchAll(/([^{};]+)\{([^{}]*)\}/g)) {
+      const keyed = selector.replace(/:not\([^)]*\)/g, '');
+      if (/\.show-mode\b|--show\b/.test(keyed) && BOX.test(body)) offenders.push(`${file}: ${selector.trim().replace(/\s+/g, ' ')}`);
+    }
+  }
+  assert.deepEqual(offenders, [], 'style rules keyed to Show Mode must not size or move anything');
+}
 assert.match(
   playlistItem,
-  /\.playlist-item\.show-mode[\s\S]{0,900}grid-template-areas:\s*'expand identity state video actions transport duration arm'/,
-  'Show Mode must keep video, edit controls, transport, clock, and Play Next in order',
+  /\.playlist-item\.show-mode \.item-content\s*\{\s*cursor:\s*default;\s*\}/,
+  'a Show Mode row is a playback surface: it shows no grab pointer',
 );
 assert.equal(
   playlistItem.includes('grid-template-columns: 34px minmax(0, 1fr) max-content max-content max-content max-content var(--cue-time-width, 96px) var(--playlist-set-next-width, 92px)'),
@@ -281,16 +319,6 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.show-mode[\s\S]*:deep\(\.preview-action\.action-btn--playlist\)\s*\{[\s\S]*width:\s*32px;[\s\S]*min-width:\s*32px;[\s\S]*min-height:\s*26px;/,
-  'Show Mode must keep the secondary preview button at normal size',
-);
-assert.match(
-  playlistItem,
-  /\.playlist-item\.show-mode[\s\S]{0,1400}\.item-index\s*\{\s*font-size:\s*18px;[\s\S]*\.item-name,\s*&\.is-group \.item-name\s*\{\s*font-size:\s*18px;/,
-  'Show Mode must use larger readable cue numbers and titles',
-);
-assert.match(
-  playlistItem,
   /\.item-index\s*\{[\s\S]*justify-content:\s*center;[\s\S]*font-size:\s*var\(--cue-text-size\);[\s\S]*font-family:\s*var\(--font-sans\);[\s\S]*\.item-name\s*\{[\s\S]*font-size:\s*var\(--cue-text-size\);[\s\S]*\.video-badge-icon\s*\{[\s\S]*height:\s*var\(--cue-cell-height\);[\s\S]*font-size:\s*var\(--cue-text-size\);/,
   'playlist number, title, and video cells must share the readable playlist font and sizing',
 );
@@ -306,7 +334,7 @@ assert.doesNotMatch(playlistItem, /class="material-symbols-rounded video-badge-i
 assert.match(playlistItem, /class="set-next-action"[\s\S]{0,700}:label="t\('status\.upNext'\)"[\s\S]{0,700}:hover-label="[^"]+"/, 'the next control must combine its fixed Up Next label with the Play Next hover label');
 assert.match(
   uiMode,
-  /normalizeBoundedInteger[\s\S]*Math\.min\(max, Math\.max\(min, Math\.round\(number\)\)\)[\s\S]*regular:\s*\{ min: 44, max: 72, default: 44 \}[\s\S]*show:\s*\{ min: 60, max: 96, default: 68 \}[\s\S]*folder:\s*\{ min: 60, max: 96, default: 60 \}[\s\S]*normalizePlaylistRowHeight[\s\S]*REGULAR_ROW_HEIGHT_KEY[\s\S]*SHOW_ROW_HEIGHT_KEY[\s\S]*FOLDER_ROW_HEIGHT_KEY/,
+  /normalizeBoundedInteger[\s\S]*Math\.min\(max, Math\.max\(min, Math\.round\(number\)\)\)[\s\S]*regular:\s*\{ min: 44, max: 72, default: 44 \}[\s\S]*folder:\s*\{ min: 60, max: 96, default: 60 \}[\s\S]*normalizePlaylistRowHeight[\s\S]*REGULAR_ROW_HEIGHT_KEY[\s\S]*FOLDER_ROW_HEIGHT_KEY/,
   'playlist row-height preferences must remain bounded and persist per device',
 );
 assert.match(
@@ -316,7 +344,7 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /:style="playlistRowStyle"[\s\S]*--playlist-row-height[\s\S]*--show-playlist-row-height[\s\S]*--folder-playlist-row-height[\s\S]*--playlist-waveform-opacity/,
+  /:style="playlistRowStyle"[\s\S]*--playlist-row-height[\s\S]*--folder-playlist-row-height[\s\S]*--playlist-waveform-opacity/,
   'playlist density and waveform opacity must be inherited once by top-level and nested rows',
 );
 assert.match(
@@ -336,14 +364,14 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<button[\s\S]*?class="item-name"[\s\S]*?@click="toggleFileName"[\s\S]*?\{\{ visibleTitle \}\}<\/button>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"/,
+  /<span class="item-color-rail" :style="\{ backgroundColor: item\.color \}" aria-hidden="true"><\/span>[\s\S]*<button[\s\S]*?class="item-name"[\s\S]*?@click="toggleFileName"[\s\S]*?\{\{ visibleTitle \}\}<span v-if="item\.note" class="item-note">\{\{ item\.note \}\}<\/span><\/button>[\s\S]*v-if="isPaused" class="status-pill paused"[\s\S]*v-else-if="isPlaying" class="status-pill playing"/,
   'cue colour must remain an independent rail while paused and playing states retain explicit priority',
 );
 assert.match(playlistItem, /'is-up-next': isQueuedNext/, 'queued-next state must remain on the playlist row');
 assert.match(
   playlistItem,
-  /\.item-name\s*\{[\s\S]{0,260}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,180}color:\s*var\(--state-playing\);[\s\S]*\.playlist-item\.is-paused > \.item-content \.item-name\s*\{[\s\S]{0,120}color:\s*var\(--color-text-primary\);/,
-  'playing cue titles must carry playing-state color while paused titles return to neutral',
+  /\.item-name\s*\{[\s\S]{0,260}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,180}color:\s*var\(--color-text-primary\);[\s\S]*\.playlist-item\.is-paused > \.item-content \.item-name\s*\{[\s\S]{0,120}color:\s*var\(--color-text-primary\);/,
+  'cue titles stay white for reading whether playing or paused; solid colour carries the state',
 );
 assert.match(
   playlistItem,
@@ -403,9 +431,10 @@ assert.equal(
   'the playlist stop button must keep the standard unfilled control appearance',
 );
 assert.equal(
-  playlistItem.includes(":highlight-color=\"isPlaying ? 'var(--color-danger)' :"),
+  playlistItem.includes(":highlight-color=\"isPlaying ? 'var(--stop-edge)' :")
+    && /\.play-action\.is-stop\.is-stop\s*\{[^}]*background:\s*var\(--stop-button-background\)/.test(playlistItem),
   true,
-  'the active playlist stop button must use the danger red control tint',
+  'Stop wears the yellow-and-black stripes and never the live red',
 );
 assert.equal(
   playlistItem.includes('width: fit-content;') && playlistItem.includes('justify-self: start;'),
@@ -429,8 +458,8 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /--current-playlist-row-height:\s*var\(--playlist-row-height, 44px\)[\s\S]*--current-playlist-row-height:\s*var\(--folder-playlist-row-height, 60px\)[\s\S]*min-height:\s*var\(--current-playlist-row-height\)[\s\S]*scroll-margin-top:\s*var\(--current-playlist-row-height\)[\s\S]*--current-playlist-row-height:\s*var\(--show-playlist-row-height, 68px\)[\s\S]*@container \(max-width: 700px\)/,
-  'regular, Show Mode, and folder row heights must control geometry while preserving usable title space',
+  /--current-playlist-row-height:\s*var\(--playlist-row-height, 44px\)[\s\S]*--current-playlist-row-height:\s*var\(--folder-playlist-row-height, 60px\)[\s\S]*min-height:\s*var\(--current-playlist-row-height\)[\s\S]*scroll-margin-top:\s*var\(--current-playlist-row-height\)/,
+  'cue and folder row heights must control geometry while preserving usable title space',
 );
 assert.match(
   playlistItem,
@@ -439,7 +468,55 @@ assert.match(
 );
 const mainWorkspace = read('client/app/components/MainWorkspace.vue');
 const playbackControls = read('client/app/components/PlaybackControls.vue');
+
+// The background video check and its conversions must never compete with a show.
+const videoPreflight = read('client/app/composables/useVideoPreflight.ts');
+const videoConvert = read('client/electron/video-convert.js');
+assert.match(
+  videoPreflight,
+  /watch\(\[ready, transportActive\], \(\[isReady, active\]\) => \{\s*if \(!isReady \|\| active\) cancel\(\);[\s\S]*server\.onCueState\(\(\{ transport \}\) => \{ if \(transport !== 0\) cancel\(\); \}\);/,
+  'anything that plays stops the video check and any conversion at once',
+);
+assert.match(
+  videoPreflight,
+  /const stop = \(\) => api\.cancelConvert\(id\);\s*signal\.addEventListener\('abort', stop, \{ once: true \}\);[\s\S]*if \(busy\.value \|\| !ready\.value \|\| transportActive\.value\) return;[\s\S]*const wanted = computed\(\(\) => ready\.value && !transportActive\.value && !busy\.value && !resting\.value &&/,
+  'stopping the check stops the converter, and neither starts while a cue or Preview is running',
+);
+assert.match(
+  videoPreflight,
+  /stalls = result === 'timeout' \|\| result === 'probe-error' \? stalls \+ 1 : 0;\s*if \(stalls >= 2\) \{\s*phase\.value = 'interrupted';/,
+  'one slow video is flagged and passed over; two in a row end the run rather than queue more disk reads',
+);
+assert.match(
+  videoConvert,
+  /if \(!parsed\.name \|\| parsed\.name\.endsWith\(CONVERTED_SUFFIX\)\) return null;[\s\S]*const partial = `\$\{output\}\.part`;[\s\S]*PRIORITY_BELOW_NORMAL[\s\S]*if \(result\.status !== 'converted'\) fs\.rmSync\(partial, \{ force: true \}\);[\s\S]*await publishCopy\(partial, output\);/,
+  'a conversion writes a new copy beside the original at low priority, leaves nothing half-made, and never converts a copy again',
+);
+assert.match(
+  videoConvert,
+  /const BUSY = new Set\(\['EBUSY', 'EPERM', 'EACCES'\]\);[\s\S]*rename\(partial, output\);\s*return;\s*\} catch \(error\) \{\s*if \(attempt >= tries \|\| !BUSY\.has\(error\?\.code\)\) throw error;\s*await wait\(250\);/,
+  'the finished copy is swapped in by one rename, tried again while Windows has the file briefly open',
+);
+assert.doesNotMatch(videoConvert, /rmSync\(output/,
+  'the copy a cue is using is never deleted to make room for its replacement');
+assert.match(videoConvert, /'-map', '0:V:0', '-map', '0:a:0\?'/,
+  'a conversion takes the film, never a cover picture or thumbnail listed as a video stream');
+assert.doesNotMatch(
+  videoConvert,
+  /fs\.(?:rmSync|unlinkSync|writeFileSync|renameSync)\(\s*sourcePath|'-avoid_negative_ts'/,
+  'the original video is never written to, and nothing shifts the copy\'s first picture away from zero',
+);
 const activeCueItem = read('client/app/components/ActiveCueItem.vue');
+assert.equal(
+  /\.(?:panic-btn|stop-btn|preview-stop-btn)\s*\{[^}]*(?:#d71920|--color-danger|--state-playing)/.test(playbackControls + activeCueItem),
+  false,
+  'Stop All and the live-card Stop buttons wear the stripes; red is kept for what is live',
+);
+assert.match(
+  playbackControls,
+  /\.panic-btn\s*\{[^}]*border:\s*var\(--stop-frame\) solid transparent;[^}]*var\(--stop-stripes\) border-box;[^}]*color:\s*var\(--stop-label\);/,
+  'Stop All keeps a readable white label on a black face inside the striped frame',
+);
 const canvasFader = read('client/app/components/CanvasFader.vue');
 const stereoMeter = read('client/app/components/StereoMeter.vue');
 const volumeSlider = read('client/app/components/VolumeSlider.vue');
@@ -497,6 +574,29 @@ assert.match(
   'the limiter ceiling must be presented as true peak (dBTP)',
 );
 const enLocale = JSON.parse(read('client/locales/en.json'));
+// Every language carries every string, with the same {placeholders}. A missing
+// string silently shows English in the middle of a translated screen.
+{
+  const flattenLocale = (node, prefix = '') => Object.entries(node).flatMap(([key, value]) =>
+    value && typeof value === 'object' ? flattenLocale(value, `${prefix}${key}.`) : [[`${prefix}${key}`, value]]);
+  const placeholders = text => (String(text).match(/\{[^}]*\}/g) || []).sort().join(',');
+  const english = new Map(flattenLocale(enLocale));
+  const localeDir = path.join(root, 'client', 'locales');
+  const localeFiles = fs.readdirSync(localeDir).filter(file => file.endsWith('.json') && file !== 'en.json');
+  assert.equal(localeFiles.length, 20, 'the app ships 20 languages besides English');
+  for (const file of localeFiles) {
+    const translated = new Map(flattenLocale(JSON.parse(fs.readFileSync(path.join(localeDir, file), 'utf8'))));
+    const missing = [...english.keys()].filter(key => !translated.has(key));
+    const extra = [...translated.keys()].filter(key => !english.has(key));
+    assert.deepEqual(missing, [], `${file} is missing strings`);
+    assert.deepEqual(extra, [], `${file} has strings the app no longer uses`);
+    for (const [key, text] of english) {
+      const value = translated.get(key);
+      assert.ok(typeof value === 'string' && value.trim(), `${file} has an empty ${key}`);
+      assert.equal(placeholders(value), placeholders(text), `${file} must keep the placeholders of ${key}`);
+    }
+  }
+}
 assert.equal(enLocale.outputConsole.ceilingInputLabel, 'True-peak limiter ceiling in dBTP');
 assert.match(
   mainWorkspace,
@@ -540,59 +640,59 @@ assert.match(
   'the docked stereo fader must link both channels and make its −∞ detent truly silent',
 );
 const workspaceOrder = [
-  mainWorkspace.indexOf('<OneShotPanel>'),
+  mainWorkspace.indexOf('<QuickPlayPanel>'),
   mainWorkspace.indexOf('<PlaylistView '),
   mainWorkspace.indexOf('class="output-console"'),
 ];
 assert.ok(
   workspaceOrder.every(position => position >= 0) &&
     workspaceOrder[0] < workspaceOrder[1] && workspaceOrder[1] < workspaceOrder[2],
-  'the workspace must order One Shots, playlist, then output console',
+  'the workspace must order QuickPlays, playlist, then output console',
 );
 assert.match(
   mainWorkspace,
-  /const newWidth = fromStart \/ zoom;[\s\S]*newWidth < snapThreshold[\s\S]*cartClosed\.value = true[\s\S]*newWidth > container\.offsetWidth - snapThreshold[\s\S]*cartFullscreen\.value = true/,
+  /const newWidth = fromStart \/ zoom;[\s\S]*newWidth < snapThreshold[\s\S]*quickPlayClosed\.value = true[\s\S]*newWidth > container\.offsetWidth - snapThreshold[\s\S]*quickPlayFullscreen\.value = true/,
   'the QuickPlays splitter must snap closed at the start and expanded at the end',
 );
 assert.match(
   mainWorkspace,
-  /'collapsed-left': cartClosed,\s*'collapsed-right': cartFullscreen/,
-  'collapsed cart handles must remain reachable on their new edges',
+  /'collapsed-left': quickPlayClosed,\s*'collapsed-right': quickPlayFullscreen/,
+  'collapsed QuickPlay handles must remain reachable on their new edges',
 );
 assert.match(
   mainWorkspace,
   /&\.collapsed-left\s*\{[\s\S]*inset-inline-start:\s*0;[\s\S]*top:\s*var\(--panel-header-height\);/,
-  'the closed-cart resize edge must start below the fixed header toggle',
+  'the closed-quickplay resize edge must start below the fixed header toggle',
 );
 assert.match(
   mainWorkspace,
-  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<OneShotPanel>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('oneShots\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView\b[^>]*>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle(?: [^"]*)?"[\s\S]*t\('oneShots\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
-  'the One Shots toggle must stay in the active panel header and leave resizing to the splitter',
+  /class="workspace-panels"[\s\S]*id="quickplay-workspace-panel"[\s\S]*<QuickPlayPanel>[\s\S]*#header-leading[\s\S]*class="quickplay-toggle quickplay-toggle--open"[\s\S]*t\('quickPlays\.hide'\)[\s\S]*@click="toggleQuickPlays"[\s\S]*<PlaylistView\b[^>]*>[\s\S]*#header-leading[\s\S]*v-if="quickPlayClosed && !quickPlayDetached"[\s\S]*class="quickplay-toggle(?: [^"]*)?"[\s\S]*t\('quickPlays\.show'\)[\s\S]*@click="toggleQuickPlays"[\s\S]*function toggleQuickPlays\(\)[\s\S]*quickPlayClosed\.value = !quickPlayClosed\.value[\s\S]*quickPlayFullscreen\.value = false/,
+  'the QuickPlays toggle must stay in the active panel header and leave resizing to the splitter',
 );
 assert.match(
   mainWorkspace,
-  /\.cart-toggle\s*\{[\s\S]*flex:\s*0 0 var\(--panel-control-height\);[\s\S]*width:\s*var\(--panel-control-height\);[\s\S]*height:\s*var\(--panel-control-height\);[\s\S]*:focus-visible/,
-  'the in-flow cart toggle must share the panel control rail and keyboard focus treatment',
+  /\.quickplay-toggle\s*\{[\s\S]*flex:\s*0 0 var\(--panel-control-height\);[\s\S]*width:\s*var\(--panel-control-height\);[\s\S]*height:\s*var\(--panel-control-height\);[\s\S]*:focus-visible/,
+  'the in-flow QuickPlay toggle must share the panel control rail and keyboard focus treatment',
 );
 assert.doesNotMatch(
   mainWorkspace,
-  /cart-toggle-visible|cart-is-closed|\.cart-toggle\s*\{[^}]*position:\s*absolute/,
-  'the cart toggle must not use absolute positioning or compensating header classes',
+  /quickplay-toggle-visible|quickplay-is-closed|\.quickplay-toggle\s*\{[^}]*position:\s*absolute/,
+  'the QuickPlay toggle must not use absolute positioning or compensating header classes',
 );
 assert.match(
-  read('client/app/components/OneShotPanel.vue') + playlistView,
-  /one-shot-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"[\s\S]*playlist-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"/,
-  'One Shots and playlist headers must expose the same in-flow leading-control lane',
+  read('client/app/components/QuickPlayPanel.vue') + playlistView,
+  /quickplay-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"[\s\S]*playlist-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"/,
+  'QuickPlays and playlist headers must expose the same in-flow leading-control lane',
 );
 assert.doesNotMatch(
   mainWorkspace,
-  /cartClosed \? 'chevron_right' : 'chevron_left'/,
-  'the cart toggle icon must not flip direction and appear to dance',
+  /quickPlayClosed \? 'chevron_right' : 'chevron_left'/,
+  'the QuickPlay toggle icon must not flip direction and appear to dance',
 );
 assert.match(
   mainWorkspace,
-  /v-show="recoveryOpen \|\| !cartFullscreen \|\| cartDetached" class="playlist-section"/,
-  'detaching a fullscreen cart must reveal the playlist',
+  /v-show="recoveryOpen \|\| !quickPlayFullscreen \|\| quickPlayDetached" class="playlist-section"/,
+  'detaching a fullscreen QuickPlay must reveal the playlist',
 );
 assert.match(
   mainWorkspace,
@@ -701,12 +801,12 @@ assert.match(
 );
 assert.match(
   mainWorkspace,
-  /class="lower-workspace-panel"[\s\S]*:style="\{ height: [^"]+panelHeight[^"]+\}"[\s\S]*class="lower-panel-resize-handle"[\s\S]*role="separator"[\s\S]*@pointerdown="startPanelResize"[\s\S]*@keydown="handlePanelResizeKey"/,
+  /class="lower-workspace-panel"[\s\S]*:style="\{ height: lowerPanelHeight, maxHeight: [^"]+\}"[\s\S]*class="lower-panel-resize-handle"[\s\S]*role="separator"[\s\S]*@pointerdown="startPanelResize"[\s\S]*@keydown="handlePanelResizeKey"/,
   'Settings, Properties, and imports must share the pointer and keyboard resize control',
 );
 assert.match(
   mainWorkspace,
-  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*autoSizeImportPanel = computed\(\(\) => visibleImportPanel\.value === 'delete-selection' \|\| visibleImportPanel\.value === 'repair'\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value\s*: autoSizeImportPanel\.value \? null\s*: visibleImportPanel\.value \? importHeight\.value : propertiesHeight\.value\);/,
+  /settingsHeight = useState<number \| null>\('ProjectSettingsPanel.height', \(\) => null\);[\s\S]*autoSizeImportPanel = computed\(\(\) => visibleImportPanel\.value === 'delete-selection' \|\| visibleImportPanel\.value === 'repair'\s*\|\| visibleImportPanel\.value === 'import-choice' \|\| visibleImportPanel\.value === 'video-capture'\);[\s\S]*panelHeight = computed\(\(\) => showProjectSettings\.value \? settingsHeight\.value\s*: autoSizeImportPanel\.value \? null\s*: visibleImportPanel\.value \? importHeight\.value : propertiesHeight\.value\);/,
   'each lower panel must fit its contents until the operator resizes it',
 );
 assert.ok(mainWorkspace.includes('<DeleteSelectionPanel v-if="visibleImportPanel === \'delete-selection\'" />')
@@ -888,7 +988,7 @@ assert.match(
 );
 assert.match(
   volumeSlider,
-  /volume-slider--inline \.volume-slider__label\s*\{[\s\S]{0,160}width:\s*64px;[\s\S]{0,100}padding:\s*2px 4px;[\s\S]*volume-slider--inline \.volume-slider__input\s*\{[\s\S]{0,220}right:\s*0;[\s\S]{0,260}width:\s*64px;[\s\S]{0,120}padding:\s*0 4px;[\s\S]{0,80}text-align:\s*right;[\s\S]*\.volume-slider__label\s*\{[\s\S]{0,160}display:\s*grid;[\s\S]{0,100}grid-template-columns:\s*minmax\(0, 1fr\) auto;[\s\S]{0,80}gap:\s*3px;[\s\S]{0,180}min-width:\s*64px;[\s\S]{0,100}padding:\s*3px 4px;[\s\S]{0,260}font-size:\s*12px;[\s\S]*\.volume-slider__value\s*\{[\s\S]{0,100}text-align:\s*right;[\s\S]*\.volume-slider__unit\s*\{[\s\S]{0,140}font-size:\s*9px;[\s\S]{0,120}text-transform:\s*none;/,
+  /volume-slider--inline \.volume-slider__label\s*\{[\s\S]{0,160}width:\s*64px;[\s\S]{0,100}padding:\s*2px 4px;[\s\S]*volume-slider--inline \.volume-slider__input\s*\{[\s\S]{0,220}right:\s*0;[\s\S]{0,260}width:\s*64px;[\s\S]{0,120}padding:\s*0 4px;[\s\S]{0,80}text-align:\s*right;[\s\S]*\.volume-slider__label\s*\{[\s\S]{0,160}display:\s*grid;[\s\S]{0,100}grid-template-columns:\s*minmax\(0, 1fr\) auto;[\s\S]{0,80}gap:\s*3px;[\s\S]{0,180}min-width:\s*64px;[\s\S]{0,100}padding:\s*3px 4px;[\s\S]{0,260}font-size:\s*12px;[\s\S]*\.volume-slider__value\s*\{[\s\S]{0,100}text-align:\s*right;[\s\S]*\.volume-slider__unit\s*\{[\s\S]{0,140}font-size:\s*11px;[\s\S]{0,120}text-transform:\s*none;/,
   'the displayed and edited fader values must fit one legible 64-pixel console column',
 );
 assert.match(
@@ -911,8 +1011,8 @@ assert.doesNotMatch(projectSettingsModal + read('client/app/components/TestCardC
   'Time Left and Test Card colors must not open native color dialogs');
 assert.match(
   projectSettingsModal,
-  /regular-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.regular[\s\S]*show-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.show[\s\S]*folder-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.folder[\s\S]*onPlaylistRowHeightInput/,
-  'User Interface settings must expose independent regular, Show Mode, and folder row-height controls',
+  /regular-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.regular[\s\S]*folder-playlist-row-height[\s\S]*type="range"[\s\S]*PLAYLIST_ROW_HEIGHTS\.folder[\s\S]*onPlaylistRowHeightInput/,
+  'User Interface settings must expose one cue row height and one folder row height, shared by both modes',
 );
 assert.match(
   projectSettingsModal,
@@ -937,17 +1037,18 @@ const transpiledProject = ts.transpileModule(
 const projectRuntime = { exports: {} };
 Function('exports', 'module', transpiledProject)(projectRuntime.exports, projectRuntime);
 const {
-  CART_SLOT_COUNT_LIMITS,
+  QUICK_PLAY_SLOT_COUNT_LIMITS,
   DEFAULT_COUNTDOWN_COLOR_BANDS,
   DEFAULT_PROJECT_SETTINGS,
   PRESET_COLORS,
   colorForNewAudioItem,
-  normalizeCartSlotCount,
+  normalizeQuickPlaySlotCount,
   normalizeCountdownColorBands,
   countdownColorForSeconds,
+  countdownInk,
 } = projectRuntime.exports;
-assert.deepEqual(CART_SLOT_COUNT_LIMITS, { min: 1, max: 64, default: 16 });
-assert.equal(DEFAULT_PROJECT_SETTINGS.cartSlotCount, 16);
+assert.deepEqual(QUICK_PLAY_SLOT_COUNT_LIMITS, { min: 1, max: 64, default: 16 });
+assert.equal(DEFAULT_PROJECT_SETTINGS.quickPlaySlotCount, 16);
 assert.equal(DEFAULT_PROJECT_SETTINGS.cycleTrackColors, true);
 assert.equal(PRESET_COLORS.includes('#FF0000'), false);
 assert.equal(PRESET_COLORS.includes('#CC0000'), false);
@@ -955,11 +1056,11 @@ assert.equal(colorForNewAudioItem(undefined, 0), PRESET_COLORS[0]);
 assert.equal(colorForNewAudioItem(undefined, 1), PRESET_COLORS[1]);
 assert.equal(colorForNewAudioItem(undefined, PRESET_COLORS.length), PRESET_COLORS[0]);
 assert.equal(colorForNewAudioItem({ cycleTrackColors: false }, 5), PRESET_COLORS[0]);
-assert.equal(normalizeCartSlotCount(undefined), 16);
-assert.equal(normalizeCartSlotCount(999), 64);
-assert.equal(normalizeCartSlotCount(4, [{ slot: 31 }]), 32);
-assert.equal(normalizeCartSlotCount(4, [], { 31: {} }), 32);
-assert.equal(normalizeCartSlotCount(4, [{ slot: -1 }, { slot: 1.5 }, { slot: 63 }]), 64);
+assert.equal(normalizeQuickPlaySlotCount(undefined), 16);
+assert.equal(normalizeQuickPlaySlotCount(999), 64);
+assert.equal(normalizeQuickPlaySlotCount(4, [{ slot: 31 }]), 32);
+assert.equal(normalizeQuickPlaySlotCount(4, [], { 31: {} }), 32);
+assert.equal(normalizeQuickPlaySlotCount(4, [{ slot: -1 }, { slot: 1.5 }, { slot: 63 }]), 64);
 assert.deepEqual(DEFAULT_COUNTDOWN_COLOR_BANDS, [
   { startSeconds: 11, color: '#35A96B' },
   { startSeconds: 6, color: '#D8AD35' },
@@ -980,13 +1081,21 @@ assert.deepEqual(
   normalizeCountdownColorBands([{ startSeconds: 'bad', color: 'red' }]),
   DEFAULT_COUNTDOWN_COLOR_BANDS,
 );
+// The countdown is a stop light of its own: green, then yellow, then red.
 assert.equal(countdownColorForSeconds(11, undefined), '#35A96B');
+assert.equal(countdownColorForSeconds(30, [
+  { startSeconds: 11, color: '#123456' }, { startSeconds: 0, color: '#E54855' },
+]), '#123456');
 assert.equal(countdownColorForSeconds(10, undefined), '#D8AD35');
 assert.equal(countdownColorForSeconds(6, undefined), '#D8AD35');
 assert.equal(countdownColorForSeconds(5, undefined), '#E54855');
 assert.equal(countdownColorForSeconds(0, undefined), '#E54855');
 assert.equal(countdownColorForSeconds(10.1, undefined), '#35A96B');
 assert.equal(countdownColorForSeconds(null, undefined), null);
+// On the light console the digits are deepened so green and yellow still read.
+assert.equal(countdownInk('#D8AD35', 'dark'), '#D8AD35');
+assert.equal(countdownInk('#D8AD35', 'light'), 'color-mix(in srgb, #D8AD35 60%, #000000)');
+assert.equal(countdownInk(null, 'light'), null);
 
 const transpiledAudio = ts.transpileModule(
   read('client/app/utils/audio.ts'),
@@ -1168,7 +1277,7 @@ assert.match(
 assert.match(
   downloadRoute,
   /if \(req\.method == crow::HTTPMethod::Delete\)[\s\S]*complete_download_token\(token\)/,
-  'DELETE /api/file/download should mark one-shot token complete',
+  'DELETE /api/file/download should mark the single-use token complete',
 );
 assert.match(
   downloadRoute,
@@ -1366,7 +1475,7 @@ assert.match(electron, /let liveplayServerStartPromise = null/, 'concurrent star
 assert.match(electron, /if \(liveplayServerStartPromise\) return liveplayServerStartPromise/, 'concurrent start requests must not spawn twice');
 assert.match(
   electron,
-  /await pollPidfileForServerPid\(\s*lockPath, instanceToken, accessToken, cfg\.localPort, launchState/,
+  /await pollPidfileForServerPid\(\s*lockPath, instanceToken, accessToken, port, launchState/,
   'a launch must adopt its PID before it is considered complete',
 );
 assert.match(
@@ -1472,7 +1581,9 @@ assert.doesNotMatch(
 );
 assert.match(
   electron,
-  /ensure-running[\s\S]*healthMatchesIdentity\(health, lock\)/,
+  // The readiness wait moved into its own function so it can run again after
+  // an unresponsive server is restarted; ensure-running must still go through it.
+  /async function awaitLiveplayServerHealthy[\s\S]*healthMatchesIdentity\(health, lock\)[\s\S]*async function ensureLiveplayServerRunning[\s\S]*awaitLiveplayServerHealthy\(cfg, 10000\)[\s\S]*'liveplay-server:ensure-running'[\s\S]*ensureLiveplayServerRunning\(\)/,
   'ensure-running must match the configured port health to the managed pidfile generation',
 );
 assert.match(
@@ -1567,15 +1678,37 @@ const readyStart = electron.indexOf('app.whenReady().then');
 const readyEnd = electron.indexOf('\\n  });', readyStart);
 const readyPath = electron.slice(readyStart, readyEnd);
 assert.ok(
-  readyPath.indexOf('createWindow();') >= 0 &&
-  readyPath.indexOf('createWindow();') < readyPath.indexOf('void setupFfmpeg()'),
-  'window creation must not wait for external FFmpeg probes',
+  readyPath.indexOf('createWindow();') >= 0 && !readyPath.includes('setupFfmpeg'),
+  'startup must not probe or download FFmpeg; the importers fetch it on demand',
 );
 assert.match(
   electron,
-  /execFilePromise\(ffmpegPath, \['-version'\], \{ timeout: 5000 \}\)/,
-  'bundled FFmpeg startup probes must have a hard timeout',
+  /execFilePromise\(toolPath, \['-version'\], \{ timeout, windowsHide: true \}\)/,
+  'FFmpeg probes must have a hard timeout',
 );
+// The audio engine carries its own FFmpeg. A second copy for the importers
+// must not return to the installer: it is downloaded, pinned, on first import.
+for (const name of ['@ffmpeg-installer/ffmpeg', '@ffprobe-installer/ffprobe', 'fluent-ffmpeg']) {
+  assert.ok(!(name in pkg.dependencies), `${name} must not be packaged with the app`);
+}
+assert.ok(
+  !pkg.build.asarUnpack.some(pattern => /ffmpeg|ffprobe/.test(pattern)),
+  'no FFmpeg program is unpacked into the installed app',
+);
+assert.doesNotMatch(electron, /require\(['"]@ff(mpeg|probe)-installer/,
+  'the app must not load a bundled FFmpeg');
+assert.match(
+  electron,
+  /await downloadToFile\(net\.fetch, pinned\.url, archivePath\);\s+if \(!await fileMatchesIntegrity\(archivePath, pinned\.integrity\)\) \{\s+throw/,
+  'a downloaded FFmpeg archive must pass its pinned integrity check before it is unpacked',
+);
+assert.match(
+  electron,
+  /ffmpegSetupPromise = initializeFfmpeg\(\)\.then\(\(ready\) => \{\s+if \(!ready\) ffmpegSetupPromise = null;/,
+  'a failed FFmpeg setup must be retried by the next import, not kept until restart',
+);
+assert.doesNotMatch(electron, /Please restart the application/,
+  'import failures must not tell the operator to restart the app');
 const { validatedSpotifyUrl } = require('../client/electron/spotify-import-reliability');
 assert.match(
   validatedSpotifyUrl('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=test'),
@@ -1710,8 +1843,8 @@ assert.match(
   /const projectFolderPath = props\.projectFolderPath[\s\S]*const projectEpoch = props\.projectEpoch[\s\S]*props\.projectFolderPath !== projectFolderPath[\s\S]*currentEpoch\.value !== projectEpoch/,
   'a Spotify job must stay bound to the project generation that started it',
 );
-const oneShotPanel = read('client/app/components/OneShotPanel.vue');
-const oneShotTile = read('client/app/components/OneShotTile.vue');
+const quickPlayPanel = read('client/app/components/QuickPlayPanel.vue');
+const quickPlayTile = read('client/app/components/QuickPlayTile.vue');
 const youtubeImport = read('client/app/components/YouTubeImportModal.vue');
 const controlConfig = read('client/app/components/ControlConfigModal.vue');
 const midiController = read('client/app/composables/useMidiController.ts');
@@ -1741,37 +1874,37 @@ assert.match(
 assert.match(
   mainWorkspace,
   /\.output-console__strips\s*\{[\s\S]{0,220}gap:\s*var\(--spacing-sm\);[\s\S]{0,160}padding:\s*var\(--spacing-sm\);[\s\S]*&\.collapsed-left\s*\{[\s\S]{0,180}top:\s*var\(--panel-header-height\);/,
-  'workspace panel gutters, dividers, and the cart toggle must land on shared header edges',
+  'workspace panel gutters, dividers, and the QuickPlay toggle must land on shared header edges',
 );
 assert.match(
   mainWorkspace,
   /class="playlist-section">[\s\S]*\.playlist-section\s*\{[\s\S]{0,100}flex:\s*1 1 0;[\s\S]{0,80}width:\s*auto;[\s\S]*\.output-console\s*\{[\s\S]{0,180}flex:\s*0 0 var\(--output-console-width\);[\s\S]{0,80}width:\s*var\(--output-console-width\);/,
-  'the cart splitter, playlist, and output rail must share one deterministic width equation',
+  'the QuickPlay splitter, playlist, and output rail must share one deterministic width equation',
 );
 assert.match(
   mainWorkspace,
-  /\.cart-section\s*\{[^}]*flex:\s*0 0 auto;[^}]*max-width:\s*var\(--cart-max-width\);/,
+  /\.quickplay-section\s*\{[^}]*flex:\s*0 0 auto;[^}]*max-width:\s*var\(--quickplay-max-width\);/,
   'the splitter width must respect the workspace bound',
 );
 assert.match(
   mainWorkspace,
-  /const zoom = rect\.width \/ container\.offsetWidth \|\| 1;[\s\S]{0,260}const newWidth = fromStart \/ zoom;[\s\S]*cartWidth\.value = Math\.round\(newWidth\);/,
+  /const zoom = rect\.width \/ container\.offsetWidth \|\| 1;[\s\S]{0,260}const newWidth = fromStart \/ zoom;[\s\S]*quickPlayWidth\.value = Math\.round\(newWidth\);/,
   'the splitter must track the pointer at the current interface scale',
 );
 assert.match(
   mainWorkspace,
-  /\.main-workspace\.show-mode\s*\{[\s\S]{0,240}--playlist-split-min-width:\s*637px;[\s\S]*\.playlist-section\s*\{[\s\S]{0,140}min-width:\s*var\(--playlist-split-min-width\);[\s\S]*\.cart-section\s*\{[^}]*--cart-max-width:\s*calc\(100% - var\(--playlist-split-min-width\) - var\(--resize-handle-width\)\);[^}]*&\.cart-section--fullscreen\s*\{[^}]*max-width:\s*none;/,
-  'the split view must stay usable while fullscreen cart remains unconstrained',
+  /\.playlist-section\s*\{[\s\S]{0,140}min-width:\s*var\(--playlist-split-min-width\);[\s\S]*\.quickplay-section\s*\{[^}]*--quickplay-max-width:\s*calc\(100% - var\(--playlist-split-min-width\) - var\(--resize-handle-width\)\);[^}]*&\.quickplay-section--fullscreen\s*\{[^}]*max-width:\s*none;/,
+  'the split view must stay usable while fullscreen QuickPlay remains unconstrained',
 );
 assert.match(
   mainWorkspace,
-  /@container \(max-width: 940px\)\s*\{\s*\.playlist-section\s*\{\s*min-width:\s*0;\s*\}\s*\.cart-section:not\(\.cart-section--fullscreen\)\s*\{\s*--cart-max-width:\s*min\(32%, 280px\);/,
+  /@container \(max-width: 940px\)\s*\{\s*\.playlist-section\s*\{\s*min-width:\s*0;\s*\}\s*\.quickplay-section:not\(\.quickplay-section--fullscreen\)\s*\{\s*--quickplay-max-width:\s*min\(32%, 280px\);/,
   'the narrow QuickPlays bank must share workspace width with the playlist',
 );
 assert.match(
   mainWorkspace,
   /&\.collapsed-left\s*\{[\s\S]{0,180}top:\s*var\(--panel-header-height\);[\s\S]*&\.collapsed-right\s*\{[\s\S]{0,180}top:\s*var\(--panel-header-height\);/,
-  'collapsed cart dividers must begin below the shared panel header',
+  'collapsed QuickPlay dividers must begin below the shared panel header',
 );
 assert.match(
   mainWorkspace,
@@ -1824,17 +1957,17 @@ assert.doesNotMatch(
   'meter wells must not regain decorative rack shadows',
 );
 assert.match(
-  oneShotPanel,
+  quickPlayPanel,
   /v-else-if="slotErrors\[index\]"[\s\S]{0,220}role="alert"[\s\S]{0,700}clearSlotError\(index\)/,
-  'One Shot import warnings must stay visible until the operator explicitly clears them',
+  'QuickPlay import warnings must stay visible until the operator explicitly clears them',
 );
 assert.match(
-  oneShotTile,
-  /v-if="!showMode"[\s\S]*class="one-shot-control one-shot-remove"[\s\S]*<Teleport defer :to="[^"]*#workspace-import-host[^"]*">[\s\S]*v-if="menuOpen"\s*class="quickplay-settings"[\s\S]*v-if="removeOpen"\s*class="quickplay-remove"[\s\S]*@click="confirmRemove"/,
+  quickPlayTile,
+  /v-if="!showMode"[\s\S]*class="quickplay-control quickplay-remove-button"[\s\S]*<Teleport defer :to="[^"]*#workspace-import-host[^"]*">[\s\S]*v-if="menuOpen"\s*class="quickplay-settings"[\s\S]*v-if="removeOpen"\s*class="quickplay-remove"[\s\S]*@click="confirmRemove"/,
   'QuickPlay settings and the edit-mode removal confirmation must share the nonmodal dock',
 );
 assert.match(
-  oneShotPanel,
+  quickPlayPanel,
   /defer :to="isDetachedWindow \? '#detached-quickplay-dock' : '#workspace-import-host'"[\s\S]*?<AudioImportModal :key="importSlot" docked single-file/,
   'QuickPlay import must use the single-file dock in either window',
 );
@@ -1857,11 +1990,6 @@ assert.doesNotMatch(
   propertiesPanel,
   /\{ id: '(?:media|ducking)', label:/,
   'media and ducking must not return as separate audio-property tabs',
-);
-assert.match(
-  playbackControls,
-  /\.playback-controls\.show-mode :deep\(\.active-cue-item \.action-btn\)\s*\{[\s\S]{0,100}width:\s*32px;[\s\S]{0,80}height:\s*32px;/,
-  'preview and active-cue actions must share one Show Mode control tier',
 );
 assert.match(
   globalStyles,
@@ -1915,7 +2043,7 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /\.playlist-actions\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow-x:\s*auto;[^}]*container:\s*playlist-actions \/ inline-size;[\s\S]*@container playlist-actions \(max-width: 640px\)/,
+  /\.playlist-actions\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow-x:\s*auto;[^}]*container:\s*playlist-actions \/ inline-size;[\s\S]*@container playlist-actions \(max-width: 500px\)/,
   'playlist actions must stay bounded by the shared header at every supported width',
 );
 assert.match(
@@ -1945,33 +2073,21 @@ assert.match(
 );
 assert.match(
   playlistItem,
-  /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,100}justify-self:\s*start;[\s\S]{0,100}max-width:\s*100%;[\s\S]{0,100}box-sizing:\s*border-box;[\s\S]{0,100}color:\s*var\(--state-playing\);\s*\}/,
-  'the playing title must retain the shared identity axis while its text conveys state',
+  /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[\s\S]{0,100}justify-self:\s*start;[\s\S]{0,100}max-width:\s*100%;[\s\S]{0,100}box-sizing:\s*border-box;[\s\S]{0,100}color:\s*var\(--color-text-primary\);\s*\}/,
+  'the playing title must retain the shared identity axis and stay white for reading',
 );
 assert.doesNotMatch(
   playlistItem,
   /\.playlist-item\.is-playing > \.item-content \.item-name\s*\{[^}]*(?:padding|margin-left|background|color:\s*var\(--color-danger\))/,
   'playing state must not turn the cue title into a shifted or coloured contrast chip',
 );
-assert.match(
+// A row is one line at every width. It never rearranges onto a second line
+// when the side panels take room: the title is cut short and the row keeps
+// the same look in a small window as in a large one.
+assert.doesNotMatch(
   playlistItem,
-  /const depthOffset = props\.depth > 0 \? 24 : 0;[\s\S]*marginLeft:\s*showMode\.value \? '0px' : `\$\{depthOffset\}px`[\s\S]*'--item-depth-offset':\s*`\$\{depthOffset\}px`[\s\S]*\.playlist-item\.show-mode\s*\{[\s\S]*\.item-color-rail\s*\{[\s\S]{0,100}left:\s*var\(--item-depth-offset, 0px\);[\s\S]*&\.is-group \.expand-btn\s*\{[\s\S]{0,120}transform:\s*translateX\(-8px\);/,
-  'nested folders must align recursively without entering the fixed Show Mode play lane',
-);
-assert.match(
-  playlistItem,
-  /@container \(max-width: 700px\)\s*\{\s*\.playlist-item > \.item-content \.item-left\s*\{[^}]*grid-template-columns:\s*var\(--cue-leading-width, 34px\) minmax\(0, 1fr\)[^}]*'expand identity identity identity identity state video'\s*'\. \. shuffle actions transport duration arm'/,
-  'the compact cue layout must retain a disclosure lane and give the title its own line above transport',
-);
-assert.match(
-  playlistItem,
-  /\.playlist-item:not\(\.show-mode\) > \.group-children\s*\{[\s\S]{0,80}padding-left:\s*var\(--spacing-md\);/,
-  'Regular Mode must retain its existing nested-folder offset',
-);
-assert.match(
-  playlistItem,
-  /\.playlist-item:not\(\.show-mode\)\.is-group > \.item-content \.expand-btn\s*\{[^}]*translateX\(min\(10px, calc\(2px \+ var\(--folder-column-gap, var\(--spacing-sm\)\)\)\)\)/,
-  'Regular Mode folder arrows must align with their child accent rail',
+  /@container \(max-width: \d+px\)|'\. \. shuffle actions transport duration arm'/,
+  'playlist rows must stay on one line at every width',
 );
 assert.match(
   playlistView,
@@ -2019,9 +2135,9 @@ assert.match(
   'YouTube results must block live downloads and retain saved-file information',
 );
 assert.match(
-  oneShotPanel,
+  quickPlayPanel,
   /importFromServerPath[\s\S]*color: colorForNewAudioItem\(project\.settings, slot\)/,
-  'new One Shot imports must receive their slot-ordered palette color',
+  'new QuickPlay imports must receive their slot-ordered palette color',
 );
 assert.match(
   propertiesPanel,
@@ -2079,9 +2195,9 @@ assert.match(
   'workspace column headers must share one fixed geometry and title style',
 );
 assert.match(
-  playlistView + oneShotPanel + mainWorkspace,
-  /playlist-header workspace-panel-header[\s\S]*one-shot-header workspace-panel-header[\s\S]*output-console__header workspace-panel-header/,
-  'Playlist, One Shots, and Output must all use the shared header system',
+  playlistView + quickPlayPanel + mainWorkspace,
+  /playlist-header workspace-panel-header[\s\S]*quickplay-header workspace-panel-header[\s\S]*output-console__header workspace-panel-header/,
+  'Playlist, QuickPlays, and Output must all use the shared header system',
 );
 assert.match(
   playlistView,
@@ -2281,7 +2397,7 @@ const workspace = read('client/app/components/MainWorkspace.vue');
 assert.match(workspace, /uiMode\.value === 'playback'[\s\S]*e\.key === 'Delete'[\s\S]*key === 'd'[\s\S]*key === 'v'/, 'Show Mode must block destructive workspace shortcuts');
 assert.doesNotMatch(
   workspace,
-  /onTriggerItem|onStopItem|onTriggerCartSlot|onStopAllCues|onApiUpdateItem|onApiUpdateCartItem|sendApiResponse/,
+  /onTriggerItem|onStopItem|onTriggerQuickPlaySlot|onStopAllCues|onApiUpdateItem|onApiUpdateQuickPlayItem|sendApiResponse/,
   'workspace startup must not call retired preload APIs',
 );
 assert.match(appVue, /downloadArchiveToFile\(result\.downloadToken, opts\.downloadTo\.folder,/,
@@ -2330,12 +2446,192 @@ const youtubeImportModal = read('client/app/components/YouTubeImportModal.vue');
 assert.match(mainWorkspace, /class="workspace-import-close" :aria-label="t\('actions\.close'\)"/,
   'the shared import close button must expose an accessible name');
 assert.match(playlistView,
-  /<Teleport defer to="#workspace-import-host">\s*<YouTubeImportModal[\s\S]*:visible="workspaceImportPanel === 'youtube'"\s*:is-open="importOpen.youtube"[\s\S]*<SpotifyImportModal[\s\S]*:visible="workspaceImportPanel === 'spotify'"\s*:open="importOpen.spotify"[\s\S]*<AudioImportModal [^>]*docked/,
+  /<Teleport defer to="#workspace-import-host">\s*<section v-if="workspaceImportPanel === 'import-choice'"[\s\S]*?<\/section>\s*<YouTubeImportModal[\s\S]*:visible="workspaceImportPanel === 'youtube'"\s*:is-open="importOpen.youtube"[\s\S]*<SpotifyImportModal[\s\S]*:visible="workspaceImportPanel === 'spotify'"\s*:open="importOpen.spotify"[\s\S]*<AudioImportModal [^>]*docked/,
   'hiding an import must preserve its job and selection inside the shared workspace');
+assert.match(playlistView,
+  /<Btn icon="add" :text="t\('playlist\.importMenu'\)"[^>]*@click="handleImportButton" \/>/,
+  'the playlist must offer one Import button, not one per source');
+assert.doesNotMatch(playlistView.slice(0, playlistView.indexOf('<Teleport defer to="#workspace-import-host">')),
+  /youtube\.importFromYouTube|playlist\.importYouTube|spotifyImport\.button/,
+  'YouTube and Spotify belong in the Import chooser, not on the playlist bar');
+assert.match(playlistView,
+  /handleImportButton = \(\) => \{\s*if \(!currentProject\.value\) return;\s*if \(!canOnlineImport\.value\) return handleImport\(\);/,
+  'with only one import source the Import button must go straight to it');
+// Keep-awake: the computer must not sleep during a show.
+assert.match(electron,
+  /ipcMain\.handle\('power:keep-awake', \(event, state\) => \{\s*requireTrustedIpc\(event\);\s*requireBoundedIpcObject\(state, 'keep-awake state', 1024\);[\s\S]{0,260}if \(!mainWindow \|\| event\.sender !== mainWindow\.webContents\) return false;\s*applyKeepAwake\(powerSaveBlocker, keepAwakeHolds, keepAwakePlan\(state\)\);/,
+  'only the operator window may set the keep-awake holds, through a validated request');
+assert.match(electron,
+  /mainWindow\.on\('closed', \(\) => \{\s*mainWindow = null;[\s\S]{0,120}releaseKeepAwake\(\);/,
+  'closing the operator window must let the computer sleep again');
+assert.match(read('client/electron/keep-awake.js'),
+  /system: showOpen \|\| playing,\s*display: \(showOpen && showMode\) \|\| playing,/,
+  'an open show must hold off system sleep, and Show Mode or playback must keep the screen on');
+assert.match(read('client/app/app.vue'),
+  /if \(!isQuickPlayWindow && !isVideoOutputWindow\) useKeepAwake\(\);/,
+  'the operator window must report the show state for keep-awake');
+
+// Cue sheet export: a read-only PDF of the open show.
+const cueSheetModule = read('client/electron/cue-sheet.js');
+assert.match(electron,
+  /ipcMain\.handle\('export-cue-sheet', async \(event, payload\) => \{\s*requireTrustedIpc\(event\);[\s\S]{0,200}requireBoundedIpcObject\(payload, 'cue sheet', CUE_SHEET_LIMITS\.maxPayloadBytes\);/,
+  'the cue sheet export must accept only a trusted, size-limited summary from the renderer');
+assert.match(electron,
+  /const result = await showNativeFilePicker\(\(\) => dialog\.showSaveDialog\([\s\S]{0,1400}await fs\.promises\.writeFile\(result\.filePath, pdf\);/,
+  'a cue sheet must be written only where the native save dialog says, never to a path from the renderer');
+assert.match(cueSheetModule,
+  /function cueSheetWindowOptions\(\) \{[\s\S]{0,260}sandbox: true,\s*contextIsolation: true,\s*nodeIntegration: false,\s*javascript: false,/,
+  'the hidden window that prints a cue sheet must be sandboxed with JavaScript off');
+assert.doesNotMatch(cueSheetModule, /require\(['"]electron['"]\)|<script/i,
+  'the cue sheet builder must stay a pure module and must not generate script');
+assert.match(mainWorkspace,
+  /const MAX_PANEL_HEIGHT_PERCENT = 60;[\s\S]*const IMPORT_MAX_PANEL_HEIGHT_PERCENT = 84;[\s\S]*roomyPanel = computed\(\(\) => tallImportPanel\.value \|\| decisionOpen \|\| !!filePicker\.value\);\s*const panelMaxPercent = computed\(\(\) => roomyPanel\.value \? IMPORT_MAX_PANEL_HEIGHT_PERCENT : MAX_PANEL_HEIGHT_PERCENT\)/,
+  'importers may grow taller than Settings and Properties, but never to the whole window: the transport bar stays in view');
+assert.match(mainWorkspace,
+  /visibleImportPanel\.value === 'media' \? `\$\{IMPORT_PANEL_HEIGHT_PERCENT\}%` : 'auto'/,
+  'the file browser must open tall instead of at a few rows');
+assert.match(read('client/app/components/ServerFileBrowser.vue'),
+  /&--staging &__content \{\s*flex: 1 1 clamp\(128px, 24vh, 192px\);/,
+  'the staged file list must grow with its panel instead of being capped at a few rows');
+const itemLevel = read('client/app/components/ItemLevel.vue');
+assert.match(playlistItem,
+  /<div class="item-state">[\s\S]*<ItemLevel :item="item" :read-only="showMode" :disabled="!projectControlsReady" \/>\s*<\/div>\s*<span v-if="item\.type === 'audio'" class="item-duration"/,
+  'every row must show its level at the right of the state lane');
+assert.match(read('client/app/components/QuickPlayTile.vue'),
+  /<ItemLevel :item="item" :read-only="showMode" :max-db="12"\s*:persist="\(\) => persist\(\{ volume: item\.volume \}\)" \/>/,
+  'a QuickPlay tile must use the same level control, saved the way the tile saves its other settings');
+assert.match(itemLevel,
+  /<output v-if="readOnly" class="item-level__value item-level__value--readout"[\s\S]*<input v-else class="item-level__value" type="number"[\s\S]*<span class="item-level__spin">[\s\S]*arrow_drop_up[\s\S]*arrow_drop_down/,
+  'the level is one compact control: a number (never a text field in Show Mode) with stacked up and down arrows');
+assert.match(itemLevel,
+  /\.item-level__spin \{[\s\S]{0,120}grid-template-rows: 1fr 1fr;\s*width: 16px;/,
+  'the level arrows must stay stacked and slim');
+assert.doesNotMatch(itemLevel + playlistItem, /row-level__step|levelArrowsOpen|v-if="[^"]*" class="item-level__spin"/,
+  'the level arrows must not depend on selection or a tap, and must not return to side-by-side buttons');
+assert.match(itemLevel,
+  /const STEP_DB = 0\.5;[\s\S]*function nudge\(direction: number, event: Event\) \{[\s\S]{0,260}\* STEP_DB\);[\s\S]{0,200}\.blur\(\);/,
+  'a press of a level arrow must move a cue or a group by half a dB and give the keyboard back to the transport');
+assert.match(itemLevel,
+  /if \(props\.item\.type === 'group'\) props\.item\.groupGainDb = next;\s*else props\.item\.volume = dbToLinear\(next\);[\s\S]{0,260}if \(props\.persist\) props\.persist\(\); else void saveProject\(\);/,
+  'the level must edit the same volume and groupGainDb values as Properties; nothing new is stored');
+assert.doesNotMatch(playlistItem, /groupGainDb\s*=|\.volume\s*=/,
+  'the playlist row must not carry a second copy of the level logic');
+assert.match(playlistItem,
+  /function commitNote\(\) \{[\s\S]{0,260}if \(note\) props\.item\.note = note;\s*else delete props\.item\.note;[\s\S]{0,120}void saveProject\(\);/,
+  'a playlist note must be its own field: writing one must never change the cue title or the media file name');
+assert.doesNotMatch(playlistItem, /props\.item\.displayName\s*=/,
+  'the playlist row must not rename a cue; titles are edited in Properties');
+assert.match(playlistItem,
+  /\.delete-action \{ grid-column: 1; grid-row: 1; \}\s*\.edit-action \{ grid-column: 2; grid-row: 1; \}[\s\S]{0,120}\.delete-action--parked \{ display: none; \}\s*\.item-actions--single \{ grid-template-columns: 32px; \}/,
+  'Delete must sit away from Play with Edit between them, and appear only on a selected row');
 assert.doesNotMatch(spotifyImportModal + youtubeImportModal, /aria-modal|--dialog-backdrop|<Teleport to="body"/,
   'online imports must not block the playlist or transport with a modal');
 
 const electronMain = read('client/electron/main.js');
+// The icon font is cut down to the icons the app names. Any icon name that
+// appears in the client source must be in it, or the icon would show as its
+// name in letters: run scripts/subset-icon-font.py after using a new icon.
+{
+  const everyIcon = new Set(JSON.parse(read('scripts/material-symbols-rounded-names.json')));
+  const inFont = new Set(JSON.parse(read('client/assets/fonts/material-symbols/icons.json')));
+  const sources = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+      const file = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) walk(file);
+      else if (/\.(vue|ts|js|mjs|cjs|scss)$/.test(entry.name)) sources.push(read(file));
+    }
+  };
+  walk('client/app');
+  walk('client/electron');
+  const words = new Set(sources.join('\n').match(/[a-z0-9_]+/g));
+  const missing = [...everyIcon].filter(name => words.has(name) && !inFont.has(name));
+  assert.deepEqual(missing, [], 'icons named in the source but missing from the bundled icon font');
+  assert.doesNotMatch(read('client/app/app.vue'), /material-symbols\/rounded\.css/,
+    'the full 5 MB icon font must not be bundled again');
+}
+// The shortcut bar is two lines high and lists every keyboard action, the
+// same in both modes.
+assert.match(
+  read('client/app/components/ShortcutsBar.vue'),
+  /const runningActions = RUNNING\.map\(byId\);[\s\S]*PLAYBACK_ACTIONS\.filter\(\(\{ id \}\) => !RUNNING\.includes\(id\) && !LATER\.includes\(id\)\)[\s\S]*\.shortcuts-bar__items \{[^}]*flex-wrap: wrap;[^}]*height: calc\(2 \* var\(--shortcut-line\) \+ 3px\);[^}]*overflow: hidden;/,
+  'the shortcut bar must show two lines of shortcuts and drop none of the actions from its list',
+);
+// Every small Stop All button wears the shared striped edge; none is red.
+for (const file of [
+  'client/app/app.vue', 'client/app/components/SessionRecoveryModal.vue',
+  'client/app/components/ConnectionLostModal.vue', 'client/app/components/ServerFilePickerModal.vue',
+  'client/app/components/AudioImportModal.vue', 'client/app/components/QuickPlayPanel.vue',
+]) {
+  const source = read(file);
+  assert.equal(
+    (source.match(/stop-all-btn/g) ?? []).length,
+    (source.match(/t\('controls\.stopAll'\)/g) ?? []).length,
+    `${file}: every Stop All button carries the stop-all-btn class`,
+  );
+}
+assert.match(
+  read('client/assets/styles/main.scss'),
+  /\.stop-all-btn\.stop-all-btn\.stop-all-btn:hover:not\(:disabled\) \{[^}]*?border: var\(--stop-button-border\);\s*background: var\(--stop-button-background\);\s*color: var\(--color-text-primary\);/,
+  'the small Stop All buttons keep their hazard stripes, also under the pointer',
+);
+assert.doesNotMatch(
+  read('client/app/app.vue') + read('client/app/components/QuickPlayPanel.vue'),
+  /(?:quickplay-recovery-stop|detached-quickplay-stop)[^}]*color: var\(--color-danger\)/,
+  'Stop is never red',
+);
+// Level Check and Pre-show check open from Settings, not from the top bar.
+assert.doesNotMatch(
+  read('client/app/components/ProjectHeader.vue'),
+  /levelCheck|showCheck|useLevelCheck|usePreShowCheck/,
+  'the top bar holds no check buttons',
+);
+assert.match(
+  read('client/app/components/ProjectSettingsModal.vue'),
+  /v-if="activeTab === 'audio'">[\s\S]*?class="settings-rows show-checks"[\s\S]*?@click="openShowCheck">\{\{ t\('showCheck\.title'\) \}\}[\s\S]*?:disabled="levelCheckCount === 0"\s+@click="toggleLevelCheck">\{\{ t\('levelCheck\.title'\) \}\}[\s\S]*?const \{ open: openShowCheck \} = usePreShowCheck\(\);[\s\S]*?useLevelCheck\(\);/,
+  'Settings › Audio Routing opens the Pre-show check and Level Check',
+);
+const stillCapture = read('client/app/composables/useVideoStandbyCapture.ts');
+assert.match(
+  stillCapture,
+  /async function captureStill\(target: StillTarget, source: 'output' \| 'display' = 'output'\)[\s\S]*await server\.uploadFile\(dataUrlToFile\(image, name\), name, sessionId\)[\s\S]*const previous = [\s\S]*lastCapture\.value = \{ target, itemUuid: cue\?\.uuid \?\? null, cueLabel: label, image, path, previous \};/,
+  'a capture says what it is for when it is taken, is saved into the show, and remembers what it replaced for Undo',
+);
+assert.match(
+  stillCapture,
+  /const captureCue = computed<AudioItem \| null>\(\(\) => \{\s*for \(const uuid of \[\.\.\.activeCues\.value\.keys\(\)\]\.reverse\(\)\) \{/,
+  'a capture for a cue goes to the cue that is playing before the one that is merely selected',
+);
+assert.doesNotMatch(
+  read('client/app/components/VideoConfidenceChip.vue'),
+  /captureStill|captureStandby\(/,
+  'the top-bar Video Output picture opens the capture panel; a single click never captures',
+);
+assert.doesNotMatch(
+  electronMain + stillCapture + read('client/locales/en.json').replace(/"showCheck"[\s\S]*?\n  \},/, ''),
+  /screen recording permission|Check (?:the )?(?:system|privacy) settings/i,
+  'a failed screen capture is said plainly, with no advice about system settings',
+);
+assert.match(
+  electronMain,
+  /ipcMain\.handle\('video-output:convert-cue', async \(event, request\) => \{\s*requireVideoCheckOwner\(event\);[\s\S]{0,700}if \(readLiveplayConfig\(\)\.mode === 'remote'\) return \{ status: 'failed', reason: 'remote' \};\s*const sourcePath = cueSourcePath\(currentProjectData\?\.folderPath, cue\);[\s\S]{0,700}if \(!await setupFfmpeg\(\) \|\| !ffmpegPath\) return \{ status: 'failed', reason: 'no-converter' \};/,
+  'only the main workspace can ask for a conversion; the file is looked up here, never taken from the request, and only on this computer',
+);
+// Clean Up Media moves files to the Trash and does nothing else to a file.
+{
+  const mediaCleanup = /\/\/ Clean Up Media: files in the show's media folder that nothing uses[\s\S]*?ipcMain\.handle\('media:trash-unused', async \(event, request\) => \{[\s\S]*?\n\}\);/
+    .exec(electronMain)?.[0] ?? '';
+  assert.match(
+    mediaCleanup,
+    /async function findUnusedShowMedia\(\) \{[\s\S]{0,200}if \(readLiveplayConfig\(\)\.mode === 'remote'\) return \{ available: false, reason: 'remote' \};[\s\S]*ipcMain\.handle\('media:trash-unused', async \(event, request\) => \{\s*requireMediaCleanupOwner\(event\);[\s\S]*if \(!isPlainFileName\(name\)\) throw[\s\S]*const found = await findUnusedShowMedia\(\);[\s\S]*const target = listed \? mediaFilePath\(found\.showFolder, name\) : null;[\s\S]*await shell\.trashItem\(target\);/,
+    'only the main workspace can clean up media, only on this computer; it names files, never paths, and each is found unused again here before it goes to the Trash',
+  );
+  assert.doesNotMatch(
+    mediaCleanup + read('client/electron/unused-media.js'),
+    /\b(?:rm|rmSync|rmdir|rmdirSync|unlink|unlinkSync|rename|renameSync|writeFile|writeFileSync|appendFile|copyFile|truncate)\s*\(|shell\.(?!trashItem\()\w+\(/,
+    'cleaning up media never deletes, renames or writes a file: the Trash is the only place a file goes',
+  );
+}
 const electronPreload = read('client/electron/preload.js');
 assert.match(
   electronMain,
@@ -2435,59 +2731,59 @@ assert.match(
 
 assert.match(
   uiMode,
-  /CART_GRID_LIMITS[\s\S]*rows:\s*\{ min: 1, max: 16 \}[\s\S]*columns:\s*\{ min: 1, max: 16 \}[\s\S]*attachedRegular[\s\S]*attachedShow[\s\S]*detachedRegular[\s\S]*detachedShow[\s\S]*normalizeCartGridLayouts[\s\S]*CART_GRID_LAYOUTS_KEY[\s\S]*setCartGridLayout/,
-  'cart layouts must keep four bounded per-device profiles',
+  /QUICK_PLAY_GRID_LIMITS[\s\S]*rows:\s*\{ min: 1, max: 16 \}[\s\S]*columns:\s*\{ min: 1, max: 16 \}[\s\S]*attachedRegular[\s\S]*detachedRegular[\s\S]*normalizeQuickPlayGridLayouts[\s\S]*QUICK_PLAY_GRID_LAYOUTS_KEY[\s\S]*setQuickPlayGridLayout/,
+  'QuickPlay layouts must keep two bounded per-device profiles, attached and detached, shared by both modes',
 );
 assert.match(
-  oneShotPanel,
-  /props\.isDetachedWindow[\s\S]*'detachedShow'[\s\S]*'detachedRegular'[\s\S]*'attachedShow'[\s\S]*'attachedRegular'[\s\S]*const contentMinHeight = Math\.ceil\(80 \+ 48 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,220}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
-  'One Shots must preserve exact profile columns while reserving a measured safe width and font-scaled two-line row height',
+  quickPlayPanel,
+  /props\.isDetachedWindow \? 'detachedRegular' : 'attachedRegular'[\s\S]*const rows = layout\.rows;[\s\S]*const contentMinHeight = Math\.ceil\(68 \+ 17\.25 \* quickPlayFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,260}--quickplay-columns[\s\S]*--quickplay-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--quickplay-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--quickplay-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
+  'QuickPlays must preserve exact profile columns while reserving a measured safe width and a font-scaled row height that fits ten on the default window',
 );
 assert.doesNotMatch(
-  oneShotPanel,
-  /grid-template-columns:\s*repeat\(\s*auto-fit|--one-shot-min-card-width|--one-shot-target-card-width/,
-  'automatic fitting must not override the operator-selected One Shot columns',
+  quickPlayPanel,
+  /grid-template-columns:\s*repeat\(\s*auto-fit|--quickplay-min-card-width|--quickplay-target-card-width/,
+  'automatic fitting must not override the operator-selected QuickPlay columns',
 );
 assert.match(
-  oneShotPanel,
-  /\.one-shot-grid\s*\{[\s\S]{0,500}scrollbar-gutter:\s*stable;/,
-  'the One Shot grid must reserve a stable scrollbar gutter',
+  quickPlayPanel,
+  /\.quickplay-grid\s*\{[\s\S]{0,500}scrollbar-gutter:\s*stable;/,
+  'the QuickPlay grid must reserve a stable scrollbar gutter',
 );
 assert.match(
   playlistView,
   /\.playlist-header,\s*\.playlist-content\s*\{\s*scrollbar-gutter:\s*stable;/,
   'the playlist header and track list must reserve the same scrollbar gutter',
 );
-assert.match(
-  uiMode,
-  /attachedShow:\s*\{[\s\S]{0,180}minHeight:\s*72,[\s\S]{0,180}default:\s*\{\s*rows:\s*8,\s*columns:\s*2,\s*minHeight:\s*112\s*\}/,
-  'attached Show Mode One Shot cells must keep a compact configurable minimum with a safe default',
+assert.doesNotMatch(
+  uiMode + quickPlayPanel + projectSettingsModal,
+  /attachedShow|detachedShow|showPlaylistRowHeight|SHOW_MODE_MAX_ROW_HEIGHT/,
+  'Show Mode has no row height or QuickPlays layout of its own',
 );
 assert.match(
-  oneShotTile,
-  /\.show-mode \.one-shot-actions\s*\{\s*width:\s*100%;\s*grid-auto-columns:\s*minmax\(0, 1fr\);\s*\}[\s\S]*\.show-mode \.one-shot-control\s*\{\s*width:\s*34px;\s*height:\s*34px;\s*\}/,
-  'Show Mode One Shot cells must use a full-width bottom action strip with clear transport targets',
+  quickPlayPanel,
+  /buildQuickPlayCells\([\s\S]*layout\.rows \* layout\.columns[\s\S]*roundedLength[\s\S]*slots\.push\(null\)/,
+  'QuickPlay cells must remain a permanent grid sized by the active layout rather than playlist contents',
 );
 assert.match(
-  oneShotPanel,
-  /buildOneShotSlots\([\s\S]*layout\.rows \* layout\.columns[\s\S]*roundedLength[\s\S]*slots\.push\(null\)/,
-  'One Shot cells must remain a permanent grid sized by the active layout rather than playlist contents',
+  quickPlayPanel,
+  /if \(showMode\.value\) \{\s*let lastUsed = slots\.length - 1;\s*while \(lastUsed >= 0 && !slots\[lastUsed\]\) lastUsed -= 1;\s*slots\.length = Math\.ceil\(\(lastUsed \+ 1\) \/ layout\.columns\) \* layout\.columns;/,
+  'Show Mode must drop only the empty rows after the last QuickPlay, so every QuickPlay keeps its place and size',
 );
-assert.doesNotMatch(oneShotPanel, /v-for="slot in 16"/, 'One Shots must not return to a fixed 16-cell grid');
+assert.doesNotMatch(quickPlayPanel, /v-for="slot in 16"/, 'QuickPlays must not return to a fixed 16-cell grid');
 assert.match(
-  oneShotPanel,
-  /moveOneShotToSlot[\s\S]*source\.oneShot\.order = targetSlot[\s\S]*if \(target\?\.oneShot\) target\.oneShot\.order = sourceSlot/,
-  'One Shot reordering must swap its permanent cell assignments instead of rebuilding the list',
+  quickPlayPanel,
+  /moveQuickPlayToSlot[\s\S]*source\.quickPlay\.order = targetSlot[\s\S]*if \(target\?\.quickPlay\) target\.quickPlay\.order = sourceSlot/,
+  'QuickPlay reordering must swap its permanent cell assignments instead of rebuilding the list',
 );
 assert.match(
   projectSettingsModal,
-  /cart-layout-grid[\s\S]*minimumCardHeight[\s\S]*visibleRows[\s\S]*columns[\s\S]*cartGridProfileOptions[\s\S]*attachedRegular[\s\S]*attachedShow[\s\S]*detachedRegular[\s\S]*detachedShow[\s\S]*onCartGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*setCartGridLayout/,
-  'settings must expose height, visible rows, and columns for all four One Shot layout profiles',
+  /quickplay-layout-grid[\s\S]*minimumCardHeight[\s\S]*visibleRows[\s\S]*columns[\s\S]*quickPlayGridProfileOptions[\s\S]*attachedRegular[\s\S]*detachedRegular[\s\S]*onQuickPlayGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*setQuickPlayGridLayout/,
+  'settings must expose height, visible rows, and columns for the attached and the detached QuickPlays layout',
 );
 assert.match(
   controlConfig,
-  /v-for="entry in configuredOneShots"[\s\S]*entry\.slotIndex[\s\S]*buildOneShotSlots[\s\S]*const configuredOneShots/,
-  'keyboard and MIDI configuration must follow the configured One Shot cells',
+  /v-for="entry in configuredQuickPlays"[\s\S]*entry\.slotIndex[\s\S]*buildQuickPlayCells[\s\S]*const configuredQuickPlays/,
+  'keyboard and MIDI configuration must follow the configured QuickPlay cells',
 );
 assert.match(
   appVue + mainWorkspace,
@@ -2504,28 +2800,28 @@ assert.doesNotMatch(appVue, /<LoadingOverlay\b/,
   'show loads must leave the playlist and transport visible');
 assert.match(
   midiController,
-  /`trigger-slot-\$\{number\}`[\s\S]*length:\s*CART_SLOT_COUNT_LIMITS\.max/,
-  'MIDI cart actions must cover every supported card',
+  /`trigger-slot-\$\{number\}`[\s\S]*length:\s*QUICK_PLAY_SLOT_COUNT_LIMITS\.max/,
+  'MIDI QuickPlay actions must cover every supported card',
 );
 assert.match(
   projectState,
-  /patch\.find\("cartSlotCount"\)[\s\S]*is_number_integer\(\)[\s\S]*slots < 1 \|\| slots > 64/,
+  /patch\.find\("quickPlaySlotCount"\)[\s\S]*is_number_integer\(\)[\s\S]*slots < 1 \|\| slots > 64/,
   'the project settings trust boundary must reject invalid card counts',
 );
 assert.match(
   controlServer,
-  /if \(!state_\.set_cart_slot\(slot, uuid\)\)[\s\S]*slot must be between 0 and 63/,
-  'the cart API must not report success for a slot the project rejected',
+  /if \(!state_\.set_quick_play_slot\(slot, uuid\)\)[\s\S]*slot must be between 0 and 63/,
+  'the QuickPlay API must not report success for a slot the project rejected',
 );
 assert.match(
   electronMain,
-  /cart-grid-layouts-changed[\s\S]*requireIpcString\(layouts, 'layouts', 4096\)[\s\S]*cart-grid-layouts-set/,
-  'cart layout IPC must validate and forward the bounded serialized preference',
+  /quickplay-grid-layouts-changed[\s\S]*requireIpcString\(layouts, 'layouts', 4096\)[\s\S]*quickplay-grid-layouts-set/,
+  'QuickPlay layout IPC must validate and forward the bounded serialized preference',
 );
 assert.match(
   electronPreload,
-  /broadcastCartGridLayouts[\s\S]*cart-grid-layouts-changed[\s\S]*onCartGridLayoutsSet[\s\S]*cart-grid-layouts-set/,
-  'the preload bridge must sync cart layout changes to an open detached window',
+  /broadcastQuickPlayGridLayouts[\s\S]*quickplay-grid-layouts-changed[\s\S]*onQuickPlayGridLayoutsSet[\s\S]*quickplay-grid-layouts-set/,
+  'the preload bridge must sync QuickPlay layout changes to an open detached window',
 );
 
 const transpiledUiMode = ts.transpileModule(
@@ -2541,73 +2837,90 @@ Function('exports', 'module', 'require', transpiledUiMode)(uiModeRuntime.exports
   assert.equal(specifier, '../utils/headerWarnings');
   return headerWarningsRuntime;
 });
-assert.deepEqual(uiModeRuntime.exports.normalizeCartGridLayouts({
+assert.deepEqual(uiModeRuntime.exports.normalizeQuickPlayGridLayouts({
   attachedRegular: { rows: 0, columns: 17, minHeight: 1 },
   attachedShow: { minHeight: 1 },
   detachedRegular: { minHeight: 999 },
   detachedShow: { rows: '4', columns: '3', minHeight: 999 },
 }), {
+  // A layout saved for Show Mode by an older version is left behind: both
+  // modes now use the same two layouts.
   attachedRegular: { rows: 1, columns: 16, minHeight: 64 },
-  attachedShow: { rows: 8, columns: 2, minHeight: 72 },
-  detachedRegular: { rows: 6, columns: 3, minHeight: 600 },
-  detachedShow: { rows: 4, columns: 3, minHeight: 600 },
+  detachedRegular: { rows: 4, columns: 5, minHeight: 600 },
+});
+// Beside the playlist ten QuickPlays show by default, two across and five
+// down; the detached window shows twenty, five across and four down.
+assert.deepEqual(uiModeRuntime.exports.normalizeQuickPlayGridLayouts(null), {
+  attachedRegular: { rows: 5, columns: 2, minHeight: 112 },
+  detachedRegular: { rows: 4, columns: 5, minHeight: 112 },
 });
 assert.match(
+  quickPlayTile,
+  /\.quickplay-body \{\s*container: quickplay-body \/ size;[\s\S]*@container quickplay-body \(max-height: 2\.29em\) \{\s*\.quickplay-title\.quickplay-title \{[^}]*white-space: nowrap;[\s\S]*@container quickplay-body \(max-height: 3\.79em\) \{\s*\.quickplay-runtime-state \{\s*display: none;/,
+  'a short QuickPlay tile must show one whole title line and drop the Playing badge, never a sliver of either',
+);
+assert.match(
   projectSettingsModal,
-  /onCartGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*input\.value = String\(current\)[\s\S]*setCartGridLayout/,
-  'an empty cart layout field must restore the current value instead of snapping to its minimum',
+  /onQuickPlayGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*input\.value = String\(current\)[\s\S]*setQuickPlayGridLayout/,
+  'an empty QuickPlay layout field must restore the current value instead of snapping to its minimum',
 );
 assert.match(
-  oneShotTile,
-  /class="one-shot-bottomline"[\s\S]{0,100}class="one-shot-actions"\s*>\s*<button\s+type="button"\s+class="one-shot-control one-shot-transport"[\s\S]{0,280}@click\.stop="handleTransport"/,
-  'One Shots must use the same Play/Stop button in the bottom action strip in both modes',
+  quickPlayTile,
+  /class="quickplay-bottomline">\s*<ItemLevel :item="item" :read-only="showMode" :max-db="12"[\s\S]{0,120}<div class="quickplay-actions">\s*<button\s+type="button"\s+class="quickplay-control quickplay-transport"[\s\S]{0,280}@click\.stop="handleTransport"/,
+  'a QuickPlay must keep its level, Play/Stop and Cue to Continue in one control row, the same in both modes',
+);
+// One number on a tile: the key shows only when it is not the slot's own number.
+assert.match(
+  quickPlayTile,
+  /<b class="quickplay-index">\{\{ position \+ 1 \}\}<\/b>\s*<kbd v-if="hotkeyLabel && hotkeyLabel !== String\(position \+ 1\)" class="quickplay-hotkey"[\s\S]{0,200}class="quickplay-duration"[\s\S]{0,80}<span class="quickplay-edit">/,
+  'a QuickPlay must show its number, then its time, without repeating the number as its key',
 );
 assert.match(
-  oneShotTile,
-  /v-if="!showMode"[\s\S]*class="one-shot-control one-shot-remove"[\s\S]*v-if="removeOpen"/,
-  'Show Mode must block One Shot removal while regular mode retains the confirmation control',
+  quickPlayTile,
+  /v-if="!showMode"[\s\S]*class="quickplay-control quickplay-remove-button"[\s\S]*v-if="removeOpen"/,
+  'Show Mode must block QuickPlay removal while regular mode retains the confirmation control',
 );
 assert.match(
-  oneShotPanel,
-  /one-shot-header workspace-panel-header" :title="showMode \? undefined : t\('oneShots\.hint'\)"/,
+  quickPlayPanel,
+  /quickplay-header workspace-panel-header" :title="showMode \? undefined : t\('quickPlays\.hint'\)"/,
   'QuickPlays import guidance must remain available in Edit Mode',
 );
 assert.match(
-  oneShotPanel,
-  /<button[\s\S]{0,160}v-else-if="!showMode"[\s\S]{0,240}class="one-shot-empty-cell"[\s\S]{0,240}:aria-label[\s\S]{0,180}@click="openImport\(index\)"/,
-  'editable empty One Shot cells must be named keyboard buttons',
+  quickPlayPanel,
+  /<button[\s\S]{0,160}v-else-if="!showMode"[\s\S]{0,240}class="quickplay-empty-cell"[\s\S]{0,240}:aria-label[\s\S]{0,180}@click="openImport\(index\)"/,
+  'editable empty QuickPlay cells must be named keyboard buttons',
 );
 assert.match(
-  oneShotPanel,
-  /<div v-else class="one-shot-empty-cell show-mode" aria-hidden="true">/,
-  'empty One Shot cells must stay inert in Show Mode',
+  quickPlayPanel,
+  /<div v-else class="quickplay-empty-cell show-mode" aria-hidden="true">/,
+  'empty QuickPlay cells must stay inert in Show Mode',
 );
 assert.doesNotMatch(
-  oneShotTile,
+  quickPlayTile,
   /:aria-pressed="showMode \? isPlaying/,
-  'the Show Mode One Shot action must not mix a changing Play/Stop name with toggle semantics',
+  'the Show Mode QuickPlay action must not mix a changing Play/Stop name with toggle semantics',
 );
 assert.match(
-  oneShotTile,
+  quickPlayTile,
   /const handleDragStart[\s\S]{0,260}if \(showMode\.value \|\| !event\.dataTransfer\)[\s\S]{0,160}event\.preventDefault\(\)/,
-  'One Shot drag behavior must follow the current Show Mode state',
+  'QuickPlay drag behavior must follow the current Show Mode state',
 );
 assert.match(
-  oneShotPanel,
+  quickPlayPanel,
   /const canMutate = computed\(\(\) => isDetached \? !!detachedIdentity\.value : projectHydrationStatus\.value === 'ready'\)/,
-  'attached One Shot edits must wait for project hydration while detached edits require identity',
+  'attached QuickPlay edits must wait for project hydration while detached edits require identity',
 );
-const oneShotDragOverStart = oneShotPanel.indexOf('const handleDragOver');
-const oneShotDragOverEnd = oneShotPanel.indexOf(
-  '\n};\n\nconst handleDragLeave', oneShotDragOverStart,
+const quickPlayDragOverStart = quickPlayPanel.indexOf('const handleDragOver');
+const quickPlayDragOverEnd = quickPlayPanel.indexOf(
+  '\n};\n\nconst handleDragLeave', quickPlayDragOverStart,
 );
-assert.ok(oneShotDragOverStart >= 0 && oneShotDragOverEnd > oneShotDragOverStart,
-  'One Shots must define drag-over behavior');
-const oneShotDragOver = oneShotPanel.slice(oneShotDragOverStart, oneShotDragOverEnd);
+assert.ok(quickPlayDragOverStart >= 0 && quickPlayDragOverEnd > quickPlayDragOverStart,
+  'QuickPlays must define drag-over behavior');
+const quickPlayDragOver = quickPlayPanel.slice(quickPlayDragOverStart, quickPlayDragOverEnd);
 assert.match(
-  oneShotDragOver,
-  /if \(!canMutate\.value \|\| showMode\.value \|\| !currentProject\.value \|\| busySlot\.value !== null\) return;[\s\S]*dropEffect = event\.dataTransfer\.types\.includes\('one-shot-uuid'\) \? 'move' : 'copy'/,
-  'One Shot drag feedback must be hydration-guarded and clearly distinguish move from copy',
+  quickPlayDragOver,
+  /if \(!canMutate\.value \|\| showMode\.value \|\| !currentProject\.value \|\| busySlot\.value !== null\) return;[\s\S]*dropEffect = event\.dataTransfer\.types\.includes\('quickplay-uuid'\) \? 'move' : 'copy'/,
+  'QuickPlay drag feedback must be hydration-guarded and clearly distinguish move from copy',
 );
 assert.match(
   playlistItem,
@@ -2625,15 +2938,10 @@ assert.doesNotMatch(
   'the silence warning must stay in the header layout with a steady appearance',
 );
 assert.doesNotMatch(
-  oneShotPanel,
+  quickPlayPanel,
   /class="slot-hint"/,
-  'empty One Shot cells must not repeat obsolete cart loading copy',
+  'empty QuickPlay cells must not repeat obsolete loading copy',
 );
-
-const serverSettings = read('client/app/components/ServerSettingsModal.vue');
-assert.match(serverSettings,
-  /v-if="d\.is_open"[\s\S]*server\.closeDevice\(d\.id\)[\s\S]*v-else[\s\S]*server\.openDevice/,
-  'device settings must close an open instance instead of opening a duplicate');
 
 assert.match(
   globalStyles,
@@ -2642,10 +2950,8 @@ assert.match(
 );
 for (const file of [
   'AudioImportModal.vue',
-  'CartHotkeyConfig.vue',
   'ConnectionLostModal.vue',
   'ServerFilePickerModal.vue',
-  'ServerSettingsModal.vue',
 ].map(file => `client/app/components/${file}`)) {
   const dialog = read(file);
   for (const token of ['backdrop', 'surface', 'radius', 'shadow']) {
@@ -2654,11 +2960,19 @@ for (const file of [
   }
 }
 assert.doesNotMatch(
-  audioImportModal + serverSettings
+  audioImportModal
     + read('client/app/components/ServerFilePickerModal.vue')
     + read('client/app/components/ServerFileBrowser.vue'),
   /#(?:16161d|1a1a1a|1d1d1d|202020|202027|2a2a2a|353535)\b/i,
   'import and server dialogs must not bypass the app surface tokens',
+);
+// Escape is Stop All, and it must work while the operator is typing in the
+// playlist search field. The field may bind Enter (next match) and Shift+Enter
+// (previous match) and nothing else: it never binds, cancels or swallows Escape.
+assert.doesNotMatch(
+  read('client/app/components/PlaylistSearch.vue') + read('client/app/utils/playlistSearch.ts'),
+  /(['"`])Esc(?:ape)?\1|(?:@|v-on:)key(?:down|up|press)(?!\.enter\.(?:shift\.)?exact\.prevent=)|keyCode|preventDefault|stop(?:Immediate)?Propagation|addEventListener/,
+  'the playlist search must never bind Escape or stop a key from reaching Stop All',
 );
 
 checkSpotifyCopyTransaction()

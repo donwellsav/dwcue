@@ -13,7 +13,7 @@ import { createProjectHydration, createProjectHydrationRetry } from '~/utils/pro
 // machine and Electron file paths only make sense on the same host.
 //
 // The public API of this composable is preserved so the existing
-// components (PlaylistView, CartSlot, PropertiesPanel, etc.) can keep
+// components (PlaylistView, QuickPlayTile, PropertiesPanel, etc.) can keep
 // mutating `currentProject.value` and have those changes propagate.
 // =====================================================================
 import { markRaw, nextTick, toRaw, triggerRef } from 'vue';
@@ -23,15 +23,16 @@ import type {
   GroupItem,
   BaseItem,
   Theme,
-  CartItem
+  QuickPlaySlot
 } from '~/types/project';
 import {
   DEFAULT_THEME,
-  DEFAULT_CART_SLOT_KEYS,
+  DEFAULT_QUICK_PLAY_SLOT_KEYS,
   DEFAULT_PROJECT_SETTINGS,
 } from '~/types/project';
 import type { ServerAudioReadiness } from '~/types/server';
 import { buildWaveformFromChannels } from '~/utils/audio';
+import { convertLegacyQuickPlayNames } from '~/utils/legacyQuickPlayNames';
 import {
   formatDisplayIndexPath,
   normalizeIndexDisplayStart,
@@ -46,7 +47,7 @@ import {
   projectPathInFolder,
 } from '~/utils/projectFileFormats';
 import { createLatestWriteQueue } from '~/utils/latestWriteQueue';
-import type { OneShotMutationIdentity } from '~/types/oneShotMutation';
+import type { QuickPlayMutationIdentity } from '~/types/quickPlayMutation';
 
 // ---------------------------------------------------------------------------
 // MODULE-SCOPED state for cross-call coordination.
@@ -54,14 +55,14 @@ import type { OneShotMutationIdentity } from '~/types/oneShotMutation';
 // `useProject()` is invoked once per component (35+ components do so), so any
 // variables declared inside the function body live in a per-call closure.
 // That used to mean every component installed its OWN set of debounced
-// watchers (theme, settings, cart, items, fallback) — N watchers all firing
+// watchers (theme, settings, QuickPlay, items, fallback) — N watchers all firing
 // on every reactive change, producing N parallel PATCH/POST/PUT calls. That
 // in turn produced N broadcast echoes which fed back into the watchers, and
 // the system melted down.
 //
 // The reactive *state* is already shared (via Nuxt's useState), so we only
 // need to install the sync watchers exactly once for the whole app. The
-// guard below is that one-shot latch; the install hooks are kept here so
+// guard below is that single-use latch; the install hooks are kept here so
 // streamItemPages / closeProject (which live inside the per-call closure)
 // can still poke into the single global watcher block.
 // ---------------------------------------------------------------------------
@@ -170,7 +171,7 @@ const deleteRequest = shallowRef<{
   uuids: string[];
   onlyUuid?: string;
   name: string;
-  context: 'playlist' | 'cart';
+  context: 'playlist' | 'quickplay';
   epoch: number;
 } | null>(null);
 
@@ -193,12 +194,12 @@ export const useProject = () => {
     set: (item) => { selectedItemUuid.value = item ? (item as BaseItem).uuid : null; },
   });
   const selectedItems = useState<Set<string>>('selectedItems', () => new Set()); // Track multiple selections by UUID
-  // Which panel the current selection belongs to. The playlist and cart share
-  // `selectedItems` but delete differently (the cart unassigns slots / drops
-  // cart-only items rather than removing playlist items), and an item can live
+  // Which panel the current selection belongs to. The playlist and the QuickPlays share
+  // `selectedItems` but delete differently (QuickPlays unassign slots / drop
+  // QuickPlay-only items rather than removing playlist items), and an item can live
   // in both with the same UUID. The selection handlers stamp this so a global
   // keyboard DEL knows which delete path to take.
-  const selectionContext = useState<'playlist' | 'cart'>('selectionContext', () => 'playlist');
+  const selectionContext = useState<'playlist' | 'quickplay'>('selectionContext', () => 'playlist');
   // Whether the properties panel is actually shown. Kept SEPARATE from
   // selectedItem so that plain row/slot clicks can update the active
   // selection (and the panel's contents, when it's open) WITHOUT forcing
@@ -206,7 +207,7 @@ export const useProject = () => {
   // openItemProperties() (the gear button).
   const propertiesPanelOpen = useState<boolean>('propertiesPanelOpen', () => false);
   const showProjectSettings = useState('showProjectSettings', () => false);
-  const workspaceImportPanel = useState<'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | 'quickplay' | 'delete-selection' | 'repair' | null>(
+  const workspaceImportPanel = useState<'import-choice' | 'media' | 'youtube' | 'spotify' | 'archive-import' | 'archive-export' | 'quickplay' | 'delete-selection' | 'repair' | 'show-check' | 'video-capture' | 'media-cleanup' | null>(
     'workspaceImportPanel', () => null,
   );
   const quickPlayEditor = useState<{ uuid: string; remove: boolean } | null>('quickPlayEditor', () => null);
@@ -254,7 +255,7 @@ export const useProject = () => {
   // what session recovery does — this counter gives them the edge they need.
   const projectEpoch = useState<number>('useProject.projectEpoch', () => 0);
   const serverProjectSessionId = useState<string>('useProject.serverSessionId', () => '');
-  const projectSyncIdentity = computed<OneShotMutationIdentity | null>(() =>
+  const projectSyncIdentity = computed<QuickPlayMutationIdentity | null>(() =>
     projectHydrationStatus.value === 'ready'
       && currentProject.value
       && isNativeProjectPath(projectFilePathRef.value)
@@ -440,7 +441,7 @@ export const useProject = () => {
       selectionAnchorUuid = uuid;
       // Ensure the item is in selectedItems so batch operations (normalize,
       // trim silence, etc.) in PropertiesPanel target the correct item.
-      // Cart Edit buttons don't go through row/header selection, so the set
+      // QuickPlay Edit buttons don't go through row/header selection, so the set
       // may contain stale playlist UUIDs — clear and select only this item.
       if (!selectedItems.value.has(uuid)) {
         selectedItems.value.clear();
@@ -582,6 +583,8 @@ export const useProject = () => {
     else if (Array.isArray(data)) candidates = data;
     else if (data && typeof data === 'object') candidates = [data];
     else return [];
+    // Cues copied from a version before QuickPlay was renamed.
+    convertLegacyQuickPlayNames({ items: candidates });
     // Keep only things that look like project items.
     return candidates.filter(it =>
       it && typeof it === 'object'
@@ -620,7 +623,7 @@ export const useProject = () => {
 
   // Record a project in the per-client recent-projects history (Electron
   // userData), which backs the File > Open Recent menu. Best-effort and
-  // client-only: no-op in the browser / cart window or if the bridge is
+  // client-only: no-op in the browser / QuickPlay window or if the bridge is
   // missing. `projectPath` is the server-filesystem path openProject loads.
   const recordRecentProject = (projectPath: string) => {
     if (!import.meta.client || !isNativeProjectPath(projectPath)) return;
@@ -651,9 +654,9 @@ export const useProject = () => {
         version: '2.0.0',
         folderPath,
         items: [],
-        cartItems: [],
-        cartSlotKeys: { ...DEFAULT_CART_SLOT_KEYS },
-        cartOnlyItems: [],
+        quickPlaySlots: [],
+        quickPlaySlotKeys: { ...DEFAULT_QUICK_PLAY_SLOT_KEYS },
+        quickPlayItems: [],
         theme: { ...DEFAULT_THEME },
         settings: { ...DEFAULT_PROJECT_SETTINGS },
         createdAt: new Date().toISOString(),
@@ -719,7 +722,7 @@ export const useProject = () => {
       if (!header || !header.hasOpenProject) return false;
 
       // Keep the last verified show readable until the replacement can be installed whole.
-      const retainPlaylist = !isCartWindowMode && !isVideoOutputWindowMode && currentProject.value &&
+      const retainPlaylist = !isQuickPlayWindowMode && !isVideoOutputWindowMode && currentProject.value &&
         projectHydrationStatus.value === 'ready' && (server.showVerification === 'checking' || recoveringProject.value);
       const items: Project['items'] | undefined = retainPlaylist ? [] : undefined;
       if (items) {
@@ -744,10 +747,10 @@ export const useProject = () => {
         hydration.finish(false);
         return false;
       }
-      const { clearCartOnlyItems, addCartOnlyItem } = useCartItems();
-      clearCartOnlyItems();
-      const cartOnly = currentProject.value?.cartOnlyItems ?? [];
-      for (const item of cartOnly) addCartOnlyItem(item);
+      const { clearQuickPlayItems, addQuickPlayItem } = useQuickPlayItems();
+      clearQuickPlayItems();
+      const quickPlayOnly = currentProject.value?.quickPlayItems ?? [];
+      for (const item of quickPlayOnly) addQuickPlayItem(item);
 
       if (!await streamItemPages(server, header.itemCount ?? 0, hydration, signal, items !== undefined) || !isCurrent()) return false;
       return true;
@@ -789,10 +792,10 @@ export const useProject = () => {
         isHydrating.value = false;
       }
 
-      const { clearCartOnlyItems, addCartOnlyItem } = useCartItems();
-      clearCartOnlyItems();
-      const cartOnly = currentProject.value?.cartOnlyItems ?? [];
-      for (const item of cartOnly) addCartOnlyItem(item);
+      const { clearQuickPlayItems, addQuickPlayItem } = useQuickPlayItems();
+      clearQuickPlayItems();
+      const quickPlayOnly = currentProject.value?.quickPlayItems ?? [];
+      for (const item of quickPlayOnly) addQuickPlayItem(item);
 
       if (!hydration || !await streamItemPages(server, header?.itemCount ?? 0, hydration)) return false;
       recordRecentProject(projectFilePathRef.value);
@@ -865,7 +868,7 @@ export const useProject = () => {
           updateIndices(project.items);
         } finally {
           // Defer clearing the flag until after Vue flushes its watcher
-          // queue — otherwise the items/cartOnly deep watchers run with
+          // queue — otherwise the items/quickPlayOnly deep watchers run with
           // isHydrating=false and echo the just-pushed page back as a
           // diff (PUT /api/project/document storm).
           await nextTick();
@@ -875,19 +878,19 @@ export const useProject = () => {
       }, signal)) return false;
       if (signal?.aborted || !isCurrent()) return false;
       // One-time repair for projects corrupted by an earlier bug where a
-      // cart-only item leaked into the playlist tree (the same uuid ended up
-      // in BOTH `cartOnlyItems` and the root `items`, so it rendered twice —
-      // once as a cart slot, once as a playlist row). Drop any top-level
-      // playlist row whose uuid is a known cart-only item. Done locally and
-      // under isHydrating (no granular remove call) so the cart copy is
-      // untouched and no item_removed broadcast wipes the cart slot; the next
+      // QuickPlay-only item leaked into the playlist tree (the same uuid ended up
+      // in BOTH `quickPlayItems` and the root `items`, so it rendered twice —
+      // once as a QuickPlay slot, once as a playlist row). Drop any top-level
+      // playlist row whose uuid is a known QuickPlay-only item. Done locally and
+      // under isHydrating (no granular remove call) so the QuickPlay copy is
+      // untouched and no item_removed broadcast wipes the QuickPlay slot; the next
       // save snapshot persists the cleaned playlist. New projects are
-      // unaffected — a cart-only uuid never appears in `items` anymore.
+      // unaffected — a QuickPlay-only uuid never appears in `items` anymore.
       try {
-        const { cartOnlyItems } = useCartItems();
-        if (cartOnlyItems.value.size) {
+        const { quickPlayItems } = useQuickPlayItems();
+        if (quickPlayItems.value.size) {
           const cleaned = project.items.filter(
-            (it: any) => !cartOnlyItems.value.has(it.uuid),
+            (it: any) => !quickPlayItems.value.has(it.uuid),
           );
           if (cleaned.length !== project.items.length) {
             isHydrating.value = true;
@@ -899,7 +902,7 @@ export const useProject = () => {
           }
         }
       } catch (e) {
-        console.warn('[useProject] cart/playlist dedupe cleanup failed:', e);
+        console.warn('[useProject] QuickPlay/playlist dedupe cleanup failed:', e);
       }
 
       // After streaming completes, refresh the items-diff baseline so the
@@ -952,7 +955,7 @@ export const useProject = () => {
     previewStateSession.value = '';
     audioLoadingProgress.value = EMPTY_AUDIO_READINESS;
     _waveformCache.clear();
-    useCartItems().clearCartOnlyItems();
+    useQuickPlayItems().clearQuickPlayItems();
     hasUnsavedChanges.value = false;
     saveFailed.value = false;
     if (hadIdentity) projectEpoch.value++;
@@ -997,10 +1000,10 @@ export const useProject = () => {
       version:        header.version ?? '2.0.0',
       folderPath:     header.folderPath ?? '',
       items,
-      cartItems:      header.cartItems ?? [],
-      cartSlotKeys:   header.cartSlotKeys ?? { ...DEFAULT_CART_SLOT_KEYS },
+      quickPlaySlots:      header.quickPlaySlots ?? [],
+      quickPlaySlotKeys:   header.quickPlaySlotKeys ?? { ...DEFAULT_QUICK_PLAY_SLOT_KEYS },
       playbackKeys:   header.playbackKeys,
-      cartOnlyItems:  header.cartOnlyItems ?? [],
+      quickPlayItems:  header.quickPlayItems ?? [],
       theme:          header.theme ?? { ...DEFAULT_THEME },
       createdAt:      header.createdAt ?? new Date().toISOString(),
       lastModified:   header.lastModified ?? new Date().toISOString(),
@@ -1045,10 +1048,10 @@ export const useProject = () => {
       version:       currentProject.value.version,
       folderPath:    currentProject.value.folderPath,
       items:         itemsToJSON(currentProject.value.items) ?? [],
-      cartItems:     toJSON(currentProject.value.cartItems) ?? [],
-      cartSlotKeys:  toJSON((currentProject.value as any).cartSlotKeys),
+      quickPlaySlots:     toJSON(currentProject.value.quickPlaySlots) ?? [],
+      quickPlaySlotKeys:  toJSON((currentProject.value as any).quickPlaySlotKeys),
       playbackKeys:  toJSON((currentProject.value as any).playbackKeys),
-      cartOnlyItems: itemsToJSON(currentProject.value.cartOnlyItems) ?? [],
+      quickPlayItems: itemsToJSON(currentProject.value.quickPlayItems) ?? [],
       theme:         toJSON(currentProject.value.theme),
       settings:      toJSON((currentProject.value as any).settings),
       createdAt:     currentProject.value.createdAt,
@@ -1077,11 +1080,11 @@ export const useProject = () => {
     const path = projectFilePathRef.value;
     if (path && !isNativeProjectPath(path)) return false;
     try {
-      // Mirror the cart-only store into the document first; it's the same
+      // Mirror the QuickPlay-only store into the document first; it's the same
       // pre-serialisation step saveProject does, and skipping it would drop
-      // cart slots on the way through.
-      const { cartOnlyItems } = useCartItems();
-      currentProject.value.cartOnlyItems = Array.from(cartOnlyItems.value.values());
+      // QuickPlay slots on the way through.
+      const { quickPlayItems } = useQuickPlayItems();
+      currentProject.value.quickPlayItems = Array.from(quickPlayItems.value.values());
       // Capture before anything reloads — re-hydration overwrites the
       // in-memory project, and unsaved edits exist nowhere else.
       const unsaved = hasUnsavedChanges.value ? buildDocumentSnapshot() : null;
@@ -1136,8 +1139,8 @@ export const useProject = () => {
 
     const revision = ++saveRevision.value;
     hasUnsavedChanges.value = true;
-    const { cartOnlyItems } = useCartItems();
-    project.cartOnlyItems = Array.from(cartOnlyItems.value.values());
+    const { quickPlayItems } = useQuickPlayItems();
+    project.quickPlayItems = Array.from(quickPlayItems.value.values());
     if (!opts?.force && !autoSaveEnabled.value) return true;
 
     const server = useLiveplayServer();
@@ -1289,18 +1292,18 @@ export const useProject = () => {
     }
   };
 
-  // Remove the given items from the CART: drop any cart-only entry and unassign
+  // Remove the given items from the QuickPlays: drop any QuickPlay-only entry and unassign
   // every slot that references them. This does NOT touch the playlist (an item
-  // can be in both); it mirrors CartSlot's single-slot delete for a batch.
-  const deleteCartItems = (uuids: string[]) => {
+  // can be in both); it mirrors QuickPlayTile's single-slot delete for a batch.
+  const deleteQuickPlays = (uuids: string[]) => {
     if (!currentProject.value || uuids.length === 0) return;
-    const { removeCartOnlyItem } = useCartItems();
+    const { removeQuickPlayItem } = useQuickPlayItems();
     const targets = new Set(uuids);
     for (const u of uuids) {
-      removeCartOnlyItem(u);
+      removeQuickPlayItem(u);
       selectedItems.value.delete(u);
     }
-    currentProject.value.cartItems = currentProject.value.cartItems
+    currentProject.value.quickPlaySlots = currentProject.value.quickPlaySlots
       .filter((ci: any) => !targets.has(ci.itemUuid));
     if (selectedItem.value && targets.has(selectedItem.value.uuid)) selectedItem.value = null;
     saveProject();
@@ -1308,7 +1311,7 @@ export const useProject = () => {
 
   const pendingDelete = computed(() => deleteRequest.value?.epoch === projectEpoch.value ? deleteRequest.value : null);
 
-  const showDeleteConfirmation = (uuids: string[], context: 'playlist' | 'cart', clickedUuid?: string) => {
+  const showDeleteConfirmation = (uuids: string[], context: 'playlist' | 'quickplay', clickedUuid?: string) => {
     // Cue selection stays live while the confirmation is open.
     deleteRequest.value = {
       uuids, context, epoch: projectEpoch.value,
@@ -1319,10 +1322,10 @@ export const useProject = () => {
     workspaceImportPanel.value = 'delete-selection';
   };
 
-  const requestDeleteFromButton = (uuid: string, context: 'playlist' | 'cart' = 'playlist'): boolean => {
+  const requestDeleteFromButton = (uuid: string, context: 'playlist' | 'quickplay' = 'playlist'): boolean => {
     const uuids = selectionContext.value === context && selectedItems.value.has(uuid)
       ? [...selectedItems.value] : [uuid];
-    if (context === 'cart' && uuids.length === 1) return false;
+    if (context === 'quickplay' && uuids.length === 1) return false;
     showDeleteConfirmation(uuids, context, uuid);
     return true;
   };
@@ -1332,7 +1335,7 @@ export const useProject = () => {
     if (uuids.length === 0) return false;
     const context = selectionContext.value;
     if (uuids.length > 1) showDeleteConfirmation(uuids, context);
-    else if (context === 'cart') deleteCartItems(uuids);
+    else if (context === 'quickplay') deleteQuickPlays(uuids);
     else removeItem(uuids[0]!);
     return true;
   };
@@ -1346,7 +1349,7 @@ export const useProject = () => {
     cancelDelete();
     if (!request || (only && !request.onlyUuid)) return;
     const uuids = only ? [request.onlyUuid!] : request.uuids;
-    if (request.context === 'cart') deleteCartItems(uuids);
+    if (request.context === 'quickplay') deleteQuickPlays(uuids);
     else for (const uuid of uuids) removeItem(uuid);
   };
 
@@ -1368,8 +1371,8 @@ export const useProject = () => {
     const found = search(currentProject.value.items);
     if (found) return found;
 
-    const { getCartOnlyItem } = useCartItems();
-    return getCartOnlyItem(uuid);
+    const { getQuickPlayItem } = useQuickPlayItems();
+    return getQuickPlayItem(uuid);
   };
 
   // Find item by index
@@ -1380,7 +1383,7 @@ export const useProject = () => {
     let currentItem: AudioItem | GroupItem | null = null;
 
     for (const idx of index) {
-      // Cart-only One Shots carry sentinel indices ([-1, 0]) — they are not in
+      // QuickPlay-only cues carry sentinel indices ([-1, 0]) — they are not in
       // the playlist tree, so negative (or otherwise unresolvable) indices
       // must miss cleanly instead of reading undefined.
       if (idx < 0 || idx >= items.length) return null;
@@ -1447,27 +1450,27 @@ export const useProject = () => {
   };
   const itemsToJSON = _deepToRaw;
 
-  const isCartWindowMode = import.meta.client
-    ? new URLSearchParams(window.location.search).get('cartWindow') === '1'
+  const isQuickPlayWindowMode = import.meta.client
+    ? new URLSearchParams(window.location.search).get('quickPlayWindow') === '1'
     : false;
   // The video output window (?videoOutput=1) is a passive render surface: it
-  // must never push project mutations, exactly like the detached cart window.
+  // must never push project mutations, exactly like the detached QuickPlay window.
   const isVideoOutputWindowMode = import.meta.client
     ? new URLSearchParams(window.location.search).get('videoOutput') === '1'
     : false;
 
-  if (import.meta.client && !_syncWatchersInstalled && !isCartWindowMode && !isVideoOutputWindowMode) {
+  if (import.meta.client && !_syncWatchersInstalled && !isQuickPlayWindowMode && !isVideoOutputWindowMode) {
     _syncWatchersInstalled = true;
     // Per-section debounced sync timers.
     let itemsTimer:    ReturnType<typeof setTimeout> | null = null;
-    let cartTimer:     ReturnType<typeof setTimeout> | null = null;
+    let quickPlayTimer:     ReturnType<typeof setTimeout> | null = null;
     let themeTimer:    ReturnType<typeof setTimeout> | null = null;
     let settingsTimer: ReturnType<typeof setTimeout> | null = null;
     // Diff baselines per section. Each is a plain (proxy-stripped) snapshot
     // of the section as it last left this client. Reset on hydrate.
     let lastItems:    any = null;
-    let lastCart:     any = null;
-    let lastCartOnly: any = null;
+    let lastQuickPlaySlots:     any = null;
+    let lastQuickPlayItems: any = null;
     let lastTheme:    any = null;
     let lastSettings: any = null;
 
@@ -1478,8 +1481,8 @@ export const useProject = () => {
       // Strip waveform peaks from the items baseline — they are large
       // read-only server blobs that must never be included in the diff.
       lastItems    = itemsToJSON(p?.items);
-      lastCart     = toJSON(p?.cartItems);
-      lastCartOnly = itemsToJSON(p?.cartOnlyItems);
+      lastQuickPlaySlots     = toJSON(p?.quickPlaySlots);
+      lastQuickPlayItems = itemsToJSON(p?.quickPlayItems);
       lastTheme    = toJSON(p?.theme);
       lastSettings = toJSON((p as any)?.settings);
     };
@@ -1498,7 +1501,7 @@ export const useProject = () => {
     // Helper that finds an item anywhere in the items tree.
     const findItemAndParent = (
       uuid: string,
-      roots: any[][] = [currentProject.value?.items ?? [], currentProject.value?.cartOnlyItems ?? []],
+      roots: any[][] = [currentProject.value?.items ?? [], currentProject.value?.quickPlayItems ?? []],
     ): { item: any; parent: any[] | null } | null => {
       const search = (arr: any[], parent: any[] | null): any => {
         for (const it of arr) {
@@ -1530,14 +1533,14 @@ export const useProject = () => {
 
     // A granular acknowledgement advances only its fields, leaving other local edits pending.
     const acknowledgeDocPatchBaseline = (patch: any) => {
-      const roots = [lastItems ?? [], lastCartOnly ?? []];
+      const roots = [lastItems ?? [], lastQuickPlayItems ?? []];
       switch (patch?.op) {
         case 'item_added': {
           if (!patch.item || findItemAndParent(patch.uuid, roots)) return;
-          const target = patch.cartOnly ? (lastCartOnly ??= []) : patch.parentUuid
+          const target = patch.quickPlayOnly ? (lastQuickPlayItems ??= []) : patch.parentUuid
             ? findItemAndParent(patch.parentUuid, roots)?.item?.children : (lastItems ??= []);
           if (Array.isArray(target)) target.push(itemsToJSON(patch.item));
-          if (!patch.cartOnly) updateIndices(lastItems ?? []);
+          if (!patch.quickPlayOnly) updateIndices(lastItems ?? []);
           break;
         }
         case 'item_updated': {
@@ -1548,7 +1551,7 @@ export const useProject = () => {
         case 'item_removed': {
           const hit = findItemAndParent(patch.uuid, roots);
           if (hit?.parent) hit.parent.splice(hit.parent.indexOf(hit.item), 1);
-          lastCartOnly = (lastCartOnly ?? []).filter((item: any) => item.uuid !== patch.uuid);
+          lastQuickPlayItems = (lastQuickPlayItems ?? []).filter((item: any) => item.uuid !== patch.uuid);
           updateIndices(lastItems ?? []);
           break;
         }
@@ -1562,12 +1565,12 @@ export const useProject = () => {
           updateIndices(lastItems ?? []);
           break;
         }
-        case 'cart_slot_set':
-        case 'cart_slot_cleared': {
-          if (typeof patch.slot !== 'number' || (patch.op === 'cart_slot_set' && !patch.itemUuid)) return;
-          lastCart = (lastCart ?? []).filter((entry: any) => entry.slot !== patch.slot);
-          if (patch.op === 'cart_slot_set' && patch.itemUuid)
-            lastCart.push({ slot: patch.slot, itemUuid: patch.itemUuid, index: [-1, patch.slot] });
+        case 'quickplay_slot_set':
+        case 'quickplay_slot_cleared': {
+          if (typeof patch.slot !== 'number' || (patch.op === 'quickplay_slot_set' && !patch.itemUuid)) return;
+          lastQuickPlaySlots = (lastQuickPlaySlots ?? []).filter((entry: any) => entry.slot !== patch.slot);
+          if (patch.op === 'quickplay_slot_set' && patch.itemUuid)
+            lastQuickPlaySlots.push({ slot: patch.slot, itemUuid: patch.itemUuid, index: [-1, patch.slot] });
           break;
         }
         case 'theme_patched':
@@ -1614,17 +1617,17 @@ export const useProject = () => {
             // a reorder is a remove+re-add). Re-attach the cached waveform so a
             // moved/re-synced item doesn't render blank.
             restoreWaveform(patch.item);
-            // Cart-only items belong to the cart store, never the playlist —
-            // routing them here keeps the two lists separate (a cart-only add
+            // QuickPlay-only items belong to the QuickPlay store, never the playlist —
+            // routing them here keeps the two lists separate (a QuickPlay-only add
             // must not surface as a duplicate playlist row on any client,
             // including the originating one).
-            if (patch.cartOnly) {
-              const { getCartOnlyItem, addCartOnlyItem } = useCartItems();
-              if (getCartOnlyItem(patch.uuid)) return; // already have it (originating client / dup)
-              addCartOnlyItem(patch.item);
-              if (!Array.isArray(p.cartOnlyItems)) p.cartOnlyItems = [];
-              if (!p.cartOnlyItems.some((i: any) => i.uuid === patch.uuid)) {
-                p.cartOnlyItems.push(patch.item);
+            if (patch.quickPlayOnly) {
+              const { getQuickPlayItem, addQuickPlayItem } = useQuickPlayItems();
+              if (getQuickPlayItem(patch.uuid)) return; // already have it (originating client / dup)
+              addQuickPlayItem(patch.item);
+              if (!Array.isArray(p.quickPlayItems)) p.quickPlayItems = [];
+              if (!p.quickPlayItems.some((i: any) => i.uuid === patch.uuid)) {
+                p.quickPlayItems.push(patch.item);
               }
               return;
             }
@@ -1656,7 +1659,7 @@ export const useProject = () => {
             // touch the local waveform — keep whatever we already have.
             const incoming = { ...(patch.patch ?? {}) };
             if ('waveform' in incoming) delete incoming.waveform;
-            const baseline = findItemAndParent(patch.uuid, [lastItems ?? [], lastCartOnly ?? []])?.item;
+            const baseline = findItemAndParent(patch.uuid, [lastItems ?? [], lastQuickPlayItems ?? []])?.item;
             Object.assign(hit.item, mergeServerFields(hit.item, baseline, incoming));
             // Defensive: if this item somehow has no peaks anymore, restore
             // them from the session cache.
@@ -1665,14 +1668,14 @@ export const useProject = () => {
           }
           case 'item_removed': {
             server().invalidateWaveformCache(patch.uuid);
-            // Drop any cart-only copy too (an item removed on another client
-            // must also vanish from this client's cart store / array).
-            const { getCartOnlyItem, removeCartOnlyItem } = useCartItems();
-            if (getCartOnlyItem(patch.uuid)) {
-              removeCartOnlyItem(patch.uuid);
-              if (Array.isArray(p.cartOnlyItems)) {
-                const ci = p.cartOnlyItems.findIndex((x: any) => x.uuid === patch.uuid);
-                if (ci >= 0) p.cartOnlyItems.splice(ci, 1);
+            // Drop any QuickPlay-only copy too (an item removed on another client
+            // must also vanish from this client's QuickPlay store / array).
+            const { getQuickPlayItem, removeQuickPlayItem } = useQuickPlayItems();
+            if (getQuickPlayItem(patch.uuid)) {
+              removeQuickPlayItem(patch.uuid);
+              if (Array.isArray(p.quickPlayItems)) {
+                const ci = p.quickPlayItems.findIndex((x: any) => x.uuid === patch.uuid);
+                if (ci >= 0) p.quickPlayItems.splice(ci, 1);
               }
             }
             const hit = findItemAndParent(patch.uuid);
@@ -1694,20 +1697,20 @@ export const useProject = () => {
             updateIndices(p.items);
             break;
           }
-          case 'cart_slot_set': {
+          case 'quickplay_slot_set': {
             const slot = patch.slot;
             const uuid = patch.itemUuid;
             if (typeof slot !== 'number' || !uuid) return;
-            const existing = (p.cartItems ?? []).findIndex((c: any) => c.slot === slot);
-            const next: CartItem = { slot, itemUuid: uuid, index: [-1, slot] };
-            if (existing >= 0) p.cartItems[existing] = next;
-            else p.cartItems.push(next);
+            const existing = (p.quickPlaySlots ?? []).findIndex((c: any) => c.slot === slot);
+            const next: QuickPlaySlot = { slot, itemUuid: uuid, index: [-1, slot] };
+            if (existing >= 0) p.quickPlaySlots[existing] = next;
+            else p.quickPlaySlots.push(next);
             break;
           }
-          case 'cart_slot_cleared': {
+          case 'quickplay_slot_cleared': {
             const slot = patch.slot;
             if (typeof slot !== 'number') return;
-            p.cartItems = (p.cartItems ?? []).filter((c: any) => c.slot !== slot);
+            p.quickPlaySlots = (p.quickPlaySlots ?? []).filter((c: any) => c.slot !== slot);
             break;
           }
           case 'theme_patched': {
@@ -1742,7 +1745,7 @@ export const useProject = () => {
                 if (!hadWaveform && duration > 0) {
                   // First waveform for this item this session: initialise duration.
                   (target as any).duration = duration;
-                  const baseline = findItemAndParent(patch.item_uuid, [lastItems ?? [], lastCartOnly ?? []])?.item;
+                  const baseline = findItemAndParent(patch.item_uuid, [lastItems ?? [], lastQuickPlayItems ?? []])?.item;
                   if (baseline) baseline.duration = duration;
                 }
 
@@ -1852,31 +1855,31 @@ export const useProject = () => {
       }, 250);
     }, { deep: true });
 
-    // ---- Cart slot bindings ----
-    watch(() => currentProject.value?.cartItems, () => {
+    // ---- QuickPlay slot bindings ----
+    watch(() => currentProject.value?.quickPlaySlots, () => {
       if (isHydrating.value || !currentProject.value) return;
-      if (cartTimer) clearTimeout(cartTimer);
-      cartTimer = setTimeout(async () => {
-        const next = toJSON(currentProject.value?.cartItems) ?? [];
-        if (stableJson(next) === stableJson(lastCart)) return;
-        const prev = lastCart ?? [];
-        lastCart = next;
-        const cartByPrev = new Map<number, string>();
-        const cartByCurr = new Map<number, string>();
-        for (const c of prev)  if (typeof c?.slot === 'number') cartByPrev.set(c.slot, c.itemUuid ?? '');
-        for (const c of next)  if (typeof c?.slot === 'number') cartByCurr.set(c.slot, c.itemUuid ?? '');
-        for (const [slot] of cartByPrev) {
-          if (!cartByCurr.has(slot)) { try { await server().clearCartSlot(slot); } catch {} }
+      if (quickPlayTimer) clearTimeout(quickPlayTimer);
+      quickPlayTimer = setTimeout(async () => {
+        const next = toJSON(currentProject.value?.quickPlaySlots) ?? [];
+        if (stableJson(next) === stableJson(lastQuickPlaySlots)) return;
+        const prev = lastQuickPlaySlots ?? [];
+        lastQuickPlaySlots = next;
+        const quickPlaySlotsByPrev = new Map<number, string>();
+        const quickPlaySlotsByCurr = new Map<number, string>();
+        for (const c of prev)  if (typeof c?.slot === 'number') quickPlaySlotsByPrev.set(c.slot, c.itemUuid ?? '');
+        for (const c of next)  if (typeof c?.slot === 'number') quickPlaySlotsByCurr.set(c.slot, c.itemUuid ?? '');
+        for (const [slot] of quickPlaySlotsByPrev) {
+          if (!quickPlaySlotsByCurr.has(slot)) { try { await server().clearQuickPlaySlot(slot); } catch {} }
         }
-        for (const [slot, uuid] of cartByCurr) {
-          if (cartByPrev.get(slot) !== uuid) { try { await server().setCartSlot(slot, uuid); } catch {} }
+        for (const [slot, uuid] of quickPlaySlotsByCurr) {
+          if (quickPlaySlotsByPrev.get(slot) !== uuid) { try { await server().setQuickPlaySlot(slot, uuid); } catch {} }
         }
       }, 250);
     }, { deep: true });
 
-    // ---- Items + cart-only items (structural / per-item property changes) ----
-    // The watcher only fires when the items array or cart-only items array
-    // actually changes. We diff against `lastItems`/`lastCartOnly` to push
+    // ---- Items + QuickPlay-only items (structural / per-item property changes) ----
+    // The watcher only fires when the items array or QuickPlay-only items array
+    // actually changes. We diff against `lastItems`/`lastQuickPlayItems` to push
     // a minimal set of add/update/remove calls.
     //
     // CRUCIAL PERF NOTE: `{ deep: true }` makes Vue traverse the entire
@@ -1907,36 +1910,36 @@ export const useProject = () => {
     };
 
     let stopItemsWatcher:    null | (() => void) = null;
-    let stopCartOnlyWatcher: null | (() => void) = null;
+    let stopQuickPlayItemsWatcher: null | (() => void) = null;
     const installItemsWatcher = () => {
-      if (stopItemsWatcher && stopCartOnlyWatcher) return;
+      if (stopItemsWatcher && stopQuickPlayItemsWatcher) return;
       stopItemsWatcher    = watch(() => currentProject.value?.items,
                                   scheduleItemsDiff, { deep: true });
-      stopCartOnlyWatcher = watch(() => currentProject.value?.cartOnlyItems,
+      stopQuickPlayItemsWatcher = watch(() => currentProject.value?.quickPlayItems,
                                   scheduleItemsDiff, { deep: true });
     };
     const uninstallItemsWatcher = () => {
       if (stopItemsWatcher)    { try { stopItemsWatcher(); }    catch {} stopItemsWatcher    = null; }
-      if (stopCartOnlyWatcher) { try { stopCartOnlyWatcher(); } catch {} stopCartOnlyWatcher = null; }
+      if (stopQuickPlayItemsWatcher) { try { stopQuickPlayItemsWatcher(); } catch {} stopQuickPlayItemsWatcher = null; }
     };
     _installItemsWatcherFn   = installItemsWatcher;
     _uninstallItemsWatcherFn = uninstallItemsWatcher;
 
     const flatten = (items: any[] | null | undefined,
-                     cartOnly: any[] | null | undefined) => {
-      const m = new Map<string, { item: any; parentUuid: string; cartOnly: boolean }>();
-      const walk = (arr: any[] | null | undefined, parentUuid: string, isCartOnly: boolean) => {
+                     quickPlayOnly: any[] | null | undefined) => {
+      const m = new Map<string, { item: any; parentUuid: string; quickPlayOnly: boolean }>();
+      const walk = (arr: any[] | null | undefined, parentUuid: string, isQuickPlayOnly: boolean) => {
         if (!Array.isArray(arr)) return;
         for (const it of arr) {
           if (!it || typeof it !== 'object') continue;
           const u = it.uuid;
           if (!u) continue;
-          m.set(u, { item: it, parentUuid, cartOnly: isCartOnly });
-          if (it.type === 'group' && Array.isArray(it.children)) walk(it.children, u, isCartOnly);
+          m.set(u, { item: it, parentUuid, quickPlayOnly: isQuickPlayOnly });
+          if (it.type === 'group' && Array.isArray(it.children)) walk(it.children, u, isQuickPlayOnly);
         }
       };
       walk(items, '', false);
-      walk(cartOnly, '', true);
+      walk(quickPlayOnly, '', true);
       return m;
     };
 
@@ -1954,32 +1957,32 @@ export const useProject = () => {
         && isCurrentSaveIdentity(p, path, epoch, currentProject.value, projectFilePathRef.value, projectEpoch.value);
       if (!isCurrent()) return;
       const nextItems    = itemsToJSON(p.items)         ?? [];
-      const nextCartOnly = itemsToJSON(p.cartOnlyItems) ?? [];
+      const nextQuickPlayItems = itemsToJSON(p.quickPlayItems) ?? [];
 
       const items_changed    = stableJson(nextItems)    !== stableJson(lastItems);
-      const cartonly_changed = stableJson(nextCartOnly) !== stableJson(lastCartOnly);
-      if (!items_changed && !cartonly_changed) return;
+      const quickplay_items_changed = stableJson(nextQuickPlayItems) !== stableJson(lastQuickPlayItems);
+      if (!items_changed && !quickplay_items_changed) return;
 
-      const prev = flatten(lastItems, lastCartOnly);
-      const curr = flatten(nextItems, nextCartOnly);
+      const prev = flatten(lastItems, lastQuickPlayItems);
+      const curr = flatten(nextItems, nextQuickPlayItems);
 
       // Rotate baselines BEFORE awaiting any API calls so a subsequent
       // watcher fire while we're mid-sync sees the new baseline.
       lastItems    = nextItems;
-      lastCartOnly = nextCartOnly;
+      lastQuickPlayItems = nextQuickPlayItems;
 
       // 1. Cross-parent moves: same uuid but its location changed — either a
       //    new parent group, or a transition between the playlist and the
-      //    cart-only list. Must remove-then-add so the server re-files it in
+      //    QuickPlay-only list. Must remove-then-add so the server re-files it in
       //    the right array/parent. (updateProjectItem only patches content.)
-      for (const [uuid, { item, parentUuid, cartOnly }] of curr) {
+      for (const [uuid, { item, parentUuid, quickPlayOnly }] of curr) {
         const before = prev.get(uuid);
         if (!before) continue;
-        if (before.parentUuid === parentUuid && before.cartOnly === cartOnly) continue;
+        if (before.parentUuid === parentUuid && before.quickPlayOnly === quickPlayOnly) continue;
         if (!isCurrent()) return;
         try { await srv.removeProjectItem(uuid); } catch {}
         if (!isCurrent()) return;
-        try { await srv.addProjectItem(item, parentUuid, cartOnly); } catch {}
+        try { await srv.addProjectItem(item, parentUuid, quickPlayOnly); } catch {}
       }
 
       // 2. Removes: items present in prev but gone from curr.
@@ -1991,10 +1994,10 @@ export const useProject = () => {
       }
 
       // 3. Adds: items in curr that weren't in prev (and aren't cross-parent moves).
-      for (const [uuid, { item, parentUuid, cartOnly }] of curr) {
+      for (const [uuid, { item, parentUuid, quickPlayOnly }] of curr) {
         if (prev.has(uuid)) continue;
         if (!isCurrent()) return;
-        try { await srv.addProjectItem(item, parentUuid, cartOnly); } catch {}
+        try { await srv.addProjectItem(item, parentUuid, quickPlayOnly); } catch {}
       }
 
       // 4. Updates: items whose content changed (not cross-parent, not new).
@@ -2011,10 +2014,10 @@ export const useProject = () => {
       // entry, so a group patch must never carry embedded children.
       const withoutChildren = (it: any) =>
         it && it.type === 'group' ? { ...it, children: undefined } : it;
-      for (const [uuid, { item, parentUuid, cartOnly }] of curr) {
+      for (const [uuid, { item, parentUuid, quickPlayOnly }] of curr) {
         const before = prev.get(uuid);
         if (!before) continue;
-        if (before.parentUuid !== parentUuid || before.cartOnly !== cartOnly) continue; // handled in step 1
+        if (before.parentUuid !== parentUuid || before.quickPlayOnly !== quickPlayOnly) continue; // handled in step 1
         const beforeCompare = withoutChildren(before.item);
         const nowCompare    = withoutChildren(item);
         if (stableJson(beforeCompare) === stableJson(nowCompare)) continue;
@@ -2029,21 +2032,21 @@ export const useProject = () => {
       //    reorderProjectItems so other clients see the correct list order.
       //    The JavaScript Map preserves insertion order (= walk/array order),
       //    so [...map.entries()] gives items in their array position order.
-      //    Cart-only items are addressed by slot, not list order, and the
+      //    QuickPlay-only items are addressed by slot, not list order, and the
       //    server reorder endpoint only touches the playlist — so exclude them
       //    here (they share parentUuid '' with playlist roots but must not be
       //    folded into the playlist's order).
       const parentUuidsInCurr = new Set<string>();
-      for (const [, { parentUuid, cartOnly }] of curr) {
-        if (!cartOnly) parentUuidsInCurr.add(parentUuid);
+      for (const [, { parentUuid, quickPlayOnly }] of curr) {
+        if (!quickPlayOnly) parentUuidsInCurr.add(parentUuid);
       }
 
       for (const parentUuid of parentUuidsInCurr) {
         const prevOrder = [...prev.entries()]
-          .filter(([, v]) => !v.cartOnly && v.parentUuid === parentUuid)
+          .filter(([, v]) => !v.quickPlayOnly && v.parentUuid === parentUuid)
           .map(([u]) => u);
         const currOrder = [...curr.entries()]
-          .filter(([, v]) => !v.cartOnly && v.parentUuid === parentUuid)
+          .filter(([, v]) => !v.quickPlayOnly && v.parentUuid === parentUuid)
           .map(([u]) => u);
 
         // Restrict comparison to items that exist in both snapshots so that
@@ -2067,7 +2070,7 @@ export const useProject = () => {
     // / settings / theme — those have targeted watchers above.
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
     watch([
-      () => (currentProject.value as any)?.cartSlotKeys,
+      () => (currentProject.value as any)?.quickPlaySlotKeys,
       () => (currentProject.value as any)?.playbackKeys,
       () => currentProject.value?.name,
     ], () => {
@@ -2306,7 +2309,7 @@ export const useProject = () => {
     unsavedDiscard,
     unsavedCancel,
     selectionContext,
-    deleteCartItems,
+    deleteQuickPlays,
     requestDeleteFromButton,
     requestDeleteFromKeyboard,
     pendingDelete,

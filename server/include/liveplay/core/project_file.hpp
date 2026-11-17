@@ -26,7 +26,7 @@ struct DocumentRepair {
 
 struct PreparedDocument {
     nlohmann::json document;
-    bool cart_migrated{false};
+    bool quick_play_migrated{false};
     DocumentRepair repair;
 };
 
@@ -35,7 +35,9 @@ DocumentRepair repair_client_document(nlohmann::json& document);
 
 // Validates and normalizes a client-shaped document without touching live
 // ProjectState. `folder_override` is used for file-based opens/imports so media
-// remains anchored to the folder containing the show file.
+// remains anchored to the folder containing the show file. Field names written
+// by older versions are converted to the current ones first
+// (convert_legacy_quick_play_names), so `prepared.document` never carries them.
 bool prepare_client_document(
     const nlohmann::json& source,
     const std::optional<std::filesystem::path>& folder_override,

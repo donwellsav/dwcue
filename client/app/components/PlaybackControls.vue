@@ -65,8 +65,8 @@
             >
               {{ t('actions.setAsNext') }}
             </button>
+            <!-- In both modes, so the preview card is the same in both. -->
             <button
-              v-if="showMode"
               type="button"
               class="preview-action-btn"
               @click="handleOpenPreviewProperties"
@@ -269,7 +269,7 @@
 // Stop All is server-authoritative. Native diagnostics and orphaned cues are
 // intentionally outside the project-backed activeCues map, so the panic
 // control must remain callable even when that local map is empty.
-import { formatKeyLabel } from '~/composables/useCartHotkeys';
+import { formatKeyLabel } from '~/composables/useQuickPlayHotkeys';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { useCueMeters } from '~/composables/useLiveMeters';
 
@@ -285,7 +285,7 @@ const {
   saveProject,
   openItemProperties,
 } = useProject();
-const { playbackMappings } = useCartHotkeys();
+const { playbackMappings } = useQuickPlayHotkeys();
 const { t } = useLocalization();
 const server = useLiveplayServer();
 const { uiMode } = useUiMode();
@@ -620,35 +620,7 @@ const handlePlayNext = async () => {
   background-color: var(--color-surface);
 }
 
-/* Show Mode keeps every transport target comfortably touchable. */
-.playback-controls.show-mode {
-  min-height: calc(var(--playback-controls-height) + var(--spacing-lg));
-}
-
-.playback-controls.show-mode .control-btn {
-  padding: var(--spacing-lg);
-  font-size: 17px;
-}
-
-.playback-controls.show-mode .control-btn .material-symbols-rounded {
-  font-size: 26px;
-}
-
-.playback-controls.show-mode .preview-cue-header {
-  font-size: 16px;
-}
-
-.playback-controls.show-mode .preview-transport .preview-action-btn {
-  width: 44px;
-  height: 44px;
-  font-size: 28px;
-}
-
-.playback-controls.show-mode :deep(.active-cue-item .action-btn) {
-  width: 32px;
-  height: 32px;
-  font-size: 24px;
-}
+/* The transport is drawn the same in Edit Mode and Show Mode. */
 
 .control-btn {
   display: flex;
@@ -682,10 +654,6 @@ const handlePlayNext = async () => {
 
 .play-next-btn:disabled {
   opacity: 1;
-}
-
-.playback-controls.show-mode .play-next-btn {
-  padding-block: var(--spacing-xs);
 }
 
 .play-next-btn.has-next {
@@ -733,7 +701,7 @@ const handlePlayNext = async () => {
   gap: 7px;
   overflow: hidden;
   color: currentColor;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   line-height: 1;
@@ -771,14 +739,6 @@ const handlePlayNext = async () => {
   }
 }
 
-.playback-controls.show-mode .play-next-target {
-  font-size: 20px;
-}
-
-.playback-controls.show-mode .play-next-meta {
-  font-size: 11px;
-}
-
 .panic-zone {
   grid-area: panic;
   align-self: stretch;
@@ -788,21 +748,34 @@ const handlePlayNext = async () => {
   border-right: 1px solid var(--color-border);
 }
 
+/* Stop All is not red: red means live. A black face in a frame of diagonal
+   yellow-and-black stripes, with the label in white so it stays readable. */
 .panic-btn {
-  background-color: #d71920;
-  border-color: #d71920;
-  color: white;
+  --stop-face: var(--stop-ground);
+  border: var(--stop-frame) solid transparent;
+  background:
+    linear-gradient(var(--stop-face), var(--stop-face)) padding-box,
+    var(--stop-stripes) border-box;
+  box-shadow: 0 0 0 1px var(--stop-edge);
+  color: var(--stop-label);
   font-weight: 700;
+  /* The striped frame is the margin: the label gets the width inside it. */
+  padding-inline: 4px;
+  gap: 6px;
 }
 
 .panic-btn:hover:not(:disabled) {
-  background-color: #b51219;
-  border-color: #b51219;
-  filter: brightness(0.9);
+  --stop-face: #2a2a32;
+}
+
+.panic-btn:active:not(:disabled) {
+  --stop-face: var(--stop-ink);
+  color: var(--stop-ground);
 }
 
 .panic-btn:disabled {
   opacity: 1;
+  background-image: none;
   background-color: var(--color-control);
   border-color: var(--color-border);
   color: var(--color-text-disabled);
@@ -872,6 +845,15 @@ const handlePlayNext = async () => {
   .control-btn {
     padding-inline: var(--spacing-md);
   }
+
+  /* The button is narrow here: with the icon above it the label stays on
+     one line instead of breaking into three. Both modes. */
+  .panic-btn {
+    flex-direction: column;
+    gap: 2px;
+    padding-block: 0;
+    line-height: 1.15;
+  }
 }
 
 @media (max-width: 1220px) {
@@ -883,10 +865,6 @@ const handlePlayNext = async () => {
 
   .panic-zone {
     padding-right: var(--spacing-xs);
-  }
-
-  .playback-controls.show-mode .control-btn {
-    padding-inline: var(--spacing-sm);
   }
 }
 
@@ -963,7 +941,7 @@ const handlePlayNext = async () => {
   border: 1px solid var(--color-border-strong);
   border-radius: var(--pill-radius);
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 650;
   text-transform: uppercase;
   flex-shrink: 0;
@@ -1053,9 +1031,9 @@ const handlePlayNext = async () => {
 }
 
 .preview-stop-btn {
-  background-color: var(--color-danger);
-  border-color: var(--color-danger);
-  color: white;
+  border: var(--stop-button-border);
+  background: var(--stop-button-background);
+  color: var(--stop-edge);
 }
 
 .preview-cue-meter {
@@ -1228,7 +1206,7 @@ const handlePlayNext = async () => {
   border-bottom: 1px solid var(--color-border);
   background: color-mix(in srgb, var(--state-preview) 22%, var(--color-control));
   color: color-mix(in srgb, var(--state-preview) 72%, white);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
   text-transform: uppercase;
   cursor: ew-resize;

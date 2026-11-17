@@ -1,10 +1,10 @@
 <template>
   <div class="main-workspace" :class="{ 'show-mode': uiMode === 'playback' }">
     <!-- Show Mode reuses the full editor layout (header, transport, resizable/
-         detachable playlist⇄cart split). It is not a separate view: the child
-         components read useUiMode() and hide their edit affordances + enlarge
-         touch targets, so waveforms, colours, durations, behaviour flags and
-         warnings all render exactly as in edit mode. -->
+         detachable playlist⇄QuickPlay split). It is not a separate view: the child
+         components read useUiMode() and hide their edit affordances, and
+         nothing else: every size, waveform, colour, duration, behaviour flag
+         and warning renders exactly as in Edit Mode. -->
     <ProjectHeader :inert="recoveryOpen" />
     <PlaybackControls />
     <LevelCheckBar :inert="recoveryOpen" />
@@ -48,56 +48,56 @@
 
       <div class="workspace-panels">
         <div
-          v-if="cartVisible"
-          v-show="!recoveryOpen || !cartFullscreen"
+          v-if="quickPlayVisible"
+          v-show="!recoveryOpen || !quickPlayFullscreen"
           :inert="recoveryOpen"
-          id="cart-player-panel"
-          class="cart-section"
-          :class="{ 'cart-section--fullscreen': cartFullscreen }"
-          :style="{ width: cartFullscreen ? '100%' : `${cartWidth}px` }"
+          id="quickplay-workspace-panel"
+          class="quickplay-section"
+          :class="{ 'quickplay-section--fullscreen': quickPlayFullscreen }"
+          :style="{ width: quickPlayFullscreen ? '100%' : `${quickPlayWidth}px` }"
         >
-          <OneShotPanel>
+          <QuickPlayPanel>
             <template #header-leading>
               <button
                 type="button"
-                class="cart-toggle cart-toggle--open"
-                :aria-label="t('oneShots.hide')"
-                :title="t('oneShots.hide')"
+                class="quickplay-toggle quickplay-toggle--open"
+                :aria-label="t('quickPlays.hide')"
+                :title="t('quickPlays.hide')"
                 :aria-expanded="true"
-                aria-controls="cart-player-panel"
-                @click="toggleCart"
+                aria-controls="quickplay-workspace-panel"
+                @click="toggleQuickPlays"
               >
-                <span class="material-symbols-rounded cart-toggle__collapse" aria-hidden="true">chevron_left</span>
+                <span class="material-symbols-rounded quickplay-toggle__collapse" aria-hidden="true">chevron_left</span>
               </button>
             </template>
-          </OneShotPanel>
+          </QuickPlayPanel>
         </div>
 
         <div
-          v-if="!cartDetached"
-          v-show="!recoveryOpen || !cartFullscreen"
+          v-if="!quickPlayDetached"
+          v-show="!recoveryOpen || !quickPlayFullscreen"
           :inert="recoveryOpen"
           class="resize-handle"
-          :class="{ 'collapsed-left': cartClosed, 'collapsed-right': cartFullscreen, dragging: isResizing }"
+          :class="{ 'collapsed-left': quickPlayClosed, 'collapsed-right': quickPlayFullscreen, dragging: isResizing }"
           @pointerdown="startResize"
         ></div>
 
-        <div v-show="recoveryOpen || !cartFullscreen || cartDetached" class="playlist-section">
+        <div v-show="recoveryOpen || !quickPlayFullscreen || quickPlayDetached" class="playlist-section">
           <div class="playlist-panel">
             <PlaylistView :read-only="recoveryOpen">
               <template #header-leading>
                 <button
-                  v-if="cartClosed && !cartDetached"
+                  v-if="quickPlayClosed && !quickPlayDetached"
                   :disabled="recoveryOpen"
                   type="button"
-                  class="cart-toggle cart-toggle--reveal"
-                  :aria-label="t('oneShots.show')"
-                  :title="t('oneShots.show')"
+                  class="quickplay-toggle quickplay-toggle--reveal"
+                  :aria-label="t('quickPlays.show')"
+                  :title="t('quickPlays.show')"
                   :aria-expanded="false"
-                  @click="toggleCart"
+                  @click="toggleQuickPlays"
                 >
-                  <CueSymbol name="one-shots" />
-                  <span class="cart-toggle__label">{{ t('oneShots.show') }}</span>
+                  <CueSymbol name="quickplays" />
+                  <span class="quickplay-toggle__label">{{ t('quickPlays.show') }}</span>
                 </button>
               </template>
             </PlaylistView>
@@ -105,8 +105,22 @@
         </div>
       </div>
 
-      <aside class="output-console" :aria-label="t('properties.output')" :inert="recoveryOpen">
-        <div class="output-console__header workspace-panel-header">
+      <aside class="output-console" :class="{ 'output-console--collapsed': metersCollapsed }"
+        :aria-label="t('properties.output')" :inert="recoveryOpen">
+        <!-- Folded away, the strip is a slim rail: the playlist gets the width
+             back on a small screen. The limiter keeps working either way. -->
+        <button v-if="metersCollapsed" type="button" class="output-console__fold output-console__fold--rail"
+          :aria-label="t('outputConsole.showMeters')" :title="t('outputConsole.showMeters')"
+          aria-expanded="false" @click="metersCollapsed = false">
+          <span class="material-symbols-rounded" aria-hidden="true">chevron_left</span>
+          <span class="output-console__rail-label" aria-hidden="true">{{ t('properties.output') }}</span>
+        </button>
+        <div v-show="!metersCollapsed" class="output-console__header workspace-panel-header">
+          <button type="button" class="output-console__fold"
+            :aria-label="t('outputConsole.hideMeters')" :title="t('outputConsole.hideMeters')"
+            aria-expanded="true" @click="metersCollapsed = true">
+            <span class="material-symbols-rounded" aria-hidden="true">chevron_right</span>
+          </button>
           <div class="output-console__header-controls">
 
             <button
@@ -166,7 +180,7 @@
             </div>
           </div>
         </div>
-        <div class="output-console__strips">
+        <div v-show="!metersCollapsed" class="output-console__strips">
           <section
             v-for="pair in outputPairs"
             :key="pair.key"
@@ -215,10 +229,10 @@
 
     <div v-show="lowerPanelOpen" ref="lowerPanel" class="lower-workspace-panel"
       :class="{ 'lower-workspace-panel--deciding': decisionOpen, 'lower-workspace-panel--browsing-files': filePicker }"
-      :style="{ height: decisionOpen || panelHeight === null ? 'auto' : `${panelHeight}px`, maxHeight: `${MAX_PANEL_HEIGHT_PERCENT}%` }"
+      :style="{ height: lowerPanelHeight, maxHeight: `${panelMaxPercent}%` }"
       @keydown.capture="handlePanelKeydown($event, true)"
       @keydown="handlePanelKeydown">
-      <div v-if="!autoSizeImportPanel" class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
+      <div v-if="!autoSizeImportPanel && !compactShowCheck" class="lower-panel-resize-handle" role="separator" aria-orientation="horizontal"
         :aria-label="showProjectSettings ? t('settings.title') : importPanelTitle || t('properties.title')"
         :aria-valuemin="MIN_PANEL_HEIGHT" :aria-valuemax="panelMaxHeight"
         :aria-valuenow="visiblePanelHeight || panelHeight || MIN_PANEL_HEIGHT" tabindex="0"
@@ -230,6 +244,12 @@
       <section v-show="visibleImportPanel" class="workspace-import" :aria-label="importPanelTitle">
         <header class="workspace-panel-header">
           <h2 class="workspace-panel-header__title">{{ importPanelTitle }}</h2>
+          <button v-if="tallImportPanel" type="button" class="workspace-import-close workspace-import-resize"
+            :aria-label="t(importExpanded ? 'actions.panelSmaller' : 'actions.panelLarger')"
+            :title="t(importExpanded ? 'actions.panelSmaller' : 'actions.panelLarger')"
+            :aria-pressed="importExpanded" @click="toggleImportExpanded">
+            <span class="material-symbols-rounded" aria-hidden="true">{{ importExpanded ? 'collapse_content' : 'expand_content' }}</span>
+          </button>
           <button type="button" class="workspace-import-close" :aria-label="t('actions.close')" @click="closeImportPanel">
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
           </button>
@@ -238,6 +258,9 @@
           :class="{ 'workspace-import-host--archive': visibleImportPanel?.startsWith('archive-') }">
           <DeleteSelectionPanel v-if="visibleImportPanel === 'delete-selection'" />
           <ProjectRepairNotice v-else-if="visibleImportPanel === 'repair' && projectRepair" :notice="projectRepair" @save="saveRepairedProject" />
+          <PreShowCheckPanel v-else-if="visibleImportPanel === 'show-check'" />
+          <VideoCaptureControls v-else-if="visibleImportPanel === 'video-capture'" class="workspace-capture" />
+          <MediaCleanupPanel v-else-if="visibleImportPanel === 'media-cleanup'" />
         </div>
       </section>
       <div v-show="decisionOpen" id="workspace-project-decision"></div>
@@ -247,11 +270,13 @@
 
 <script setup lang="ts">
 import LevelCheckBar from './LevelCheckBar.vue';
+import PreShowCheckPanel from './PreShowCheckPanel.vue';
 import ProjectSettingsModal from './ProjectSettingsModal.vue';
 import StereoMeter from './StereoMeter.vue';
 import VolumeSlider from './VolumeSlider.vue';
-import { bindingsMatch, eventToBinding } from '~/composables/useCartHotkeys';
-import { flattenOneShots } from '~/utils/oneShots';
+import { bindingsMatch, eventToBinding } from '~/composables/useQuickPlayHotkeys';
+import { usePreShowCheckLongList } from '~/composables/usePreShowCheck';
+import { flattenQuickPlays } from '~/utils/quickPlays';
 
 const { decisionOpen, recoveryOpen } = defineProps<{ decisionOpen: boolean; recoveryOpen: boolean }>();
 const {
@@ -278,10 +303,10 @@ const {
   projectRepair,
   saveRepairedProject,
 } = useProject();
-const { cartOnlyItems } = useCartItems();
+const { quickPlayItems } = useQuickPlayItems();
 const { t } = useLocalization();
 const server = useLiveplayServer();
-const { uiMode, uiFontScale, regularPlaylistRowHeight, showPlaylistRowHeight, folderPlaylistRowHeight } = useUiMode();
+const { uiMode, uiFontScale, regularPlaylistRowHeight, folderPlaylistRowHeight } = useUiMode();
 const { levels: outputTargetLevels } = useOutputTarget();
 const showProjectSettings = useState('showProjectSettings', () => false);
 const quickPlayImportSlot = useState<number | null>('quickPlayImportSlot', () => null);
@@ -289,9 +314,13 @@ const visibleImportPanel = computed(() => {
   const panel = workspaceImportPanel.value;
   if (panel === 'delete-selection') return !showProjectSettings.value && pendingDelete.value ? panel : null;
   if (panel === 'repair') return !showProjectSettings.value && projectRepair.value ? panel : null;
+  // Read-only, so the Pre-show check is available in Show Mode as well.
+  // So is capturing a picture: it is used during a show.
+  if (panel === 'show-check' || panel === 'video-capture') return !showProjectSettings.value ? panel : null;
   return !showProjectSettings.value && (uiMode.value !== 'playback' || panel === 'quickplay' || panel?.startsWith('archive-')) ? panel : null;
 });
 const importPanelTitle = computed(() => {
+  if (visibleImportPanel.value === 'import-choice') return t('playlist.importMenu');
   if (visibleImportPanel.value === 'media') return t('importAudio.title');
   if (visibleImportPanel.value === 'youtube') return t('youtube.importFromYouTube');
   if (visibleImportPanel.value === 'spotify') return t('spotifyImport.title');
@@ -299,8 +328,11 @@ const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'archive-export') return t('exportProject.chooseLocationTitle');
   if (visibleImportPanel.value === 'delete-selection') return t('deleteSelection.title');
   if (visibleImportPanel.value === 'repair') return t('repair.noticeTitle');
+  if (visibleImportPanel.value === 'show-check') return t('showCheck.title');
+  if (visibleImportPanel.value === 'video-capture') return t('standbyCapture.panelTitle');
+  if (visibleImportPanel.value === 'media-cleanup') return t('mediaCleanup.title');
   if (visibleImportPanel.value === 'quickplay') return t(quickPlayEditor.value?.remove
-    ? 'oneShots.removeConfirmTitle' : quickPlayEditor.value ? 'oneShots.settings' : 'oneShots.importInto',
+    ? 'quickPlays.removeConfirmTitle' : quickPlayEditor.value ? 'quickPlays.settings' : 'quickPlays.importInto',
     { number: (quickPlayImportSlot.value ?? 0) + 1 });
   return '';
 });
@@ -323,19 +355,60 @@ const showCueProperties = computed(() =>
   !showProjectSettings.value && !visibleImportPanel.value && propertiesPanelOpen.value && !!editableSelectedItem.value);
 const lowerPanelOpen = computed(() => decisionOpen || showProjectSettings.value || !!visibleImportPanel.value || !!showCueProperties.value);
 const filePicker = useState<'cue' | 'standby' | 'replace-media' | null>('workspaceFilePicker', () => null);
-// Leave room for both lines of a compact cue when the lower panel is maximized.
-const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value,
-  uiMode.value === 'playback' ? Math.max(showPlaylistRowHeight.value, 108) : Math.max(regularPlaylistRowHeight.value, 84)));
+// Leave room for one row, cue or folder, when the lower panel is maximized.
+const reservedPlaylistRowHeight = computed(() => Math.max(folderPlaylistRowHeight.value, regularPlaylistRowHeight.value));
 
 const MIN_PANEL_HEIGHT = 120;
 const MAX_PANEL_HEIGHT_PERCENT = 60;
+// The importers show long lists (files, search results, tracks). They may
+// grow to most of the window, and the file browser opens tall; the transport
+// bar and Stop All Cues stay in view either way.
+const IMPORT_PANEL_HEIGHT_PERCENT = 58;
+const IMPORT_MAX_PANEL_HEIGHT_PERCENT = 84;
 const settingsHeight = useState<number | null>('ProjectSettingsPanel.height', () => null);
 const propertiesHeight = useState<number | null>('PropertiesPanel.height', () => null);
 const importHeight = useState<number | null>('ImportPanel.height', () => null);
-const autoSizeImportPanel = computed(() => visibleImportPanel.value === 'delete-selection' || visibleImportPanel.value === 'repair');
+const autoSizeImportPanel = computed(() => visibleImportPanel.value === 'delete-selection' || visibleImportPanel.value === 'repair'
+  || visibleImportPanel.value === 'import-choice' || visibleImportPanel.value === 'video-capture');
 const panelHeight = computed(() => showProjectSettings.value ? settingsHeight.value
   : autoSizeImportPanel.value ? null
   : visibleImportPanel.value ? importHeight.value : propertiesHeight.value);
+// The Pre-show check fits its contents like the panels above. Only a long
+// list of named cues turns it into a resizable panel, as an importer is.
+const showCheckLongList = usePreShowCheckLongList();
+const compactShowCheck = computed(() => visibleImportPanel.value === 'show-check' && !showCheckLongList.value);
+// The output meter strip can be folded to a slim rail; the choice is remembered.
+const METERS_COLLAPSED_KEY = 'dwcue.outputMetersCollapsed';
+const metersCollapsed = useState<boolean>('OutputConsole.collapsed', () => false);
+if (import.meta.client) {
+  try { metersCollapsed.value = localStorage.getItem(METERS_COLLAPSED_KEY) === '1'; } catch { /* keep the default */ }
+  watch(metersCollapsed, (collapsed) => {
+    try { localStorage.setItem(METERS_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch { /* not remembered this time */ }
+  });
+}
+const noteEditRequest = useState<string | null>('playlistNoteEditRequest', () => null);
+// The video check works in the background from the moment a show is open (see
+// useVideoPreflight): it needs an owner that is always there.
+if (import.meta.client && window.electronAPI?.videoOutput?.checkFrame) useVideoPreflight();
+const playlistSearchFocusRequest = useState<number>('playlistSearchFocusRequest', () => 0);
+const importExpanded = useState<boolean>('ImportPanel.expanded', () => false);
+const tallImportPanel = computed(() => !showProjectSettings.value && !!visibleImportPanel.value && !autoSizeImportPanel.value
+  && !compactShowCheck.value);
+// Anything that lists files or results may use the larger limit: importers,
+// the Open / Save As browser, and the file pickers inside Properties.
+const roomyPanel = computed(() => tallImportPanel.value || decisionOpen || !!filePicker.value);
+const panelMaxPercent = computed(() => roomyPanel.value ? IMPORT_MAX_PANEL_HEIGHT_PERCENT : MAX_PANEL_HEIGHT_PERCENT);
+const lowerPanelHeight = computed(() => {
+  if (decisionOpen || compactShowCheck.value) return 'auto';
+  if (tallImportPanel.value && importExpanded.value) return `${IMPORT_MAX_PANEL_HEIGHT_PERCENT}%`;
+  if (panelHeight.value !== null) return `${panelHeight.value}px`;
+  // Browsing files needs the room at once. Search and track lists start
+  // small and grow with their results, up to the same limit.
+  return tallImportPanel.value && visibleImportPanel.value === 'media' ? `${IMPORT_PANEL_HEIGHT_PERCENT}%` : 'auto';
+});
+function toggleImportExpanded() {
+  importExpanded.value = !importExpanded.value;
+}
 const workspaceContent = ref<HTMLElement | null>(null);
 const lowerPanel = ref<HTMLElement | null>(null);
 const importHost = ref<HTMLElement | null>(null);
@@ -356,12 +429,14 @@ function availablePanelHeight() {
   if (!content || !panel?.parentElement) return MIN_PANEL_HEIGHT;
   const reserved = parseFloat(getComputedStyle(content).minHeight);
   return Math.max(MIN_PANEL_HEIGHT, Math.floor(Math.min(
-    panel.parentElement.clientHeight * MAX_PANEL_HEIGHT_PERCENT / 100,
+    panel.parentElement.clientHeight * panelMaxPercent.value / 100,
     panel.offsetHeight + content.offsetHeight - reserved)));
 }
 
 function setPanelHeight(height: number, max: number) {
   const size = showProjectSettings.value ? settingsHeight : visibleImportPanel.value ? importHeight : propertiesHeight;
+  // Dragging the handle is a deliberate size; it replaces the expanded state.
+  if (size === importHeight) importExpanded.value = false;
   size.value = Math.round(Math.max(MIN_PANEL_HEIGHT, Math.min(max, height)));
 }
 
@@ -391,29 +466,29 @@ function handlePanelResizeKey(event: KeyboardEvent) {
 }
 
 
-// Resizable cart width
-const cartWidth = ref(300);
+// Resizable QuickPlay width
+const quickPlayWidth = ref(300);
 const isResizing = ref(false);
-const cartClosed = ref(true);
-const cartVisibilityExplicit = ref(false);
-const hasAssignedOneShots = computed(() => {
+const quickPlayClosed = ref(true);
+const quickPlayVisibilityExplicit = ref(false);
+const hasAssignedQuickPlays = computed(() => {
   const project = currentProject.value;
-  return !!project && flattenOneShots(
+  return !!project && flattenQuickPlays(
     project.items ?? [],
-    project.cartOnlyItems ?? [],
+    project.quickPlayItems ?? [],
   ).length > 0;
 });
-watch(hasAssignedOneShots, (assigned) => {
-  if (cartVisibilityExplicit.value) return;
-  cartClosed.value = !assigned;
+watch(hasAssignedQuickPlays, (assigned) => {
+  if (quickPlayVisibilityExplicit.value) return;
+  quickPlayClosed.value = !assigned;
   // Once existing assigned content arrives through paged project hydration,
   // keep the user's resulting panel state stable.
-  if (assigned) cartVisibilityExplicit.value = true;
+  if (assigned) quickPlayVisibilityExplicit.value = true;
 }, { immediate: true });
-const cartFullscreen = ref(false);
-const cartDetached = ref(false);
-const cartVisible = computed(() => !cartClosed.value && !cartDetached.value);
-const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useCartHotkeys({
+const quickPlayFullscreen = ref(false);
+const quickPlayDetached = ref(false);
+const quickPlayVisible = computed(() => !quickPlayClosed.value && !quickPlayDetached.value);
+const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useQuickPlayHotkeys({
   'toggle-settings': () => { showProjectSettings.value = !showProjectSettings.value; },
   'toggle-properties': () => {
     const item = editableSelectedItem.value;
@@ -421,7 +496,7 @@ const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useCa
     if (showCueProperties.value) propertiesPanelOpen.value = false;
     else openItemProperties(item.uuid);
   },
-  'toggle-quickplays': () => { if (!cartDetached.value) toggleCart(); },
+  'toggle-quickplays': () => { if (!quickPlayDetached.value) toggleQuickPlays(); },
 });
 const { stopAllCues } = useAudioEngine();
 const outputConsoleMinDb = -60;
@@ -562,10 +637,10 @@ function cancelLimiterCeilingDrag(event: PointerEvent) {
   drag.input.value = limiterCeilingDb.value.toFixed(1);
 }
 
-function toggleCart() {
-  cartVisibilityExplicit.value = true;
-  cartClosed.value = !cartClosed.value;
-  cartFullscreen.value = false;
+function toggleQuickPlays() {
+  quickPlayVisibilityExplicit.value = true;
+  quickPlayClosed.value = !quickPlayClosed.value;
+  quickPlayFullscreen.value = false;
 }
 
 // Dynamic program-output bank. Main (0/1) is always represented and device
@@ -640,7 +715,7 @@ const startResize = (e: PointerEvent) => {
   // Ignore secondary mouse buttons and any second finger landing on the bar —
   // a concurrent drag would register a duplicate set of document listeners.
   if (isResizing.value || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
-  cartVisibilityExplicit.value = true;
+  quickPlayVisibilityExplicit.value = true;
   const handle = e.currentTarget as HTMLElement | null;
   isResizing.value = true;
   e.preventDefault();
@@ -662,22 +737,22 @@ const startResize = (e: PointerEvent) => {
     
     // Snap closed at the bank's outer edge.
     if (newWidth < snapThreshold) {
-      cartClosed.value = true;
-      cartFullscreen.value = false;
+      quickPlayClosed.value = true;
+      quickPlayFullscreen.value = false;
       return;
     }
     
     // Expand the bank at the opposite edge.
     if (newWidth > container.offsetWidth - snapThreshold) {
-      cartFullscreen.value = true;
-      cartClosed.value = false;
+      quickPlayFullscreen.value = true;
+      quickPlayClosed.value = false;
       return;
     }
     
     // Normal resize
-    cartClosed.value = false;
-    cartFullscreen.value = false;
-    cartWidth.value = Math.round(newWidth);
+    quickPlayClosed.value = false;
+    quickPlayFullscreen.value = false;
+    quickPlayWidth.value = Math.round(newWidth);
   };
   
   const handleMouseUp = () => {
@@ -714,24 +789,24 @@ if (import.meta.client && window.electronAPI) {
     }
   });
 
-  // Cart window detach/attach
-  window.electronAPI.onCartPlayerWindowOpened(() => {
-    cartDetached.value = true;
+  // QuickPlay window detach/attach
+  window.electronAPI.onDetachedQuickPlayWindowOpened(() => {
+    quickPlayDetached.value = true;
   });
-  window.electronAPI.onCartPlayerWindowClosed(() => {
-    cartDetached.value = false;
+  window.electronAPI.onDetachedQuickPlayWindowClosed(() => {
+    quickPlayDetached.value = false;
   });
 
 }
 
 // Keep the main process HTTP API server up-to-date with the full project state.
 // Waveform peak arrays are stripped from the bulk playlist (large, and API
-// consumers don't need them), but PRESERVED for items the detached cart
-// window has to render: cart-only items, plus any playlist item referenced
-// by a cart slot. Without this the detached cart window's waveform canvases
+// consumers don't need them), but PRESERVED for items the detached QuickPlay
+// window has to render: QuickPlay-only items, plus any playlist item referenced
+// by a QuickPlay slot. Without this the detached QuickPlay window's waveform canvases
 // stay blank because it can't poll the project folder when the server is
 // remote.
-// NOTE: This watcher should NOT run in cart window mode to avoid feedback loops.
+// NOTE: This watcher should NOT run in QuickPlay window mode to avoid feedback loops.
 const stripWaveformsKeeping = (items: any[], keep: Set<string>): any[] =>
   items.map(item => {
     const copy: any = { ...item };
@@ -740,32 +815,32 @@ const stripWaveformsKeeping = (items: any[], keep: Set<string>): any[] =>
     return copy;
   });
 
-// Check if this is cart window mode by looking at URL query param
-const isCartWindowMode = import.meta.client
-  ? new URLSearchParams(window.location.search).get('cartWindow') === '1'
+// Check if this is QuickPlay window mode by looking at URL query param
+const isQuickPlayWindowMode = import.meta.client
+  ? new URLSearchParams(window.location.search).get('quickPlayWindow') === '1'
   : false;
 
 watch(
   [currentProject, projectSyncIdentity, projectHydrationStatus, () => server.projectSessionId,
     () => server.connected && !server.cueStartsBlocked],
   ([project, identity, hydrationStatus, sessionId, verified]) => {
-    // Only sync from the main window, not from the detached cart window.
-    if (!import.meta.client || !window.electronAPI || isCartWindowMode) return;
+    // Only sync from the main window, not from the detached QuickPlay window.
+    if (!import.meta.client || !window.electronAPI || isQuickPlayWindowMode) return;
     if (!project || !identity || hydrationStatus !== 'ready') {
       window.electronAPI.syncProjectData(null, null);
       return;
     }
     if (!verified || !sessionId) return;
-    const cartReferenced = new Set<string>([
-      ...flattenOneShots(project.items || []).map(item => item.uuid),
-      ...(project.cartItems || []).map((ci: any) => ci.itemUuid).filter(Boolean),
+    const quickPlayReferenced = new Set<string>([
+      ...flattenQuickPlays(project.items || []).map(item => item.uuid),
+      ...(project.quickPlaySlots || []).map((ci: any) => ci.itemUuid).filter(Boolean),
     ]);
     const data = {
       ...project,
-      items: stripWaveformsKeeping(project.items || [], cartReferenced),
-      // Cart-only items always keep their waveform — the detached cart window
-      // needs them and the cart is bounded to 64 slots.
-      cartOnlyItems: Array.from(cartOnlyItems.value.values()).map(i => ({ ...i })),
+      items: stripWaveformsKeeping(project.items || [], quickPlayReferenced),
+      // QuickPlay-only items always keep their waveform — the detached QuickPlay window
+      // needs them and QuickPlays are bounded to 64 slots.
+      quickPlayItems: Array.from(quickPlayItems.value.values()).map(i => ({ ...i })),
     };
     window.electronAPI.syncProjectData(JSON.parse(JSON.stringify(data)), identity, sessionId);
   },
@@ -816,6 +891,15 @@ const handleKeydown = (e: KeyboardEvent) => {
     return;
   }
 
+  // F2 writes a playlist note on the one selected cue or group, in Edit Mode.
+  if (e.key === 'F2') {
+    if (uiMode.value !== 'playback' && !isTextInputFocused() && selectedItems.value.size === 1) {
+      e.preventDefault();
+      noteEditRequest.value = Array.from(selectedItems.value)[0] ?? null;
+    }
+    return;
+  }
+
   const ctrl = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
   const destructiveShortcut = e.key === 'Delete' || e.key === 'Backspace' ||
@@ -857,6 +941,10 @@ const handleKeydown = (e: KeyboardEvent) => {
   } else if (key === 'v') {
     e.preventDefault();
     void pasteItemsFromClipboard();
+  } else if (key === 'f' && !e.shiftKey && !isForwardedFromVideoOutput(e)) {
+    // Find: put the cursor in the playlist search field (see PlaylistSearch).
+    e.preventDefault();
+    playlistSearchFocusRequest.value++;
   }
 };
 
@@ -890,11 +978,6 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   background: var(--color-background);
-}
-
-.main-workspace.show-mode {
-  // Leave room for Show Mode's larger playlist controls beside QuickPlays.
-  --playlist-split-min-width: 637px;
 }
 
 .workspace-content {
@@ -958,7 +1041,7 @@ onUnmounted(() => {
 }
 
 .lower-workspace-panel--browsing-files :deep(.picker-dock) {
-  flex-basis: clamp(200px, 30vh, 300px);
+  flex: 1 1 clamp(300px, 52vh, 620px);
   overflow: auto;
 }
 
@@ -984,8 +1067,16 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
+.workspace-import-resize {
+  margin-left: auto;
+}
+
 .workspace-import-close:hover {
   background: var(--color-surface-hover);
+}
+
+.workspace-capture {
+  padding: var(--spacing-sm) var(--workspace-gutter);
 }
 
 .workspace-import-host {
@@ -994,6 +1085,9 @@ onUnmounted(() => {
   overflow: auto;
   overscroll-behavior: contain;
   container-type: inline-size;
+  // A column, so an importer can give its list all the height the panel has.
+  display: flex;
+  flex-direction: column;
 }
 
 .workspace-import-host--archive {
@@ -1059,6 +1153,47 @@ onUnmounted(() => {
   overflow: hidden;
   background: var(--color-surface);
   border-inline-start: 1px solid var(--color-border);
+}
+
+.output-console--collapsed {
+  flex-basis: 36px;
+  width: 36px;
+}
+
+/* Slim: the limiter controls need the rest of this narrow header. */
+.output-console__fold {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  margin-inline: -6px -2px;
+  height: var(--panel-control-height);
+  padding: 0;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.output-console__fold:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.output-console__fold--rail {
+  align-content: start;
+  gap: var(--spacing-sm);
+  width: 100%;
+  height: 100%;
+  padding-top: var(--spacing-sm);
+  border-radius: 0;
+}
+
+.output-console__rail-label {
+  writing-mode: vertical-rl;
+  font-size: 12px;
+  letter-spacing: 0.04em;
 }
 
 .monitor-console {
@@ -1388,7 +1523,7 @@ onUnmounted(() => {
   }
 }
 
-.cart-toggle {
+.quickplay-toggle {
   display: grid;
   place-items: center;
   flex: 0 0 var(--panel-control-height);
@@ -1406,7 +1541,7 @@ onUnmounted(() => {
   }
 
 
-  &.cart-toggle--reveal {
+  &.quickplay-toggle--reveal {
     width: auto;
     flex-basis: auto;
     grid-auto-flow: column;
@@ -1414,18 +1549,18 @@ onUnmounted(() => {
     padding-inline: 10px;
   }
 
-  .cart-toggle__label {
+  .quickplay-toggle__label {
     font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
   }
-  &.cart-toggle--open {
-    color: var(--color-accent);
+  &.quickplay-toggle--open {
+    color: var(--color-accent-text);
     border-color: var(--color-accent);
   }
 
   &:hover {
-    color: var(--color-accent);
+    color: var(--color-accent-text);
     border-color: var(--color-accent);
     background: var(--color-surface-hover);
   }
@@ -1436,16 +1571,16 @@ onUnmounted(() => {
   }
 }
 
-.cart-toggle__collapse:dir(rtl) { transform: scaleX(-1); }
+.quickplay-toggle__collapse:dir(rtl) { transform: scaleX(-1); }
 
-.cart-section {
-  --cart-max-width: calc(100% - var(--playlist-split-min-width) - var(--resize-handle-width));
+.quickplay-section {
+  --quickplay-max-width: calc(100% - var(--playlist-split-min-width) - var(--resize-handle-width));
   flex: 0 0 auto;
-  min-width: min(220px, var(--cart-max-width));
-  max-width: var(--cart-max-width);
+  min-width: min(220px, var(--quickplay-max-width));
+  max-width: var(--quickplay-max-width);
   overflow: hidden;
 
-  &.cart-section--fullscreen {
+  &.quickplay-section--fullscreen {
     max-width: none;
   }
 }
@@ -1456,9 +1591,9 @@ onUnmounted(() => {
     min-width: 0;
   }
 
-  .cart-section:not(.cart-section--fullscreen) {
-    --cart-max-width: min(32%, 280px);
-    min-width: min(170px, var(--cart-max-width));
+  .quickplay-section:not(.quickplay-section--fullscreen) {
+    --quickplay-max-width: min(32%, 280px);
+    min-width: min(170px, var(--quickplay-max-width));
   }
 }
 </style>

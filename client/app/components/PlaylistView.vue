@@ -4,26 +4,38 @@
       <div class="workspace-panel-header__leading">
         <slot name="header-leading" />
         <h2 class="workspace-panel-header__title">{{ t('playlist.title') }}</h2>
-        <Btn type="button" class="locate-next" icon="my_location" text=""
+        <!-- Two locators, in the colours and shapes of the rows they jump to:
+             red with a play arrow for what is live, green with the double
+             arrow for Up Next. Each is lit only while there is such a row. -->
+        <Btn type="button" class="locate-btn locate-live" icon="my_location" text=""
+          :title="t('actions.locateLive')" :aria-label="t('actions.locateLive')"
+          :disabled="readOnly || !locatableLiveUuid" @click="locateLive" />
+        <Btn type="button" class="locate-btn locate-next" icon="my_location" text=""
           :title="t('actions.locateUpNext')" :aria-label="t('actions.locateUpNext')"
           :disabled="readOnly || !locatableNextUuid" @click="locateUpNext" />
+        <!-- The buttons keep together; the search field, which grows, comes last. -->
         <Btn v-if="backupMusicGroup?.type === 'group' || currentProject?.settings?.keepMusicGoing"
           type="button" class="music-toggle" icon="music_note" text=""
           :title="musicContinuityTitle" :aria-label="t('musicContinuity.toggle')"
           :aria-pressed="currentProject?.settings?.keepMusicGoing === true"
           :disabled="projectHydrationStatus !== 'ready' || server.cueStartsBlocked || musicContinuityPending.has('')"
           @click="toggleMusicContinuity" />
+        <!-- Shown in Edit Mode and Show Mode alike. It jumps to a row; it never
+             filters or reorders the list. -->
+        <PlaylistSearch :disabled="readOnly || projectHydrationStatus !== 'ready'" @jump="jumpToSearchHit" />
       </div>
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
       <div v-if="!showMode" class="playlist-actions" :inert="readOnly">
-        <Btn icon="audio_file" :text="t('playlist.importAudio')" :title="t('playlist.importAudio')"
-          :aria-label="t('playlist.importAudio')" :disabled="!currentProject" @click="handleImport" />
+        <!-- One Import button. With online sources available it opens the
+             choices in the lower panel, like every other picker; otherwise
+             there is only one source and it goes straight to it. -->
+        <Btn icon="add" :text="t('playlist.importMenu')" :title="t('playlist.importMenu')"
+          :aria-label="t('playlist.importMenu')" :disabled="!currentProject"
+          :aria-expanded="canOnlineImport ? workspaceImportPanel === 'import-choice' : undefined"
+          :aria-controls="canOnlineImport ? 'workspace-import-host' : undefined"
+          @click="handleImportButton" />
         <Btn v-if="importReviewAvailable" icon="list_alt" :text="t('importAudio.resultsTitle')"
           :title="t('importAudio.resultsTitle')" :aria-label="t('importAudio.resultsTitle')" @click="handleImport" />
-        <Btn v-if="canOnlineImport" icon="youtube_activity" :text="t('youtube.importFromYouTube')"
-          :title="t('youtube.importFromYouTube')" :aria-label="t('youtube.importFromYouTube')" @click="openImport('youtube')" />
-        <Btn v-if="canOnlineImport" icon="library_music" :text="t('spotifyImport.button')"
-          :title="t('spotifyImport.button')" :aria-label="t('spotifyImport.button')" @click="openImport('spotify')" />
         <Btn icon="folder" :text="t('playlist.addGroup')" :title="t('playlist.addGroup')"
           :aria-label="t('playlist.addGroup')" :disabled="!currentProject" @click="handleAddGroup" />
         <Btn icon="shuffle" :text="t('shuffle.label')" :title="t('shuffle.playlist')"
@@ -64,6 +76,12 @@
     </div>
 
     <Teleport defer to="#workspace-import-host">
+      <section v-if="workspaceImportPanel === 'import-choice'" class="import-choice"
+        :aria-label="t('playlist.importMenu')">
+        <Btn type="button" icon="audio_file" :text="t('playlist.importFiles')" @click="openImport('media')" />
+        <Btn v-if="canOnlineImport" type="button" icon="youtube_activity" :text="t('playlist.importYouTube')" @click="openImport('youtube')" />
+        <Btn v-if="canOnlineImport" type="button" icon="library_music" :text="t('spotifyImport.button')" @click="openImport('spotify')" />
+      </section>
       <YouTubeImportModal
         :key="`youtube-${projectEpoch}`"
         :visible="workspaceImportPanel === 'youtube'"
@@ -98,10 +116,11 @@ import YouTubeImportModal from './YouTubeImportModal.vue';
 import AudioImportModal from './AudioImportModal.vue';
 import SpotifyImportModal from './SpotifyImportModal.vue';
 import Btn from './Btn.vue';
+import PlaylistSearch from './PlaylistSearch.vue';
 import type { AudioItem, GroupItem, Project, ProjectSettings } from '~/types/project';
 import {
   DEFAULT_AUDIO_ITEM,
-  DEFAULT_CART_SLOT_KEYS,
+  DEFAULT_QUICK_PLAY_SLOT_KEYS,
   DEFAULT_GROUP_ITEM,
   DEFAULT_PROJECT_SETTINGS,
   DEFAULT_THEME,
@@ -112,7 +131,8 @@ import {
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { buildWaveformFromChannels } from '~/utils/audio';
 import { canonicalSpotifyMediaReference } from '~/utils/spotifyImport';
-import { cloneAsPlaylistItem } from '~/utils/oneShots';
+import { cloneAsPlaylistItem } from '~/utils/quickPlays';
+import { convertLegacyQuickPlayNames } from '~/utils/legacyQuickPlayNames';
 import { projectPathInFolder } from '~/utils/projectFileFormats';
 
 const { readOnly } = defineProps<{ readOnly: boolean }>();
@@ -123,6 +143,7 @@ const {
   saveProject,
   getAllItemsFlat,
   findItemByUuid,
+  toggleItemSelection,
   projectEpoch,
   workspaceImportPanel,
   projectHydrationStatus,
@@ -150,6 +171,16 @@ const toggleMusicContinuity = () => {
 const theme = useState('theme', () => 'dark');
 const isDark = computed(() => theme.value === 'dark');
 const { activeCues, nextItemOverrideUuid, effectiveNextUuid, setNextItemPending } = useAudioEngine();
+// The playlist cue that is on air, newest first when a crossfade has two. A
+// QuickPlay is not in the list, so it is never the one to locate.
+const locatableLiveUuid = computed(() => {
+  if (projectHydrationStatus.value !== 'ready') return null;
+  for (const uuid of [...activeCues.value.keys()].reverse()) {
+    const item = findItemByUuid(uuid);
+    if (item && (item.index?.[0] ?? -1) >= 0) return item.uuid;
+  }
+  return null;
+});
 const locatableNextUuid = computed(() => {
   if (projectHydrationStatus.value !== 'ready' || setNextItemPending.value || !effectiveNextUuid.value) return null;
   const item = findItemByUuid(effectiveNextUuid.value);
@@ -158,7 +189,6 @@ const locatableNextUuid = computed(() => {
 const {
   uiMode,
   regularPlaylistRowHeight,
-  showPlaylistRowHeight,
   folderPlaylistRowHeight,
   waveformOpacity,
 } = useUiMode();
@@ -168,15 +198,33 @@ const server = useLiveplayServer();
 // the `selectedItem` computed) means we react to the selection MOVING, not to
 // the item object being rebuilt by a server-pushed document.
 const selectedItemUuid = useState<string | null>('selectedItemUuid', () => null);
+// The row the playlist search is pointing at (see PlaylistSearch). Its groups
+// are held open with the selection's for as long as it is outlined.
+const searchHitUuid = useState<string | null>('playlistSearchHit', () => null);
 const showMode = computed(() => uiMode.value === 'playback');
+// The time lane is as wide as this show's longest cue needs: 96px fits an
+// hour-long countdown, but a show of short cues gives the difference to titles.
+const longestCueSeconds = computed(() => {
+  let longest = 0;
+  for (const item of getAllItemsFlat()) {
+    const seconds = item.type === 'audio' ? (item as AudioItem).duration : 0;
+    if (Number.isFinite(seconds)) longest = Math.max(longest, seconds);
+  }
+  return longest;
+});
+const cueTimeLaneWidth = computed(() => longestCueSeconds.value < 600 ? 76 : longestCueSeconds.value < 3600 ? 88 : 96);
 const playlistRowStyle = computed(() => ({
+  '--cue-time-width': `${cueTimeLaneWidth.value}px`,
   '--playlist-row-height': `${regularPlaylistRowHeight.value}px`,
-  '--show-playlist-row-height': `${showPlaylistRowHeight.value}px`,
   '--folder-playlist-row-height': `${folderPlaylistRowHeight.value}px`,
   '--playlist-waveform-opacity': String(waveformOpacity.value / 100),
 }));
 const scrollContainer = ref<HTMLElement | null>(null);
 const canOnlineImport = computed(() => !!currentProject.value && server.isLocalServer);
+// The chooser only exists to offer the online importers; close it if they stop applying.
+watch(canOnlineImport, (allowed) => {
+  if (!allowed && workspaceImportPanel.value === 'import-choice') workspaceImportPanel.value = null;
+});
 
 const showProjectSettings = useState('showProjectSettings', () => false);
 // The dock can hide a form while its import still owns an active job.
@@ -277,9 +325,31 @@ function scrollItemIntoView(uuid: string, block: ScrollLogicalPosition = 'center
 function locateUpNext() {
   const uuid = locatableNextUuid.value;
   if (!uuid) return;
-  revealItems(selectedItemUuid.value, uuid);
+  revealItems(selectedItemUuid.value, searchHitUuid.value, uuid);
   nextTick(() => {
     if (locatableNextUuid.value === uuid) scrollItemIntoView(uuid, 'end');
+  });
+}
+
+function locateLive() {
+  const uuid = locatableLiveUuid.value;
+  if (!uuid) return;
+  revealItems(selectedItemUuid.value, searchHitUuid.value, uuid);
+  nextTick(() => {
+    if (locatableLiveUuid.value === uuid) scrollItemIntoView(uuid, 'center');
+  });
+}
+
+// The search field found a row. It is reached the way Up Next is located: hold
+// open the groups that hide it, then scroll. Nothing is filtered or reordered.
+function jumpToSearchHit(uuid: string) {
+  // Edit Mode selects the row as a click would. Show Mode rows cannot be
+  // selected, so there the row is only scrolled to and outlined.
+  if (!showMode.value) toggleItemSelection(uuid, false, false);
+  revealItems(selectedItemUuid.value, uuid);
+  nextTick(() => {
+    // Centred, so the cues around the hit can be read as well.
+    if (searchHitUuid.value === uuid) scrollItemIntoView(uuid, 'center');
   });
 }
 
@@ -303,7 +373,7 @@ watch(
 // already fully visible, so ordinary mouse clicks never jerk the list around,
 // and an off-screen selection is brought in with the smallest move that works.
 watch(selectedItemUuid, (uuid) => {
-  revealItems(uuid);
+  revealItems(uuid, searchHitUuid.value);
   if (!uuid) return;
   // A revealed group renders its children on the next flush, so the row we
   // want to scroll to does not exist yet at this point.
@@ -383,11 +453,11 @@ const scanForMissingWaveforms = async () => {
   if (!currentProject.value || !server.connected) return;
   try {
     const folder = currentProject.value.folderPath || '';
-    // Include cart-only items too — they live in a separate array and the
-    // playlist flatten wouldn't otherwise reach them, so cart slots backed
-    // by cart-only audio would never get their waveforms generated.
-    const cartOnly = (currentProject.value.cartOnlyItems ?? []) as AudioItem[];
-    const all = [...getAllItemsFlat(), ...cartOnly];
+    // Include QuickPlay-only items too — they live in a separate array and the
+    // playlist flatten wouldn't otherwise reach them, so QuickPlay slots backed
+    // by QuickPlay-only audio would never get their waveforms generated.
+    const quickPlayOnly = (currentProject.value.quickPlayItems ?? []) as AudioItem[];
+    const all = [...getAllItemsFlat(), ...quickPlayOnly];
     for (const item of all) {
       if (item.type !== 'audio') continue;
       const ai = item as AudioItem;
@@ -432,10 +502,10 @@ watch(
     scheduleWaveformScan();
   },
 );
-// Also watch cartOnlyItems separately — the scanner needs to re-run when
-// new cart items appear (cart hydration happens after the playlist).
+// Also watch quickPlayItems separately — the scanner needs to re-run when
+// new QuickPlay items appear (QuickPlay hydration happens after the playlist).
 watch(
-  () => currentProject.value?.cartOnlyItems?.length ?? 0,
+  () => currentProject.value?.quickPlayItems?.length ?? 0,
   scheduleWaveformScan,
   { immediate: true },
 );
@@ -486,6 +556,14 @@ onUnmounted(() => {
 const handleImport = () => {
   if (!currentProject.value) return;
   openImport('media');
+};
+
+// The Import button: a second press puts the choices away again.
+const handleImportButton = () => {
+  if (!currentProject.value) return;
+  if (!canOnlineImport.value) return handleImport();
+  showProjectSettings.value = false;
+  workspaceImportPanel.value = workspaceImportPanel.value === 'import-choice' ? null : 'import-choice';
 };
 
 function openImport(panel: keyof typeof importOpen) {
@@ -799,7 +877,7 @@ const importSpotifyTemplate = async (
       : null;
     previousTemplateData = templateRead?.success ? templateRead.data || '' : '';
     const existingTemplate = templateRead?.success && templateRead.data
-      ? JSON.parse(templateRead.data) as Project
+      ? convertLegacyQuickPlayNames(JSON.parse(templateRead.data)) as Project
       : null;
     const templateGroup = existingTemplate?.items?.[0];
     if (targetGroup && templateGroup?.type !== 'group') {
@@ -826,9 +904,9 @@ const importSpotifyTemplate = async (
         type: 'group',
         children: persistedCues,
       } as GroupItem],
-      cartItems: [],
-      cartSlotKeys: { ...DEFAULT_CART_SLOT_KEYS },
-      cartOnlyItems: [],
+      quickPlaySlots: [],
+      quickPlaySlotKeys: { ...DEFAULT_QUICK_PLAY_SLOT_KEYS },
+      quickPlayItems: [],
       theme: { ...DEFAULT_THEME },
       settings,
       createdAt: now,
@@ -1188,9 +1266,9 @@ const handleDragOver = (e: DragEvent) => {
     return;
   }
 
-  // One Shots copy into the playlist; playlist rows reorder and OS files copy
+  // QuickPlays copy into the playlist; playlist rows reorder and OS files copy
   // into the project media root.
-  e.dataTransfer.dropEffect = e.dataTransfer.types.includes('one-shot-uuid')
+  e.dataTransfer.dropEffect = e.dataTransfer.types.includes('quickplay-uuid')
     || e.dataTransfer.types.includes('Files')
     ? 'copy'
     : 'move';
@@ -1203,32 +1281,14 @@ const handleDrop = async (e: DragEvent) => {
   if (showMode.value) return;
   if (!e.dataTransfer) return;
 
-  // A One Shot dragged back into the playlist creates a normal cue and leaves
+  // A QuickPlay dragged back into the playlist creates a normal cue and leaves
   // the source cell ready for the next quick-fire trigger.
-  const oneShotUuid = e.dataTransfer.getData('one-shot-uuid');
-  if (oneShotUuid && currentProject.value) {
-    const source = findItemByUuid(oneShotUuid);
+  const quickPlayUuid = e.dataTransfer.getData('quickplay-uuid');
+  if (quickPlayUuid && currentProject.value) {
+    const source = findItemByUuid(quickPlayUuid);
     if (!source || source.type !== 'audio') return;
     addItem(cloneAsPlaylistItem(source as AudioItem, crypto.randomUUID()));
     await saveProject();
-    return;
-  }
-
-  // Cart slot dropped onto empty playlist space → promote it to a standalone
-  // playlist item (fresh uuid) appended at the end, and free the cart slot.
-  // (Drops landing on an existing row are handled by PlaylistItem.)
-  if (e.dataTransfer.getData('cart-slot') && currentProject.value) {
-    const cartUuid = e.dataTransfer.getData('item-uuid');
-    const { findItemByUuid, deleteCartItems } = useProject();
-    const cartSrc = findItemByUuid(cartUuid);
-    if (!cartSrc || cartSrc.type !== 'audio') return;
-    const clone: AudioItem = {
-      ...(cartSrc as AudioItem),
-      uuid: crypto.randomUUID(),
-      index: [currentProject.value.items.length],
-    } as AudioItem;
-    addItem(clone);
-    deleteCartItems([cartUuid]);
     return;
   }
 
@@ -1295,7 +1355,8 @@ const handleDrop = async (e: DragEvent) => {
 
 <style scoped>
 .playlist-view {
-  --cue-number-width: 36px;
+  /* Room for the cue number and the live / next shape beside it. */
+  --cue-number-width: 46px;
   --cue-state-width: 108px;
   --cue-time-width: 96px;
   width: 100%;
@@ -1304,10 +1365,6 @@ const handleDrop = async (e: DragEvent) => {
   flex-direction: column;
   container-type: inline-size;
   background-color: var(--color-background);
-}
-
-.playlist-view.show-mode {
-  --cue-number-width: 40px;
 }
 
 .playlist-actions {
@@ -1325,22 +1382,70 @@ const handleDrop = async (e: DragEvent) => {
   flex: 0 0 auto;
 }
 
+.import-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+  padding: var(--spacing-sm) var(--workspace-gutter);
+}
+
+.import-choice :deep(.btn) {
+  min-height: calc(var(--panel-control-height) + 8px);
+  padding-inline: var(--spacing-lg, 16px);
+  font-size: 13px;
+}
+
 .music-toggle,
-.locate-next {
+.locate-btn {
   padding-inline: var(--spacing-xs);
 }
 
-.locate-next {
+.locate-btn {
   min-width: var(--panel-control-height);
   justify-content: center;
+  gap: 0;
 }
 
-.music-toggle[aria-pressed='true'] {
+.locate-btn :deep(.btn__text) {
+  display: none;
+}
+
+/* The shape of the row it jumps to, beside the locate target. */
+.locate-btn::after {
+  content: 'play_arrow' / '';
+  font-family: 'Material Symbols Rounded';
+  font-size: 16px;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  font-variation-settings: 'FILL' 1;
+  font-feature-settings: 'liga';
+}
+
+.locate-next::after {
+  content: 'fast_forward' / '';
+}
+
+.locate-live:not(:disabled) {
   border-color: var(--state-playing);
   color: var(--state-playing);
 }
 
-@container playlist-actions (max-width: 640px) {
+.locate-next:not(:disabled) {
+  border-color: var(--state-up-next);
+  color: var(--state-up-next);
+}
+
+.music-toggle[aria-pressed='true'] {
+  border-color: var(--state-ready);
+  color: var(--state-ready);
+}
+
+/* Import, Add Group and Shuffle (and Results while an import is open) need
+   about 480px with their labels; below this they become icon buttons. */
+@container playlist-actions (max-width: 500px) {
   .playlist-actions :deep(.btn) {
     flex: 0 0 var(--panel-control-height);
     justify-content: center;
@@ -1351,7 +1456,7 @@ const handleDrop = async (e: DragEvent) => {
 }
 
 @container (max-width: 580px) {
-  .playlist-header :deep(.cart-toggle__label) { display: none; }
+  .playlist-header :deep(.quickplay-toggle__label) { display: none; }
 }
 
 .playlist-header,

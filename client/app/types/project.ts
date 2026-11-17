@@ -3,6 +3,9 @@ export interface BaseItem {
   uuid: string;
   index: number[];
   displayName: string;
+  // Optional operator note shown beside the title on the playlist only. It is
+  // not the cue's name and is never sent to the transport or video output.
+  note?: string;
   color: string;
   type: 'audio' | 'group' | 'action'; // Extensible for future item types
 }
@@ -50,9 +53,9 @@ export interface AudioItem extends BaseItem {
   ltcEnabled?: boolean;         // output LTC on the project's ltcDevice when playing
   ltcStartTimecode?: string;    // starting timecode "HH:MM:SS:FF" (default "00:00:00:00")
   ltcFrameRate?: number;        // 0=24, 1=25, 2=29.97NDF, 3=29.97DF, 4=30 (default 4)
-  // Presence designates this canonical playlist cue as a quick-fire One Shot.
+  // Presence designates this canonical playlist cue as a quick-fire QuickPlay.
   // Playback behavior continues to use the cue's existing audio fields.
-  oneShot?: OneShotSettings;
+  quickPlay?: QuickPlaySettings;
 }
 
 // Waveform data format (from the server's decoder, or legacy ffmpeg files)
@@ -60,7 +63,7 @@ export interface WaveformData {
   length: number;
   duration: number;
   // Combined trace: the per-bucket maximum across every source channel.
-  // Normalized 0..1. Auto-trim and the compact row/cart renderers use this
+  // Normalized 0..1. Auto-trim and the compact row/QuickPlay renderers use this
   // combined trace; loudness and true peak come only from decoded-sample
   // server analysis.
   peaks: number[];
@@ -137,19 +140,19 @@ export interface DuckingBehavior {
   duckFadeOut?: number; // fade out duration in seconds when restoring (default: 1)
 }
 
-// Cart slot key binding
-export interface CartSlotKeyBinding {
+// QuickPlay slot key binding
+export interface QuickPlaySlotKeyBinding {
   key: string;
   ctrlKey: boolean;
   shiftKey: boolean;
   altKey: boolean;
 }
 
-export interface OneShotSettings {
+export interface QuickPlaySettings {
   order: number;
   retrigger: 'restart' | 'ignore';
-  hotkey?: CartSlotKeyBinding | null; // Omitted uses the slot default. Null disables it.
-  // Set when a playlist cue was copied into an independent One Shot. This is
+  hotkey?: QuickPlaySlotKeyBinding | null; // Omitted uses the slot default. Null disables it.
+  // Set when a playlist cue was copied into an independent QuickPlay. This is
   // only an origin reference for the Properties toggle; playback stays local.
   sourceUuid?: string;
   // Legacy saved fields. Playback ignores these.
@@ -177,35 +180,35 @@ export type PlaybackKeyAction =
   | 'play-selected'
   | 'play-next';
 
-// Cart player item
-export interface CartItem {
+// QuickPlay slot assignment
+export interface QuickPlaySlot {
   slot: number; // 0-63
   itemUuid: string;
   index: number[]; // [-1, slot] for API triggering
 }
 
-export const CART_SLOT_COUNT_LIMITS = { min: 1, max: 64, default: 16 } as const;
+export const QUICK_PLAY_SLOT_COUNT_LIMITS = { min: 1, max: 64, default: 16 } as const;
 
-export function normalizeCartSlotCount(
+export function normalizeQuickPlaySlotCount(
   value: unknown,
-  cartItems: readonly Pick<CartItem, 'slot'>[] = [],
-  cartSlotKeys: object = {},
+  quickPlaySlots: readonly Pick<QuickPlaySlot, 'slot'>[] = [],
+  quickPlaySlotKeys: object = {},
 ): number {
   const numeric = typeof value === 'number' || (typeof value === 'string' && value.trim())
     ? Number(value)
     : Number.NaN;
   const configured = Number.isFinite(numeric)
-    ? Math.min(CART_SLOT_COUNT_LIMITS.max, Math.max(CART_SLOT_COUNT_LIMITS.min, Math.round(numeric)))
-    : CART_SLOT_COUNT_LIMITS.default;
+    ? Math.min(QUICK_PLAY_SLOT_COUNT_LIMITS.max, Math.max(QUICK_PLAY_SLOT_COUNT_LIMITS.min, Math.round(numeric)))
+    : QUICK_PLAY_SLOT_COUNT_LIMITS.default;
   let occupied = 0;
   const includeSlot = (slot: unknown) => {
     if (typeof slot === 'number' && Number.isInteger(slot)
-      && slot >= 0 && slot < CART_SLOT_COUNT_LIMITS.max) {
+      && slot >= 0 && slot < QUICK_PLAY_SLOT_COUNT_LIMITS.max) {
       occupied = Math.max(occupied, slot + 1);
     }
   };
-  for (const item of cartItems) includeSlot(item?.slot);
-  for (const slot of Object.keys(cartSlotKeys)) includeSlot(Number(slot));
+  for (const item of quickPlaySlots) includeSlot(item?.slot);
+  for (const slot of Object.keys(quickPlaySlotKeys)) includeSlot(Number(slot));
   return Math.max(configured, occupied);
 }
 
@@ -237,7 +240,7 @@ export interface ProjectSettings {
   disableSilenceWarning?: boolean;
   autoSave?: boolean;
   countdownColorBands?: CountdownColorBand[];
-  cartSlotCount?: number;
+  quickPlaySlotCount?: number;
   // Global standby image for the video output, project-relative. Shown when
   // nothing is playing and no black/test card is up.
   videoStandbyImage?: string;
@@ -259,10 +262,10 @@ export interface Project {
   version: string;
   folderPath: string;
   items: (AudioItem | GroupItem)[];
-  cartItems: CartItem[];
-  cartSlotKeys?: Record<number, CartSlotKeyBinding>;
-  playbackKeys?: Record<string, CartSlotKeyBinding | null>;
-  cartOnlyItems: AudioItem[]; // Items that exist only in cart (not in playlist)
+  quickPlaySlots: QuickPlaySlot[];
+  quickPlaySlotKeys?: Record<number, QuickPlaySlotKeyBinding>;
+  playbackKeys?: Record<string, QuickPlaySlotKeyBinding | null>;
+  quickPlayItems: AudioItem[]; // Items that exist only in the QuickPlays (not in playlist)
   theme: Theme;
   settings?: ProjectSettings;
   createdAt: string;
@@ -355,6 +358,9 @@ export const DEFAULT_THEME: Theme = {
   accentColor: '#315FCF'
 };
 
+// The countdown is a stop light of its own: green with time in hand, then
+// yellow, then red. It is the one place where green and red do not mean
+// "next" and "live", so only the countdown digits take these colours.
 export const DEFAULT_COUNTDOWN_COLOR_BANDS: CountdownColorBand[] = [
   { startSeconds: 11, color: '#35A96B' },
   { startSeconds: 6, color: '#D8AD35' },
@@ -399,11 +405,20 @@ export function countdownColorForSeconds(
     .find(band => displayedSeconds >= band.startSeconds)!.color;
 }
 
+/**
+ * The band colour as it is drawn on the digits. On the light console it is
+ * deepened: green and yellow digits wash out on a pale surface.
+ */
+export function countdownInk(color: string | null, theme: string): string | null {
+  if (!color || theme !== 'light') return color;
+  return `color-mix(in srgb, ${color} 60%, #000000)`;
+}
+
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   outputTarget: 'live',
   meterMode: 'dBFS',
   cycleTrackColors: true,
-  cartSlotCount: CART_SLOT_COUNT_LIMITS.default,
+  quickPlaySlotCount: QUICK_PLAY_SLOT_COUNT_LIMITS.default,
   countdownColorBands: DEFAULT_COUNTDOWN_COLOR_BANDS.map(band => ({ ...band })),
 };
 
@@ -431,8 +446,8 @@ export const DEFAULT_AUDIO_ITEM: Partial<AudioItem> = {
   ltcFrameRate: 4,
 };
 
-// Default for cart items (different from playlist)
-export const DEFAULT_CART_AUDIO_ITEM: Partial<AudioItem> = {
+// Default for QuickPlay items (different from playlist)
+export const DEFAULT_QUICK_PLAY_AUDIO_ITEM: Partial<AudioItem> = {
   color: PRESET_COLORS[0],
   inPoint: 0,
   volume: 1.0,
@@ -440,7 +455,7 @@ export const DEFAULT_CART_AUDIO_ITEM: Partial<AudioItem> = {
   startBehavior: { action: 'nothing' },
   customActions: [],
   duckingBehavior: {
-    mode: 'duck-others', // Default for cart items: duck to -20dB
+    mode: 'duck-others', // Default for QuickPlay items: duck to -20dB
     duckLevel: 0.1,
     duckFadeIn: 0.25,
     duckFadeOut: 1.0
@@ -462,11 +477,11 @@ export const DEFAULT_GROUP_ITEM = {
   children: []
 } satisfies Partial<GroupItem>;
 
-// Cart slots have no default key bindings — user assigns them manually
-export const DEFAULT_CART_SLOT_KEYS: Record<number, CartSlotKeyBinding> = {};
+// QuickPlay slots have no default key bindings — user assigns them manually
+export const DEFAULT_QUICK_PLAY_SLOT_KEYS: Record<number, QuickPlaySlotKeyBinding> = {};
 
 // Default keyboard bindings for playback actions
-export const DEFAULT_PLAYBACK_KEYS: Partial<Record<PlaybackKeyAction, CartSlotKeyBinding>> = {
+export const DEFAULT_PLAYBACK_KEYS: Partial<Record<PlaybackKeyAction, QuickPlaySlotKeyBinding>> = {
   'play-next':     { key: ' ',         ctrlKey: false, shiftKey: false, altKey: false },
   'pause-resume':  { key: 'p',         ctrlKey: false, shiftKey: false, altKey: false },
   'toggle-loop':   { key: 'l',         ctrlKey: false, shiftKey: false, altKey: false },

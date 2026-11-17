@@ -60,9 +60,9 @@
           <span v-if="keyErrorActionId === action.id && keyErrorMessage" class="error-msg">{{ keyErrorMessage }}</span>
         </div>
 
-        <h3 v-if="configuredOneShots.length" class="binding-heading">{{ t('controls.sectionOneShots') }}</h3>
+        <h3 v-if="configuredQuickPlays.length" class="binding-heading">{{ t('controls.sectionQuickPlays') }}</h3>
         <div
-          v-for="entry in configuredOneShots"
+          v-for="entry in configuredQuickPlays"
           :key="entry.item.uuid"
           class="action-row keyboard-action-row"
           :class="{
@@ -70,9 +70,9 @@
             conflict: conflictSlot === entry.slotIndex
           }"
         >
-          <span class="action-label">{{ t('controls.oneShot', { n: entry.slotIndex + 1 }) }}</span>
+          <span class="action-label">{{ t('controls.quickPlay', { n: entry.slotIndex + 1 }) }}</span>
           <button type="button" class="action-binding binding-button"
-            :aria-label="t('controls.oneShot', { n: entry.slotIndex + 1 })"
+            :aria-label="t('controls.quickPlay', { n: entry.slotIndex + 1 })"
             @click="startCaptureSlot(entry.slotIndex, $event)"
             @blur="cancelKeyCapture">
             <template v-if="capturingSlot === entry.slotIndex">
@@ -87,7 +87,7 @@
             v-if="keyMappings[entry.slotIndex]"
             type="button"
             class="clear-key-btn"
-            :aria-label="`${t('controls.clear')} · ${t('controls.oneShot', { n: entry.slotIndex + 1 })}`"
+            :aria-label="`${t('controls.clear')} · ${t('controls.quickPlay', { n: entry.slotIndex + 1 })}`"
             :title="t('controls.clear')"
             @click.stop="clearSlotBinding(entry.slotIndex)"
           ><span class="material-symbols-rounded" aria-hidden="true">close</span></button>
@@ -98,7 +98,7 @@
       <!-- MIDI tab -->
       <div v-else class="config-body">
         <template v-for="group in midiGroups" :key="group.id">
-          <h3 v-if="group.id === 'One Shots'" class="binding-heading">{{ t('controls.sectionOneShots') }}</h3>
+          <h3 v-if="group.id === 'QuickPlays'" class="binding-heading">{{ t('controls.sectionQuickPlays') }}</h3>
           <div v-for="action in group.actions" :key="action.id" class="action-row midi-action-row"
             :class="{ learning: learning === action.id }">
             <span class="action-label">{{ t(action.labelKey, { n: action.n }) }}</span>
@@ -133,7 +133,7 @@
 </template>
 
 <script setup lang="ts">
-import { formatKeyLabel, eventToBinding, bindingsMatch, isReservedCombo, PLAYBACK_ACTIONS } from '~/composables/useCartHotkeys';
+import { formatKeyLabel, eventToBinding, bindingsMatch, isReservedCombo, PLAYBACK_ACTIONS } from '~/composables/useQuickPlayHotkeys';
 import {
   MIDI_ACTIONS,
   formatMidiBinding,
@@ -141,8 +141,8 @@ import {
   type MidiBinding,
   type MidiActionId,
 } from '~/composables/useMidiController';
-import type { PlaybackKeyAction, CartSlotKeyBinding } from '~/types/project';
-import { buildOneShotSlots } from '~/utils/oneShots';
+import type { PlaybackKeyAction, QuickPlaySlotKeyBinding } from '~/types/project';
+import { buildQuickPlayCells } from '~/utils/quickPlays';
 
 const { t } = useLocalization();
 const showShortcutsBar = useState('showShortcutsBar', () => true);
@@ -156,14 +156,14 @@ const {
   updatePlaybackBinding,
   resetToDefaults,
   resetPlaybackToDefaults,
-} = useCartHotkeys();
+} = useQuickPlayHotkeys();
 const { saveProject, currentProject } = useProject();
-const { cartOnlyItems } = useCartItems();
-const oneShotSlots = computed(() => buildOneShotSlots(
+const { quickPlayItems } = useQuickPlayItems();
+const quickPlayCells = computed(() => buildQuickPlayCells(
   currentProject.value?.items ?? [],
-  Array.from(cartOnlyItems.value.values()),
+  Array.from(quickPlayItems.value.values()),
 ));
-const configuredOneShots = computed(() => oneShotSlots.value.flatMap(
+const configuredQuickPlays = computed(() => quickPlayCells.value.flatMap(
   (item, slotIndex) => item ? [{ item, slotIndex }] : [],
 ));
 
@@ -215,14 +215,14 @@ const getSlotKeyLabel = (slotIndex: number): string => {
   return binding ? formatKeyLabel(binding) : '';
 };
 
-const getPlaybackBinding = (action: PlaybackKeyAction): CartSlotKeyBinding | null => {
+const getPlaybackBinding = (action: PlaybackKeyAction): QuickPlaySlotKeyBinding | null => {
   return playbackMappings.value[action] ?? null;
 };
 
 const clearSlotBinding = (slotIndex: number) => {
-  const item = oneShotSlots.value[slotIndex];
-  if (!item?.oneShot) return;
-  item.oneShot.hotkey = null;
+  const item = quickPlayCells.value[slotIndex];
+  if (!item?.quickPlay) return;
+  item.quickPlay.hotkey = null;
   saveProject();
 };
 
@@ -293,7 +293,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 
   if (capturingSlot.value !== null) {
     // Check conflict with other playback actions
-    for (const [action, pb] of Object.entries(playbackMappings.value) as [PlaybackKeyAction, CartSlotKeyBinding | null][]) {
+    for (const [action, pb] of Object.entries(playbackMappings.value) as [PlaybackKeyAction, QuickPlaySlotKeyBinding | null][]) {
       if (pb && pb.key.toLowerCase() === binding.key.toLowerCase()
         && pb.ctrlKey === binding.ctrlKey && pb.shiftKey === binding.shiftKey && pb.altKey === binding.altKey) {
         keyErrorMessage.value = t('controls.conflictAction', { action: t(PLAYBACK_ACTIONS.find(a => a.id === action)?.labelKey ?? '') });
@@ -303,7 +303,7 @@ const handleKeydown = (e: KeyboardEvent) => {
     }
     const result = updateKeyBinding(capturingSlot.value, binding);
     if (result.conflict >= 0) {
-      keyErrorMessage.value = t('controls.conflictOneShot', { n: result.conflict + 1 });
+      keyErrorMessage.value = t('controls.conflictQuickPlay', { n: result.conflict + 1 });
       keyErrorSlot.value = capturingSlot.value;
       conflictSlot.value = result.conflict;
       return;
@@ -315,11 +315,11 @@ const handleKeydown = (e: KeyboardEvent) => {
     saveProject();
   } else if (capturingKeyAction.value !== null) {
     const action = capturingKeyAction.value;
-    // Check conflict with cart slots
+    // Check conflict with QuickPlay slots
     for (const [slotStr, slotBinding] of Object.entries(keyMappings.value)) {
       if (slotBinding.key.toLowerCase() === binding.key.toLowerCase()
         && slotBinding.ctrlKey === binding.ctrlKey && slotBinding.shiftKey === binding.shiftKey && slotBinding.altKey === binding.altKey) {
-        keyErrorMessage.value = t('controls.conflictOneShot', { n: parseInt(slotStr, 10) + 1 });
+        keyErrorMessage.value = t('controls.conflictQuickPlay', { n: parseInt(slotStr, 10) + 1 });
         keyErrorActionId.value = action;
         keyConflictSlotForAction.value = action;
         return;
@@ -333,7 +333,7 @@ const handleKeydown = (e: KeyboardEvent) => {
       return;
     }
     if (result.conflictSlot >= 0) {
-      keyErrorMessage.value = t('controls.conflictOneShot', { n: result.conflictSlot + 1 });
+      keyErrorMessage.value = t('controls.conflictQuickPlay', { n: result.conflictSlot + 1 });
       keyErrorActionId.value = action;
       return;
     }
@@ -350,10 +350,10 @@ const handleKeydown = (e: KeyboardEvent) => {
 
 const midiGroups = computed(() => {
   const priority = (id: MidiActionId) => id === 'play-next' ? 0 : id === 'stop-all' ? 1 : 2;
-  return ['Playback', 'Volume', 'One Shots'].map(id => ({
+  return ['Playback', 'Volume', 'QuickPlays'].map(id => ({
     id,
     actions: MIDI_ACTIONS.filter(action => action.category === id
-      && (action.n === undefined || !!oneShotSlots.value[action.n - 1]))
+      && (action.n === undefined || !!quickPlayCells.value[action.n - 1]))
       .sort((a, b) => priority(a.id) - priority(b.id)),
   })).filter(group => group.actions.length);
 });

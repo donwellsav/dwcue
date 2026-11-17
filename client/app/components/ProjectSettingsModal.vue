@@ -38,6 +38,21 @@
           </p>
           <!-- ================= Audio Routing ================= -->
           <template v-if="activeTab === 'audio'">
+            <!-- The two checks before a show. They open from here, beside the
+                 audio set-up they are about, and stay out of the top bar. -->
+            <div v-if="currentProject" class="settings-rows show-checks">
+              <section class="settings-field show-checks__row">
+                <button type="button" class="modal-btn" aria-controls="workspace-import-host"
+                  @click="openShowCheck">{{ t('showCheck.title') }}</button>
+                <p class="settings-help">{{ t('showCheck.hint') }}</p>
+              </section>
+              <section class="settings-field show-checks__row">
+                <button type="button" class="modal-btn" :class="{ 'modal-btn--on': levelCheckActive }"
+                  :aria-pressed="levelCheckActive" :disabled="levelCheckCount === 0"
+                  @click="toggleLevelCheck">{{ t('levelCheck.title') }}</button>
+                <p class="settings-help">{{ t(levelCheckCount === 0 ? 'levelCheck.unavailable' : 'levelCheck.hint') }}</p>
+              </section>
+            </div>
             <!-- Audio device (default for cue playback) -->
             <section class="settings-field">
               <span class="settings-label">{{ t('settings.audioDevice') }}</span>
@@ -149,6 +164,13 @@
                 </label>
               </section>
             </div>
+            <div class="settings-rows settings-rows--wide">
+              <h3 class="settings-section-title">{{ t('backups.title') }}</h3>
+              <section class="settings-field">
+                <p class="settings-help">{{ t('backups.help') }}</p>
+                <ShowBackupsList />
+              </section>
+            </div>
           </template>
 
           <!-- ================= User Interface ================= -->
@@ -223,7 +245,7 @@
             <div class="settings-rows">
               <h3 class="settings-section-title">{{ t('playlist.title') }}</h3>
               <section class="settings-field track-height-control">
-                <label for="regular-playlist-row-height">{{ t('settings.regularModeTrackHeight') }}</label>
+                <label for="regular-playlist-row-height">{{ t('settings.playlistTrackHeight') }}</label>
                 <input
                   id="regular-playlist-row-height"
                   type="range"
@@ -234,19 +256,6 @@
                   @input="onPlaylistRowHeightInput('regular', $event)"
                 />
                 <output for="regular-playlist-row-height">{{ regularPlaylistRowHeight }} px</output>
-              </section>
-              <section class="settings-field track-height-control">
-                <label for="show-playlist-row-height">{{ t('settings.showModeTrackHeight') }}</label>
-                <input
-                  id="show-playlist-row-height"
-                  type="range"
-                  :min="PLAYLIST_ROW_HEIGHTS.show.min"
-                  :max="PLAYLIST_ROW_HEIGHTS.show.max"
-                  step="2"
-                  :value="showPlaylistRowHeight"
-                  @input="onPlaylistRowHeightInput('show', $event)"
-                />
-                <output for="show-playlist-row-height">{{ showPlaylistRowHeight }} px</output>
               </section>
               <section class="settings-field track-height-control">
                 <label for="folder-playlist-row-height">{{ t('settings.folderHeaderTrackHeight') }}</label>
@@ -296,57 +305,57 @@
               </section>
             </div>
             <div class="settings-rows">
-              <h3 class="settings-section-title">{{ t('oneShots.title') }}</h3>
+              <h3 class="settings-section-title">{{ t('quickPlays.title') }}</h3>
               <section class="settings-field track-height-control">
-                <label for="one-shot-font-scale">{{ t('settings.oneShotFontSize') }}</label>
+                <label for="quickplay-font-scale">{{ t('settings.quickPlayFontSize') }}</label>
                 <input
-                  id="one-shot-font-scale"
+                  id="quickplay-font-scale"
                   type="range"
-                  :min="ONE_SHOT_FONT_SCALE.min"
-                  :max="ONE_SHOT_FONT_SCALE.max"
+                  :min="QUICK_PLAY_FONT_SCALE.min"
+                  :max="QUICK_PLAY_FONT_SCALE.max"
                   step="5"
-                  :value="oneShotFontScale"
-                  @input="onOneShotFontScaleInput"
+                  :value="quickPlayFontScale"
+                  @input="onQuickPlayFontScaleInput"
                 />
-                <output for="one-shot-font-scale">{{ oneShotFontScale }}%</output>
+                <output for="quickplay-font-scale">{{ quickPlayFontScale }}%</output>
               </section>
               <section class="settings-field">
-                <div class="cart-layout-grid">
-                  <div class="cart-layout-grid__header">{{ t('settings.cartLayout') }}</div>
-                  <div class="cart-layout-grid__header">{{ t('settings.minimumCardHeight') }}</div>
-                  <div class="cart-layout-grid__header">{{ t('settings.visibleRows') }}</div>
-                  <div class="cart-layout-grid__header">{{ t('settings.columns') }}</div>
-                  <template v-for="profile in cartGridProfileOptions" :key="profile.id">
-                    <div class="cart-layout-grid__profile">{{ profile.label }}</div>
+                <div class="quickplay-layout-grid">
+                  <div class="quickplay-layout-grid__header">{{ t('settings.quickPlayLayout') }}</div>
+                  <div class="quickplay-layout-grid__header">{{ t('settings.minimumCardHeight') }}</div>
+                  <div class="quickplay-layout-grid__header">{{ t('settings.visibleRows') }}</div>
+                  <div class="quickplay-layout-grid__header">{{ t('settings.columns') }}</div>
+                  <template v-for="profile in quickPlayGridProfileOptions" :key="profile.id">
+                    <div class="quickplay-layout-grid__profile">{{ profile.label }}</div>
                     <input
                       type="number"
-                      class="settings-input cart-layout-input"
-                      :min="CART_GRID_PROFILES[profile.id].minHeight"
-                      :max="CART_GRID_PROFILES[profile.id].maxHeight"
+                      class="settings-input quickplay-layout-input"
+                      :min="QUICK_PLAY_GRID_PROFILES[profile.id].minHeight"
+                      :max="QUICK_PLAY_GRID_PROFILES[profile.id].maxHeight"
                       step="2"
-                      :value="cartGridLayouts[profile.id].minHeight"
+                      :value="quickPlayGridLayouts[profile.id].minHeight"
                       :aria-label="`${profile.label}, ${t('settings.minimumCardHeight')}`"
-                      @change="onCartGridLayoutChange(profile.id, 'minHeight', $event)"
+                      @change="onQuickPlayGridLayoutChange(profile.id, 'minHeight', $event)"
                     />
                     <input
                       type="number"
-                      class="settings-input cart-layout-input"
-                      :min="CART_GRID_LIMITS.rows.min"
-                      :max="CART_GRID_LIMITS.rows.max"
+                      class="settings-input quickplay-layout-input"
+                      :min="QUICK_PLAY_GRID_LIMITS.rows.min"
+                      :max="QUICK_PLAY_GRID_LIMITS.rows.max"
                       step="1"
-                      :value="cartGridLayouts[profile.id].rows"
+                      :value="quickPlayGridLayouts[profile.id].rows"
                       :aria-label="`${profile.label}, ${t('settings.visibleRows')}`"
-                      @change="onCartGridLayoutChange(profile.id, 'rows', $event)"
+                      @change="onQuickPlayGridLayoutChange(profile.id, 'rows', $event)"
                     />
                     <input
                       type="number"
-                      class="settings-input cart-layout-input"
-                      :min="CART_GRID_LIMITS.columns.min"
-                      :max="CART_GRID_LIMITS.columns.max"
+                      class="settings-input quickplay-layout-input"
+                      :min="QUICK_PLAY_GRID_LIMITS.columns.min"
+                      :max="QUICK_PLAY_GRID_LIMITS.columns.max"
                       step="1"
-                      :value="cartGridLayouts[profile.id].columns"
+                      :value="quickPlayGridLayouts[profile.id].columns"
                       :aria-label="`${profile.label}, ${t('settings.columns')}`"
-                      @change="onCartGridLayoutChange(profile.id, 'columns', $event)"
+                      @change="onQuickPlayGridLayoutChange(profile.id, 'columns', $event)"
                     />
                   </template>
                 </div>
@@ -445,7 +454,7 @@
               <ul v-if="videoCheckFindings.length" class="video-check-findings" :aria-label="t('videoCheck.findings')">
                 <li v-for="finding in videoCheckFindings" :key="finding.uuid">
                   <strong>{{ finding.label }}{{ finding.label ? ' · ' : '' }}{{ finding.name }}</strong>
-                  <span>{{ t(`videoCheck.${finding.reason}`) }}</span>
+                  <span>{{ finding.detail }}</span>
                 </li>
               </ul>
             </div>
@@ -561,31 +570,8 @@
                   </button>
                 </div>
               </section>
-              <template v-if="voStatus">
-                <section class="settings-field video-capture">
-                  <span class="settings-label">{{ t('standbyCapture.display') }}</span>
-                  <InlineChoicePicker id="capture-display" :label="t('standbyCapture.display')"
-                  :value="voStatus.captureDisplayId ?? ''" :options="captureDisplayOptions"
-                  :disabled="captureSettingsPending || standbyCapturePending" @change="onCaptureSettingsChange($event, 'display')" />
-                </section>
-                <section class="settings-field video-capture">
-                  <span class="settings-label">{{ t('standbyCapture.destination') }}</span>
-                  <InlineChoicePicker id="capture-destination" :label="t('standbyCapture.destination')"
-                  :value="voStatus.captureTarget ?? 'session'" :options="captureTargetOptions"
-                  :disabled="captureSettingsPending || standbyCapturePending" @change="onCaptureSettingsChange($event, 'target')" />
-                </section>
-              </template>
               <section v-if="voStatus" class="settings-field">
-                <div class="video-output-standby">
-                  <button type="button" class="modal-btn" :disabled="standbyCapturePending || !voStatus.open"
-                    @click="captureStandby('output', voStatus.captureTarget)">{{ t('standbyCapture.outputButton') }}</button>
-                  <button type="button" class="modal-btn"
-                    :disabled="standbyCapturePending || !voDisplays.some(d => d.id === voStatus?.captureDisplayId)"
-                    @click="captureStandby('display', voStatus.captureTarget)">{{ t('standbyCapture.displayButton') }}</button>
-                  <button type="button" class="modal-btn" :disabled="standbyCapturePending"
-                    @click="captureStandby('clear', voStatus.captureTarget)">{{ t('standbyCapture.clearButton') }}</button>
-                </div>
-                <p class="settings-help">{{ t('standbyCapture.help') }}</p>
+                <VideoCaptureControls hide-standby-clear />
               </section>
             </div>
             <div class="settings-rows settings-test-card">
@@ -668,19 +654,20 @@ import {
   type ProjectSettings,
 } from '~/types/project';
 import {
-  CART_GRID_LIMITS,
-  CART_GRID_PROFILES,
+  QUICK_PLAY_GRID_LIMITS,
+  QUICK_PLAY_GRID_PROFILES,
   PLAYLIST_ROW_HEIGHTS,
   WAVEFORM_OPACITY,
   UI_FONT_SCALE,
-  ONE_SHOT_FONT_SCALE,
-  type CartGridLayout,
-  type CartGridProfile,
+  QUICK_PLAY_FONT_SCALE,
+  type QuickPlayGridLayout,
+  type QuickPlayGridProfile,
   type PlaylistRowMode,
 } from '~/composables/useUiMode';
 import { normalizeIndexDisplayStart } from '~/utils/indexDisplay';
 import { HEADER_WARNING_TIMING, type HeaderWarningTiming } from '~/utils/headerWarnings';
 import AboutContent from './AboutContent.vue';
+import ShowBackupsList from './ShowBackupsList.vue';
 import ControlConfigModal from './ControlConfigModal.vue';
 import TestCardControls from './TestCardControls.vue';
 import { createTestCardConfig, type TestCardConfig } from '../../electron/test-card-config.mjs';
@@ -727,21 +714,19 @@ function setAccentColor(color: string) {
 }
 const {
   regularPlaylistRowHeight,
-  showPlaylistRowHeight,
   folderPlaylistRowHeight,
   waveformOpacity,
   uiFontScale,
-  oneShotFontScale,
-  cartGridLayouts,
+  quickPlayFontScale,
+  quickPlayGridLayouts,
   headerWarningTiming,
   showTooltips,
   setRegularPlaylistRowHeight,
-  setShowPlaylistRowHeight,
   setFolderPlaylistRowHeight,
   setWaveformOpacity,
   setUiFontScale,
-  setOneShotFontScale,
-  setCartGridLayout,
+  setQuickPlayFontScale,
+  setQuickPlayGridLayout,
   setHeaderWarningTiming,
   setShowTooltips,
 } = useUiMode();
@@ -759,11 +744,11 @@ function onHeaderWarningTimingChange(field: keyof HeaderWarningTiming, event: Ev
   setHeaderWarningTiming(next);
 }
 
-const cartGridProfileOptions = computed<Array<{ id: CartGridProfile; label: string }>>(() => [
-  { id: 'attachedRegular', label: t('settings.cartLayoutAttachedRegular') },
-  { id: 'attachedShow', label: t('settings.cartLayoutAttachedShow') },
-  { id: 'detachedRegular', label: t('settings.cartLayoutDetachedRegular') },
-  { id: 'detachedShow', label: t('settings.cartLayoutDetachedShow') },
+// One layout for the QuickPlays panel and one for the detached window; Edit
+// Mode and Show Mode share them.
+const quickPlayGridProfileOptions = computed<Array<{ id: QuickPlayGridProfile; label: string }>>(() => [
+  { id: 'attachedRegular', label: t('quickPlays.title') },
+  { id: 'detachedRegular', label: t('controls.toggleDetachedQuickPlays') },
 ]);
 
 const devices = computed(() => server.devices ?? []);
@@ -815,12 +800,26 @@ interface SettingsTab {
 }
 
 const activeTab = useState<SettingsTabId>('projectSettingsTab', () => 'audio');
+
+// Pre-show check opens its report in the lower panel, in place of Settings,
+// and runs itself there. Level Check walks each cue's loudest window on the
+// PROGRAM output (the external mixer must see it; preview routes elsewhere);
+// its bar lives in MainWorkspace and this only switches the mode.
+const { open: openShowCheck } = usePreShowCheck();
+const {
+  active: levelCheckActive, items: levelCheckItems, start: startLevelCheck, exit: exitLevelCheck,
+} = useLevelCheck();
+const levelCheckCount = computed(() => levelCheckItems.value.length);
+const toggleLevelCheck = () => {
+  if (levelCheckActive.value) void exitLevelCheck();
+  else startLevelCheck();
+};
 const canCheckVideo = import.meta.client && !!window.electronAPI?.videoOutput?.checkFrame;
 const {
   busy: videoCheckBusy, phase: videoCheckPhase, ready: videoCheckReady,
   transportActive: videoCheckTransportActive, findings: videoCheckFindings, message: videoCheckMessage,
   start: startVideoCheck, cancel: cancelVideoCheck,
-} = useVideoPreflight(computed(() => props.open && activeTab.value === 'video'));
+} = useVideoPreflight();
 const tabs = computed<SettingsTab[]>(() => [
   { id: 'audio', icon: 'graphic_eq', label: t('settings.tabAudioRouting') },
   { id: 'playback', icon: 'play_circle', label: t('settings.tabPlaybackBehaviour') },
@@ -914,8 +913,6 @@ const voFramingDirty = computed(() => {
   const draft = voFraming.value;
   return saved.width !== draft.width || saved.height !== draft.height || saved.scale !== draft.scale || saved.scaling !== draft.scaling;
 });
-const { captureStandby, standbyCapturePending } = useVideoStandbyCapture();
-const captureSettingsPending = ref(false);
 const voDiagnosticsCopied = ref(false);
 const voTestCardConfig = ref<TestCardConfig>(createTestCardConfig());
 
@@ -928,24 +925,6 @@ const voDisplayOptions = computed(() => [
     label: `${d.index} — ${d.label} — ${d.width}×${d.height}${d.primary ? ` (${t('common.default')})` : ''}`,
   })),
 ]);
-const captureDisplayOptions = computed(() => {
-  const selected = voStatus.value?.captureDisplayId;
-  const missing = selected && !voDisplays.value.some(display => display.id === selected)
-    ? [{ value: selected, label: t('standbyCapture.missingDisplay'), disabled: true }]
-    : [];
-  return [
-    { value: '', label: t('standbyCapture.chooseDisplay') },
-    ...missing,
-    ...voDisplays.value.map(display => ({
-      value: display.id,
-      label: `${display.index} · ${display.label} (${display.width} × ${display.height})`,
-    })),
-  ];
-});
-const captureTargetOptions = computed(() => [
-  { value: 'session', label: t('standbyCapture.session') },
-  { value: 'cue', label: t('standbyCapture.cue') },
-] as const);
 const voFramePresetOptions = computed(() => [
   ...VIDEO_FRAME_PRESETS.map(preset => ({
     value: preset.id, label: `${t(`settings.videoFraming.${preset.id}`)} · ${preset.width}×${preset.height}`,
@@ -974,6 +953,7 @@ const voWarningText = computed(() => {
   if (w === 'single-display') return t('settings.videoOutputWarnSingleDisplay');
   if (w === 'display-missing') return t('settings.videoOutputWarnMissing');
   if (w === 'display-shared-with-control') return t('settings.videoOutputWarnShared');
+  if (w === 'display-not-covered') return t('settings.videoOutputWarnNotCovered');
   return '';
 });
 
@@ -1041,23 +1021,6 @@ async function onVideoOutputDisplayChange(value: string) {
     receiveVideoOutputStatus(await api.setDisplay(value || null));
   } catch (error) {
     settingsError.value = describeSettingsError(error);
-  }
-}
-
-async function onCaptureSettingsChange(value: string, field: 'display' | 'target') {
-  const api = window.electronAPI?.videoOutput;
-  const status = voStatus.value;
-  if (!api?.setCaptureSettings || !status) return;
-  const display = field === 'display' ? value || null : status.captureDisplayId;
-  const target = field === 'target' ? (value === 'cue' ? 'cue' : 'session') : status.captureTarget;
-  captureSettingsPending.value = true;
-  settingsError.value = '';
-  try {
-    receiveVideoOutputStatus(await api.setCaptureSettings(display, target));
-  } catch (error) {
-    settingsError.value = describeSettingsError(error);
-  } finally {
-    captureSettingsPending.value = false;
   }
 }
 
@@ -1393,8 +1356,7 @@ async function onScrollToPlayingChange(e: Event) {
 
 function onPlaylistRowHeightInput(mode: PlaylistRowMode, e: Event) {
   const value = (e.target as HTMLInputElement).value;
-  if (mode === 'show') setShowPlaylistRowHeight(value);
-  else if (mode === 'folder') setFolderPlaylistRowHeight(value);
+  if (mode === 'folder') setFolderPlaylistRowHeight(value);
   else setRegularPlaylistRowHeight(value);
 }
 
@@ -1405,26 +1367,26 @@ function onUiFontScaleInput(e: Event) {
   setUiFontScale((e.target as HTMLInputElement).value);
 }
 
-function onOneShotFontScaleInput(e: Event) {
-  setOneShotFontScale((e.target as HTMLInputElement).value);
+function onQuickPlayFontScaleInput(e: Event) {
+  setQuickPlayFontScale((e.target as HTMLInputElement).value);
 }
 
-function onCartGridLayoutChange(
-  profile: CartGridProfile,
-  field: keyof CartGridLayout,
+function onQuickPlayGridLayoutChange(
+  profile: QuickPlayGridProfile,
+  field: keyof QuickPlayGridLayout,
   e: Event,
 ) {
   const input = e.target as HTMLInputElement;
-  const current = cartGridLayouts.value[profile][field];
+  const current = quickPlayGridLayouts.value[profile][field];
   if (!input.value.trim()) {
     input.value = String(current);
     return;
   }
   const value = Number(input.value);
-  setCartGridLayout(profile, {
+  setQuickPlayGridLayout(profile, {
     [field]: Number.isFinite(value) ? value : current,
   });
-  input.value = String(cartGridLayouts.value[profile][field]);
+  input.value = String(quickPlayGridLayouts.value[profile][field]);
 }
 
 function close() {
@@ -1444,14 +1406,14 @@ function close() {
   container-type: inline-size;
 }
 
+/* Title, tabs and Close sit on top, where every other panel has them. */
 .settings-header {
-  order: 1;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) var(--panel-control-height);
   gap: var(--spacing-md);
   padding-block: 0;
-  border-top: 1px solid var(--color-border);
-  border-bottom: 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .close-x {
@@ -1515,7 +1477,7 @@ function close() {
   background-color: var(--color-surface-hover);
 }
 .tab-btn[data-state='active'] {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   background: var(--color-accent-soft);
   border-bottom-color: var(--color-accent);
 }
@@ -1558,9 +1520,49 @@ function close() {
   grid-template-rows: subgrid;
 }
 
+/* Show backups sits under both columns: its list needs the width, and a fifth
+   row in one column would break the row alignment between the two above. */
+.settings-content--playback > .settings-rows--wide {
+  display: block;
+  grid-column: 1 / -1;
+  grid-row: auto;
+  margin-top: var(--spacing-sm);
+}
+
+.settings-content--playback .settings-rows--wide > .settings-field {
+  padding-block: var(--spacing-xs);
+}
+
 .settings-test-card { grid-column: span 2; }
 
 .video-check { grid-column: 1 / -1; }
+
+/* The two checks share one row across the tab: button, then what it does. */
+.show-checks {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.settings-rows.show-checks > .settings-field.show-checks__row {
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 5px var(--spacing-sm);
+}
+.settings-rows.show-checks > .show-checks__row + .show-checks__row {
+  border-top: 0;
+  border-inline-start: 1px solid var(--color-border);
+}
+.show-checks__row > .modal-btn { flex: none; font-weight: 600; }
+.show-checks__row > .modal-btn:disabled { color: var(--color-text-disabled); cursor: default; }
+/* A check that is running: the button is filled, not just tinted. */
+.modal-btn.modal-btn--on,
+.modal-btn.modal-btn--on:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
 .settings-rows > .video-check-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -1653,7 +1655,7 @@ function close() {
   padding-block: 3px;
 }
 
-.settings-rows > .settings-field:has(> :is(.cart-layout-grid, .header-warning-settings, .countdown-band-editor)) {
+.settings-rows > .settings-field:has(> :is(.quickplay-layout-grid, .header-warning-settings, .countdown-band-editor)) {
   padding-block: 0;
 }
 
@@ -1723,10 +1725,6 @@ function close() {
     outline: 2px solid var(--color-text-primary);
     outline-offset: 1px;
   }
-}
-
-.settings-rows > .settings-field.video-capture {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 56%);
 }
 
 .settings-content .video-standby-field {
@@ -1887,7 +1885,7 @@ function close() {
   text-align: right;
   white-space: nowrap;
 }
-.cart-layout-grid {
+.quickplay-layout-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) repeat(3, 46px);
   grid-auto-rows: minmax(var(--settings-row-height), auto);
@@ -1895,17 +1893,17 @@ function close() {
   align-items: center;
   line-height: 1.25;
 }
-.cart-layout-grid__header {
+.quickplay-layout-grid__header {
   color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: 600;
 }
-.cart-layout-grid__profile {
+.quickplay-layout-grid__profile {
   color: var(--color-text-primary);
   font-size: 12px;
   font-weight: 500;
 }
-.cart-layout-input {
+.quickplay-layout-input {
   height: var(--settings-control-height);
   min-width: 0;
   padding: 2px;
@@ -2033,7 +2031,7 @@ function close() {
 .help-link:hover {
   background-color: var(--color-surface-hover);
   border-color: var(--color-accent);
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .help-link .material-symbols-rounded {
@@ -2044,7 +2042,7 @@ function close() {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--state-up-next);
+  background: var(--color-warning);
 }
 
 .modal-btn {

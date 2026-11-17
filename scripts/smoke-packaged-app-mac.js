@@ -163,6 +163,38 @@ async function verifyManagedWebSocket(debugPort) {
   console.log(`${prefix} connection: actual packaged renderer WebSocket accepted`);
 }
 
+// The app's own engine check: start the packaged audio engine the way choosing
+// "This computer" does, require it to answer as this version, and stop it.
+// It runs in a throwaway profile so it cannot meet a server from another run.
+function verifyEngineSelfTest() {
+  // Two attempts, each in a fresh profile: a real defect fails both, a slow
+  // runner does not cost the release.
+  let failure = '';
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'dwcue-self-test-'));
+    const resultFile = path.join(profile, 'engine-self-test.json');
+    try {
+      const check = spawnSync(executable, [`--engine-self-test=${resultFile}`], {
+        env: { ...process.env, DWCUE_USERDATA: path.join(profile, 'profile') },
+        encoding: 'utf8',
+        timeout: 150_000,
+      });
+      let result = null;
+      try { result = JSON.parse(fs.readFileSync(resultFile, 'utf8')); } catch { /* reported below */ }
+      if (check.status === 0 && result?.ok) {
+        console.log(`${prefix} engine: started, answered as ${result.engineVersion} on port ${result.port}, and stopped`);
+        return;
+      }
+      failure = result?.error || check.error?.message || `exit code ${check.status}`;
+      console.error(`${prefix} engine self-test attempt ${attempt} failed: ${failure}`);
+      if (result?.engineLog) console.error(result.engineLog);
+    } finally {
+      fs.rmSync(profile, { recursive: true, force: true });
+    }
+  }
+  throw new Error(`Packaged audio engine failed its self-test: ${failure}`);
+}
+
 async function main() {
   if (process.platform !== 'darwin') throw new Error('This check only runs on macOS.');
   if (!fs.statSync(appPath, { throwIfNoEntry: false })?.isDirectory()) {
@@ -183,6 +215,7 @@ async function main() {
   console.log(`${prefix} architecture: ${requestedArch}`);
 
   if (runningPid()) throw new Error(`${productName} is already running; quit it and retry.`);
+  verifyEngineSelfTest();
   const debugPort = await new Promise((resolve, reject) => {
     const probe = createServer();
     probe.once('error', reject);

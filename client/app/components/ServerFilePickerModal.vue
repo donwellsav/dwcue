@@ -18,7 +18,7 @@
             <span class="material-symbols-rounded" aria-hidden="true">computer</span>
           </button>
           <slot name="actions" />
-          <Btn v-if="!docked" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
+          <Btn v-if="!docked" class="stop-all-btn" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
         </header>
 
         <!-- Breadcrumb -->
@@ -506,7 +506,7 @@ watch([() => props.open, () => String(server.serverUrl), () => server.effectiveA
   padding: 6px 12px; font-size: 11px; color: var(--color-text-secondary);
   border-bottom: 1px solid var(--color-border); background: var(--color-background);
   .crumb {
-    background: transparent; border: none; color: var(--color-accent); cursor: pointer;
+    background: transparent; border: none; color: var(--color-accent-text); cursor: pointer;
     padding: 2px 4px; font-size: 11px;
     &:hover { text-decoration: underline; }
   }
@@ -535,7 +535,7 @@ watch([() => props.open, () => String(server.serverUrl), () => server.effectiveA
   &:hover { background: var(--color-surface-hover); }
   // Drives & folders: white icons. Selectable files: accent icon, white name.
   .icon { text-align: center; color: var(--color-text-primary); }
-  &.file .icon { color: var(--color-accent); }
+  &.file .icon { color: var(--color-accent-text); }
   .name { color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .size { color: var(--color-text-tertiary); font-family: var(--font-mono); font-size: 11px; }
   &.drive .name,
@@ -586,7 +586,7 @@ watch([() => props.open, () => String(server.serverUrl), () => server.effectiveA
   display: flex; align-items: center; gap: 6px;
   padding: 6px 0;
   border-top: 1px solid var(--color-border);
-  .newfolder-icon { color: var(--color-accent); font-size: 18px; flex-shrink: 0; }
+  .newfolder-icon { color: var(--color-accent-text); font-size: 18px; flex-shrink: 0; }
   .newfolder-name {
     flex: 1;
     background: var(--color-control); border: 1px solid var(--color-border);

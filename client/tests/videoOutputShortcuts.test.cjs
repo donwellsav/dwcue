@@ -11,8 +11,9 @@ const {
   toRendererShortcut,
 } = require('../electron/video-output-shortcuts');
 const { buildVideoOutputContextTemplate } = require('../electron/video-output-context-menu');
+const outputWindowRules = require('../electron/video-output-window');
 const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('../electron/video-output-framing.mjs');
-const { createOneShotMutationBroker } = require('../electron/one-shot-mutation-broker');
+const { createQuickPlayMutationBroker } = require('../electron/quickplay-mutation-broker');
 const { createAppLifecycleActions, createWillQuitHandler } = require('../electron/terminal-action');
 const mainSource = readFileSync(require.resolve('../electron/main.js'), 'utf8');
 const preloadSource = readFileSync(require.resolve('../electron/preload.js'), 'utf8');
@@ -32,8 +33,9 @@ test('mounted audience view reports DOM readiness without waiting for an animati
   vm.runInNewContext(source.slice(start, end), {
     onMounted: callback => { mounted = callback; },
     window: { electronAPI: { videoOutput: api }, addEventListener() {} },
-    offStatus: null, healthTimer: null,
+    offStatus: null, healthTimer: null, viewportTimer: null,
     refreshStatus: async () => {}, syncConnection() {}, onKeydown() {}, onDblClick() {}, updatePixelScale() {},
+    reportViewport() {},
     nextTick: async () => { committed = true; },
     requestAnimationFrame() {}, // A minimized/covered renderer may never receive it.
     setInterval: () => 1,
@@ -54,7 +56,7 @@ test('output framing fits the selected canvas without forcing an HDMI mode', () 
   assert.deepEqual(videoFrameCaptureRect(1920, 1080, limited, 2), { x: 720, y: 405, width: 480, height: 270 });
 });
 
-test('standby capture follows the saved frame or selected screen and rejects stale captures', async () => {
+test('a capture follows the saved frame or selected screen, hands back the picture and rejects stale captures', async () => {
   const handlers = new Map();
   const sender = {};
   const identity = { projectPath: '/show.dwcue', projectEpoch: 1, ownerSessionId: 'owner' };
@@ -81,12 +83,12 @@ test('standby capture follows the saved frame or selected screen and rejects sta
   const captureHelpers = require('../electron/video-standby-capture');
   const context = {
     Buffer,
-    ...captureHelpers, videoStandbyCaptures: captureHelpers.createStandbyCaptureStore(128),
+    ...captureHelpers,
     DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect,
     screen: { getDisplayMatching: () => ({ scaleFactor }) },
     ipcMain: { handle: (name, handler) => handlers.set(name, handler), on() {} },
     mainWindow: { webContents: sender }, requireTrustedIpc() {},
-    ...require('../electron/one-shot-mutation-broker'),
+    ...require('../electron/quickplay-mutation-broker'),
     currentProjectIdentity: identity, currentCaptureSession: 'session',
     currentProjectData: { items: [{ type: 'group', children: [cue] }] },
     videoOutputWindow: output, videoOutputRendererReady: true, videoOutputRendererResponsive: true,
@@ -111,10 +113,10 @@ test('standby capture follows the saved frame or selected screen and rejects sta
   const capture = (source, itemUuid, event = { sender }) => handlers.get('video-output:capture-standby')(
     event, source, { identity, sessionId: 'session', itemUuid },
   );
-  const read = (session, media = cue.mediaPath) =>
-    handlers.get('video-output:get-standby-capture')({ sender: output.webContents }, session, cue.uuid, media);
-  await capture('display', null);
-  await capture('output', cue.uuid);
+  const picture = value => ({ image: 'data:image/png;base64,' + Buffer.from(value).toString('base64') });
+  // The picture is handed back to be saved into the show; nothing is kept here.
+  assert.equal((await capture('display', null)).image, picture('selected screen').image);
+  assert.equal((await capture('output', cue.uuid)).image, picture('output').image);
   assert.deepEqual(captureRect, { x: 0, y: 0, width: 1920, height: 1080 });
   outputSize = [1600, 1200];
   await capture('output', cue.uuid);
@@ -134,24 +136,24 @@ test('standby capture follows the saved frame or selected screen and rejects sta
   scaleFactor = 2;
   await capture('output', cue.uuid);
   assert.deepEqual(captureRect, { x: 576, y: 300, width: 768, height: 480 });
-  assert.equal(read('session').standby, 'data:image/png;base64,' + Buffer.from('selected screen').toString('base64'));
-  assert.equal(read('session').cue, 'data:image/png;base64,' + Buffer.from('output').toString('base64'));
-  assert.equal(read('session', 'media/replacement.wav').cue, null);
-  assert.equal(read('other-session').standby, null);
   await assert.rejects(capture('output', null, { sender: output.webContents }), /main workspace/);
-  assert.throws(() => handlers.get('video-output:get-standby-capture')({ sender }, 'session', null, null), /output window/);
+  await assert.rejects(capture('output', 'not-in-the-show'), /Select a media cue/);
+  assert.equal(handlers.has('video-output:get-standby-capture'), false);
+  assert.equal(handlers.has('video-output:clear-standby-capture'), false);
+  // A cue that already has a picture can be captured for again: the new one replaces it.
   cue.imagePath = 'images/manual.png';
-  await assert.rejects(capture('output', cue.uuid), /assigned image/);
+  assert.equal((await capture('output', cue.uuid)).image, picture('output').image);
   delete cue.imagePath;
   context.desktopCapturer.getSources = async () => [{ display_id: 'wrong', thumbnail: still('wrong') }];
-  await assert.rejects(capture('display', null), /screen recording permission/);
+  // Said plainly, with no advice about system settings.
+  await assert.rejects(capture('display', null), /has not let the app see it/);
+  await assert.rejects(capture('display', null), error => !/permission|settings|try again/i.test(error.message));
   const resizing = deferred();
   output.webContents.capturePage = () => resizing.promise;
   const resizedCapture = capture('output', null);
   outputSize = [1920, 1200];
   resizing.resolve(still('resized'));
   await assert.rejects(resizedCapture, /Video Output changed/);
-  assert.equal(read('session').standby, 'data:image/png;base64,' + Buffer.from('selected screen').toString('base64'));
   const reframing = deferred();
   output.webContents.capturePage = () => reframing.promise;
   const reframedCapture = capture('output', null);
@@ -164,8 +166,14 @@ test('standby capture follows the saved frame or selected screen and rejects sta
   context.currentCaptureSession = 'another show';
   pending.resolve(still('late'));
   await assert.rejects(inFlight, /active show changed/);
-  handlers.get('video-output:clear-standby-capture')({ sender }, { identity, sessionId: 'another show', itemUuid: null });
-  assert.equal(read('another show').standby, null);
+  // The cue's media changed while its picture was being taken.
+  context.currentCaptureSession = 'session';
+  const swapped = deferred();
+  output.webContents.capturePage = () => swapped.promise;
+  const duringSwap = capture('output', cue.uuid);
+  cue.mediaPath = 'media/replacement.wav';
+  swapped.resolve(still('old picture'));
+  await assert.rejects(duringSwap, /cue changed during capture/);
 });
 
 test('standby stills preserve slide detail and keep large photo captures bounded', () => {
@@ -214,7 +222,7 @@ function productionFunctionSource(name) {
 
 test('control-window close waits for healthy quit confirmation', () => {
   for (const state of ['healthy', 'crashed', 'unresponsive', 'destroyed', 'confirmed']) {
-    const messages = [], serverStops = [];
+    const messages = [], serverStops = [], keepAwakeReleases = [];
     class ControlWindow extends EventEmitter {
       constructor() {
         super();
@@ -230,6 +238,7 @@ test('control-window close waits for healthy quit confirmation', () => {
       path: require('node:path'), __dirname: require('node:path').dirname(require.resolve('../electron/main.js')),
       isDevMode: true, quitConfirmed: state === 'confirmed', createMenu() {}, process: { argv: [] },
       stopServer: () => serverStops.push('stop'),
+      releaseKeepAwake: () => keepAwakeReleases.push('release'),
     };
     vm.runInNewContext(productionFunctionSource('createWindow') + '\ncreateWindow();', context);
     const window = context.mainWindow;
@@ -241,6 +250,7 @@ test('control-window close waits for healthy quit confirmation', () => {
     assert.deepEqual(serverStops, [], 'closing the client must not stop the detached show server');
     window.emit('closed');
     assert.equal(context.mainWindow, null, 'closed window reference is released');
+    assert.deepEqual(keepAwakeReleases, ['release'], 'a closed control window lets the computer sleep again');
   }
 });
 
@@ -311,6 +321,8 @@ function createVideoWindowHarness() {
     loadFile() { return Promise.resolve(); }
     show() {}
     isFullScreen() { return false; }
+    isSimpleFullScreen() { return false; }
+    hide() {}
     destroy() {
       this.destroyed = true;
       if (!this.delayClosed) this.emit('closed');
@@ -349,11 +361,19 @@ function createVideoWindowHarness() {
     testCardPlayback: { update: (_desired, connection) => { cleanup.push(connection); return Promise.resolve(); } },
     powerSaveBlocker: { isStarted: () => false, start: () => ++powerId, stop: id => powerStops.push(id) },
     shouldForwardVideoOutputShortcut, toRendererShortcut, showVideoOutputContextMenu() {},
+    // The real per-platform window rules, on the platform with the most to do.
+    ...outputWindowRules, process: { platform: 'darwin' },
     console: { error: (...args) => errors.push(args) },
   };
   const closeStart = mainSource.indexOf('function closeVideoOutputWindow(');
   const closeEnd = mainSource.indexOf('// Watchdog: when the display topology changes', closeStart);
+  // The output window owns its coverage-check state; opening and closing reset it.
+  const geometryStart = mainSource.indexOf('const newVideoOutputGeometry');
+  const geometryEnd = mainSource.indexOf('function resetVideoOutputGeometry(', geometryStart);
+  assert.ok(geometryStart >= 0 && geometryEnd > geometryStart, 'missing output coverage state in Electron main process');
   vm.runInNewContext([
+    mainSource.slice(geometryStart, geometryEnd),
+    productionFunctionSource('resetVideoOutputGeometry'),
     ...['sanitizeVideoPlaybackErrorMessage', 'loadVideoOutputWindow', 'failVideoOutputRenderer', 'markVideoOutputReady', 'restartVideoOutputWindow', 'requireVideoOutputIpc']
       .filter(name => mainSource.includes('function ' + name + '(')).map(productionFunctionSource),
     productionFunctionSource('startVideoOutputFrames'),
@@ -612,6 +632,7 @@ test('video output context menu exposes recovery and exit actions', () => {
     onExit: () => calls.push('exit'),
   });
 
+  assert.equal(template.length, 4);
   assert.equal(template[0].label, 'Exit Full Screen');
   assert.deepEqual(template[1], {
     label: 'Show Test Card',
@@ -625,6 +646,17 @@ test('video output context menu exposes recovery and exit actions', () => {
   template[1].click({ checked: true });
   template[3].click();
   assert.deepEqual(calls, ['fullscreen', 'test-card:true', 'exit']);
+});
+
+test('a Mac audience output offers no fullscreen choice: it always covers its display', () => {
+  const labels = { enterFullscreen: 'Enter Full Screen', exitFullscreen: 'Exit Full Screen',
+    showTestCard: 'Show Test Card', exitOutput: 'Exit Video Output' };
+  const template = buildVideoOutputContextTemplate({
+    fullscreen: true, canToggleFullscreen: false, testCard: true, labels,
+    onToggleFullscreen() {}, onToggleTestCard() {}, onExit() {},
+  });
+  assert.deepEqual(template.map(item => item.label ?? item.type), ['Show Test Card', 'separator', 'Exit Video Output']);
+  assert.equal(template[0].checked, true);
 });
 test('accepts playback errors only from the current output and propagates safe status', async () => {
   const harness = createVideoPlaybackErrorHarness();
@@ -806,57 +838,57 @@ test('preload exposes only the typed mutation broker and separate project identi
   api.syncProjectData({ name: 'Show' }, mutationIdentity);
   assert.deepEqual(sends[0], ['sync-project-data', { name: 'Show' }, mutationIdentity]);
 
-  const requested = api.requestOneShotMutation(mutationRequest);
-  assert.deepEqual(invokes[0], ['one-shot-mutation:request', mutationRequest]);
+  const requested = api.requestQuickPlayMutation(mutationRequest);
+  assert.deepEqual(invokes[0], ['quickplay-mutation:request', mutationRequest]);
   assert.deepEqual(await requested, { ok: true });
 
   let delivered;
-  const unsubscribe = api.onOneShotMutationRequest(request => { delivered = request; });
-  listeners.get('one-shot-mutation-request')({}, mutationRequest);
+  const unsubscribe = api.onQuickPlayMutationRequest(request => { delivered = request; });
+  listeners.get('quickplay-mutation-request')({}, mutationRequest);
   assert.equal(delivered, mutationRequest);
   unsubscribe();
-  assert.equal(listeners.has('one-shot-mutation-request'), false);
+  assert.equal(listeners.has('quickplay-mutation-request'), false);
 
   const result = { requestId: 'request-1', identity: mutationIdentity, accepted: true, persisted: true };
-  api.completeOneShotMutation(result);
-  assert.deepEqual(sends.at(-1), ['one-shot-mutation:complete', result]);
+  api.completeQuickPlayMutation(result);
+  assert.deepEqual(sends.at(-1), ['quickplay-mutation:complete', result]);
 });
 
 test('detached QuickPlays mutations correlate a primary persisted result', async () => {
-  const cart = mutationContents();
+  const quickPlayContents = mutationContents();
   const primary = mutationContents();
-  const broker = createOneShotMutationBroker({
-    getCartWebContents: () => cart,
+  const broker = createQuickPlayMutationBroker({
+    getQuickPlayWebContents: () => quickPlayContents,
     getPrimaryWebContents: () => primary,
     getCurrentIdentity: () => mutationIdentity,
   });
-  const pending = broker.request(cart, mutationRequest);
-  assert.deepEqual(primary.sent, [{ channel: 'one-shot-mutation-request', payload: mutationRequest }]);
+  const pending = broker.request(quickPlayContents, mutationRequest);
+  assert.deepEqual(primary.sent, [{ channel: 'quickplay-mutation-request', payload: mutationRequest }]);
   const result = { requestId: 'request-1', identity: mutationIdentity, accepted: true, persisted: true };
   assert.equal(broker.complete(primary, result), true);
   assert.deepEqual(await pending, result);
 });
 
 test('mutation broker rejects invalid senders, kinds, stale results, and duplicate correlations', async () => {
-  const cart = mutationContents();
+  const quickPlayContents = mutationContents();
   const primary = mutationContents();
   let fireTimeout;
-  const broker = createOneShotMutationBroker({
-    getCartWebContents: () => cart,
+  const broker = createQuickPlayMutationBroker({
+    getQuickPlayWebContents: () => quickPlayContents,
     getPrimaryWebContents: () => primary,
     getCurrentIdentity: () => mutationIdentity,
     setTimer: callback => { fireTimeout = callback; return 1; },
     clearTimer() {},
   });
   assert.throws(() => broker.request({}, mutationRequest), /not the detached QuickPlays window/);
-  assert.throws(() => broker.request(cart, { ...mutationRequest, kind: 'arbitrary-patch' }), /kind is invalid/);
-  assert.throws(() => broker.request(cart, {
+  assert.throws(() => broker.request(quickPlayContents, { ...mutationRequest, kind: 'arbitrary-patch' }), /kind is invalid/);
+  assert.throws(() => broker.request(quickPlayContents, {
     ...mutationRequest,
     requestId: 'oversized',
     payload: { fields: { displayName: 'x'.repeat(300 * 1024) } },
   }), /too large/);
-  const pending = broker.request(cart, mutationRequest);
-  assert.throws(() => broker.request(cart, mutationRequest), /Duplicate/);
+  const pending = broker.request(quickPlayContents, mutationRequest);
+  assert.throws(() => broker.request(quickPlayContents, mutationRequest), /Duplicate/);
   assert.throws(() => broker.complete({}, {
     requestId: 'request-1', identity: mutationIdentity, accepted: true, persisted: true,
   }), /not the primary project owner/);
@@ -871,25 +903,25 @@ test('mutation broker rejects invalid senders, kinds, stale results, and duplica
 });
 
 test('mutation broker fails closed when the owner is absent, reloads, or times out', async () => {
-  const cart = mutationContents();
+  const quickPlayContents = mutationContents();
   const primary = mutationContents();
   let owner = null;
   let fireTimeout;
-  const broker = createOneShotMutationBroker({
-    getCartWebContents: () => cart,
+  const broker = createQuickPlayMutationBroker({
+    getQuickPlayWebContents: () => quickPlayContents,
     getPrimaryWebContents: () => owner,
     getCurrentIdentity: () => mutationIdentity,
     setTimer: callback => { fireTimeout = callback; return 1; },
     clearTimer() {},
   });
-  assert.match((await broker.request(cart, mutationRequest)).error, /unavailable/);
+  assert.match((await broker.request(quickPlayContents, mutationRequest)).error, /unavailable/);
 
   owner = primary;
-  const reloading = broker.request(cart, { ...mutationRequest, requestId: 'request-2' });
+  const reloading = broker.request(quickPlayContents, { ...mutationRequest, requestId: 'request-2' });
   primary.emit('did-start-navigation');
   assert.match((await reloading).error, /became unavailable/);
 
-  const timedOut = broker.request(cart, { ...mutationRequest, requestId: 'request-3' });
+  const timedOut = broker.request(quickPlayContents, { ...mutationRequest, requestId: 'request-3' });
   fireTimeout();
   assert.match((await timedOut).error, /did not respond/);
 });

@@ -2,7 +2,7 @@
 // project_state.cpp — see project_state.hpp.
 // ============================================================================
 #include "liveplay/core/project_state.hpp"
-#include "liveplay/core/one_shot_migration.hpp"
+#include "liveplay/core/quick_play_migration.hpp"
 #include "liveplay/core/project_file.hpp"
 #include "liveplay/crash_handler.hpp"
 #include "liveplay/logger.hpp"
@@ -12,10 +12,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <functional>
 #include <future>
+#include <iterator>
 #include <limits>
 #include <random>
 #include <system_error>
@@ -212,8 +214,8 @@ inline void relativize_media_paths(json& doc) {
     };
     if (doc.contains("items") && doc["items"].is_array())
         for (auto& it : doc["items"]) visit(it);
-    if (doc.contains("cartOnlyItems") && doc["cartOnlyItems"].is_array())
-        for (auto& it : doc["cartOnlyItems"]) visit(it);
+    if (doc.contains("quickPlayItems") && doc["quickPlayItems"].is_array())
+        for (auto& it : doc["quickPlayItems"]) visit(it);
 }
 
 
@@ -732,10 +734,10 @@ audio::CueId ProjectState::begin_item_load_locked(const std::string& uuid,
 
     {
         std::lock_guard qlock{loader_mutex_};
-        bool prime = item.contains("oneShot") && item["oneShot"].is_object();
-        if (!prime && document_.contains("cartItems") && document_["cartItems"].is_array())
-            for (const auto& cart : document_["cartItems"])
-                if (cart.is_object() && cart.value("itemUuid", std::string{}) == uuid) { prime = true; break; }
+        bool prime = item.contains("quickPlay") && item["quickPlay"].is_object();
+        if (!prime && document_.contains("quickPlaySlots") && document_["quickPlaySlots"].is_array())
+            for (const auto& binding : document_["quickPlaySlots"])
+                if (binding.is_object() && binding.value("itemUuid", std::string{}) == uuid) { prime = true; break; }
         load_queue_.push_back(LoadRequest{uuid, cue_id, std::move(paths), media_changed, item, prime});
         pending_load_uuids_.insert_or_assign(uuid, cue_id);
     }
@@ -1142,7 +1144,7 @@ void ProjectState::start_async_mirror() {
             // Phase 1: snapshot what we need to load under a brief lock.
             std::unordered_map<std::string, detail::MediaPaths> candidates;
             std::unordered_map<std::string, json> item_snaps;
-            std::unordered_set<std::string> cart_uuids;
+            std::unordered_set<std::string> quick_play_uuids;
             std::unordered_set<std::string> backup_uuids;
             struct MirrorLoad {
                 std::string uuid;
@@ -1165,19 +1167,19 @@ void ProjectState::start_async_mirror() {
                     const std::string uuid = item.value("uuid", std::string{});
                     if (uuid.empty()) return;
                     item_snaps.emplace(uuid, item);
-                    if (item.contains("oneShot") && item["oneShot"].is_object())
-                        cart_uuids.insert(uuid);
+                    if (item.contains("quickPlay") && item["quickPlay"].is_object())
+                        quick_play_uuids.insert(uuid);
                     if (candidates.at(uuid).preferred.empty()) {
                         audio_load_failures_[uuid] = {
                             "missing_media_path", std::string{}};
                         ++unresolved_media;
                     }
                 });
-                if (doc.contains("cartItems") && doc["cartItems"].is_array()) {
-                    for (const auto& c : doc["cartItems"]) {
+                if (doc.contains("quickPlaySlots") && doc["quickPlaySlots"].is_array()) {
+                    for (const auto& c : doc["quickPlaySlots"]) {
                         if (c.is_object()) {
                             const std::string u = c.value("itemUuid", std::string{});
-                            if (!u.empty()) cart_uuids.insert(u);
+                            if (!u.empty()) quick_play_uuids.insert(u);
                         }
                     }
                 }
@@ -1242,7 +1244,7 @@ void ProjectState::start_async_mirror() {
                     desc.render_block = engine_.config().render_block;
                     try {
                         job.task = prepare_audio_load(std::move(desc), std::move(item_snaps.at(job.uuid)),
-                            cart_uuids.contains(job.uuid) || backup_uuids.contains(job.uuid),
+                            quick_play_uuids.contains(job.uuid) || backup_uuids.contains(job.uuid),
                             paths.fallback, std::move(job.reusable_path));
                     } catch (...) {
                         std::promise<LoadedAudio> failure;
@@ -1382,7 +1384,7 @@ void ProjectState::start_async_mirror() {
                     }
                 }
             }
-            // New One Shots are primed by owned file tasks; reused cues keep their live buffers.
+            // New QuickPlays are primed by owned file tasks; reused cues keep their live buffers.
         } catch (const std::exception& e) {
             Logger::error("async mirror threw: {}", e.what());
         }
@@ -1488,26 +1490,26 @@ json ProjectState::default_empty_document() {
     // session looks identical to what `createNewProject` would have produced
     // on the client side. Field names are camelCase to match the client.
     return json{
-        {"name",          "Untitled"},
-        {"version",       "2.0.0"},
-        {"folderPath",    ""},
-        {"items",         json::array()},
-        {"cartItems",     json::array()},
-        {"cartSlotKeys",  json::object()},
-        {"playbackKeys",  json::object()},
-        {"cartOnlyItems", json::array()},
-        {"theme",         json{{"mode", "dark"}, {"accentColor", "#315FCF"}}},
-        {"settings",      json{
+        {"name",              "Untitled"},
+        {"version",           "2.0.0"},
+        {"folderPath",        ""},
+        {"items",             json::array()},
+        {"quickPlaySlots",    json::array()},
+        {"quickPlaySlotKeys", json::object()},
+        {"playbackKeys",      json::object()},
+        {"quickPlayItems",    json::array()},
+        {"theme",             json{{"mode", "dark"}, {"accentColor", "#315FCF"}}},
+        {"settings",          json{
             {"defaultOutputDevice", nullptr},
             {"previewDevice",       nullptr},
             {"ltcDevice",           nullptr},
             {"outputTarget",        "live"},
             {"meterMode",           "dBFS"},
-            {"cartSlotCount",       16},
+            {"quickPlaySlotCount",  16},
             {"cycleTrackColors",            true},
         }},
-        {"createdAt",     ""},
-        {"lastModified",  ""},
+        {"createdAt",         ""},
+        {"lastModified",      ""},
     };
 }
 
@@ -1533,10 +1535,10 @@ void ProjectState::for_each_item(json& doc,
     if (doc.contains("items") && doc["items"].is_array()) {
         walk(doc["items"], "");
     }
-    // cartOnlyItems are flat (no groups inside) but use the same walker for
+    // quickPlayItems are flat (no groups inside) but use the same walker for
     // consistency.
-    if (doc.contains("cartOnlyItems") && doc["cartOnlyItems"].is_array()) {
-        for (auto& it : doc["cartOnlyItems"]) {
+    if (doc.contains("quickPlayItems") && doc["quickPlayItems"].is_array()) {
+        for (auto& it : doc["quickPlayItems"]) {
             if (it.is_object()) visit(it, "");
         }
     }
@@ -2154,6 +2156,9 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
         }
         // Rename may itself wait on storage. The admitted write owns only its captured path.
         operation_lock.unlock();
+        // The new document is complete in `tmp`; keep a copy of the file it is
+        // about to replace. Runs under save_mutex_ with no project lock held.
+        backup_show_file_before_overwrite(path, open_revision);
         if (!util::replace_file_atomically(tmp, path, ec)) {
             Logger::error("ProjectState::save: rename '{}' -> '{}' failed: {} — previous file left untouched",
                           util::path_to_utf8(tmp), util::path_to_utf8(path), ec.message());
@@ -2177,6 +2182,293 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
     } catch (const std::exception& ex) {
         Logger::error("ProjectState::save failed: {}", ex.what());
         return false;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Automatic show-file backups (naming, rules and file work: show_backups.cpp)
+// ---------------------------------------------------------------------------
+namespace {
+std::optional<std::string> read_file_bytes(const std::filesystem::path& path) {
+    std::ifstream input{path, std::ios::binary};
+    if (!input) return std::nullopt;
+    std::string bytes{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+    if (input.bad()) return std::nullopt;
+    return bytes;
+}
+
+// Same publication as save(): complete sibling file, then atomic replace.
+bool write_file_atomically(const std::filesystem::path& path, const std::string& bytes,
+                           std::string& error) {
+    std::filesystem::path tmp = path;
+    tmp += ".tmp";
+    {
+        std::ofstream output{tmp, std::ios::binary | std::ios::trunc};
+        if (output) output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        output.flush();
+        output.close();
+        if (!output.good()) {
+            std::error_code remove_error;
+            std::filesystem::remove(tmp, remove_error);
+            error = "cannot write '" + util::path_to_utf8(tmp) + "'";
+            return false;
+        }
+    }
+    std::error_code ec;
+    if (!util::replace_file_atomically(tmp, path, ec)) {
+        std::error_code remove_error;
+        std::filesystem::remove(tmp, remove_error);
+        error = ec.message();
+        return false;
+    }
+    return true;
+}
+
+#ifdef LIVEPLAY_TEST_HOOKS
+// Holds a restore between replacing the show file and reloading it, so a test
+// can start a cue in the gap the idle check under the lifecycle lock closes.
+void hold_backup_restore_for_test() {
+    const char* gate = std::getenv("DWCUE_TEST_BACKUP_RESTORE_GATE");
+    std::error_code ec;
+    if (!gate || !*gate || !std::filesystem::exists(gate, ec)) return;
+    std::ofstream{std::string{gate} + ".entered"};
+    const auto release = std::chrono::steady_clock::now() + std::chrono::seconds{3};
+    while (std::filesystem::exists(gate, ec) && std::chrono::steady_clock::now() < release)
+        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+}
+#endif
+} // namespace
+
+void ProjectState::backup_show_file_before_overwrite(const std::filesystem::path& path,
+                                                     std::uint64_t open_revision) noexcept {
+    try {
+        const bool baseline_kept = backup_baseline_known_ &&
+            backup_baseline_revision_ == open_revision && backup_baseline_path_ == path;
+        show_backups::BackupTiming timing;
+        timing.first_save_since_open = !baseline_kept;
+        if (baseline_kept && last_show_backup_at_) {
+            timing.seconds_since_last_made = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - *last_show_backup_at_).count();
+        }
+        const auto backup = show_backups::backup_before_overwrite(path, timing);
+        using Outcome = show_backups::BackupOutcome;
+        if (backup.outcome == Outcome::Failed) {
+            // The save goes ahead; the next one tries the backup again. The
+            // same failure is reported once per interval, not once per autosave.
+            const auto now = std::chrono::steady_clock::now();
+            std::string failure = "'" + util::path_to_utf8(path) + "': " + backup.detail;
+            if (failure != last_show_backup_failure_ || !last_show_backup_failure_at_ ||
+                now - *last_show_backup_failure_at_ >=
+                    std::chrono::seconds{show_backups::kMinBackupIntervalSeconds}) {
+                Logger::warn("Show backup: skipped for {}", failure);
+                last_show_backup_failure_ = std::move(failure);
+                last_show_backup_failure_at_ = now;
+            }
+            return;
+        }
+        last_show_backup_failure_.clear();
+        last_show_backup_failure_at_.reset();
+        if (backup.outcome == Outcome::Created) {
+            Logger::info("Show backup saved: {}", backup.name);
+            if (!backup.detail.empty()) Logger::warn("Show backup: {}", backup.detail);
+        }
+        if (!baseline_kept || backup.outcome == Outcome::Created)
+            last_show_backup_at_.reset();
+        if (backup.outcome == Outcome::Created)
+            last_show_backup_at_ = std::chrono::steady_clock::now();
+        backup_baseline_known_ = true;
+        backup_baseline_revision_ = open_revision;
+        backup_baseline_path_ = path;
+    } catch (const std::exception& ex) {
+        Logger::warn("Show backup: skipped (exception: {})", ex.what());
+    } catch (...) {
+        Logger::warn("Show backup: skipped (unknown exception)");
+    }
+}
+
+std::vector<show_backups::BackupEntry> ProjectState::list_show_backups() const {
+    return show_backups::list_backups(project_file_path());
+}
+
+bool ProjectState::playback_active(bool include_preview) {
+    std::vector<audio::CueId> cues;
+    {
+        std::lock_guard lock{mutex_};
+        cues.reserve(cues_.size() + item_uuid_to_cue_.size() + 1);
+        for (const auto& [_, cue] : cues_) cues.push_back(cue.id);
+        for (const auto& [_, id] : item_uuid_to_cue_) cues.push_back(id);
+        if (include_preview && !preview_cue_.empty()) cues.push_back(preview_cue_);
+    }
+    {
+        // Covers a pass whose item mapping has already moved on to a replay.
+        std::lock_guard slock{sequencer_mutex_};
+        for (const auto& item : sequenced_items_) cues.push_back(item.cue_id);
+    }
+    for (const auto& id : cues) {
+        const auto cue = engine_.find_cue(id);
+        if (cue && cue->stats().transport != audio::TransportState::Stopped) return true;
+    }
+    return false;
+}
+
+std::string ProjectState::restore_blocker() {
+    if (playback_active(/*include_preview=*/false))
+        return "A cue is playing. Stop playback before restoring a backup.";
+    if (playback_active(/*include_preview=*/true))
+        return "A preview is playing. Stop it before restoring a backup.";
+    bool loading = loading_audio_.load(std::memory_order_acquire);
+    if (!loading) {
+        std::lock_guard qlock{loader_mutex_};
+        loading = !pending_load_uuids_.empty();
+    }
+    if (loading)
+        return "Audio is still loading. Restore the backup when the show has finished loading.";
+    return {};
+}
+
+ProjectState::RestoreBackupResult ProjectState::restore_show_backup(
+    const std::string& backup_name, const std::string& expected_session) {
+    using Status = RestoreBackupStatus;
+    RestoreBackupResult result;
+    const auto refuse = [&](Status status, std::string message) {
+        result.status = status;
+        result.message = std::move(message);
+        return result;
+    };
+    try {
+        // A restore is one more write of the show file: take its turn in the
+        // save order, so no save can land between the copy and the reload.
+        std::lock_guard save_lock{save_mutex_};
+        std::filesystem::path path;
+        std::string session;
+        {
+            auto operation_lock = lock_project_session(expected_session);
+            if (!operation_lock.owns_lock())
+                return refuse(Status::SessionChanged, "project session changed; reload before restoring a backup");
+            std::lock_guard lock{mutex_};
+            path = project_file_path_;
+            session = project_session_id_;
+        }
+        if (path.empty() || !project_file::is_native_project(path))
+            return refuse(Status::InvalidName, "No saved show is open, so there is no backup to restore.");
+
+        // The client's text is only ever compared with names read from the
+        // show's own Backups folder; it is never turned into a path.
+        std::filesystem::path backup_file;
+        if (show_backups::parse_backup_file_name(backup_name)) {
+            for (const auto& entry : show_backups::list_backups(path)) {
+                if (entry.name == backup_name) backup_file = entry.path;
+            }
+        }
+        if (backup_file.empty())
+            return refuse(Status::InvalidName, "That is not one of this show's backups. Refresh the list and choose again.");
+
+        if (auto blocker = restore_blocker(); !blocker.empty())
+            return refuse(Status::Busy, std::move(blocker));
+
+        // Prove the backup opens as a show before anything is touched.
+        const auto backup_bytes = read_file_bytes(backup_file);
+        bool valid = backup_bytes.has_value();
+        if (valid) {
+            try {
+                const json document = json::parse(*backup_bytes);
+                valid = is_supported_show_document(document);
+                if (valid && project_file::is_client_document(document)) {
+                    project_file::PreparedDocument prepared;
+                    std::string preparation_error;
+                    valid = project_file::prepare_client_document(
+                        document, path.parent_path(), prepared, preparation_error);
+                }
+            } catch (const std::exception&) {
+                valid = false;
+            }
+        }
+        if (!valid) {
+            Logger::warn("Show backup: '{}' cannot be read as a show; restore refused", backup_name);
+            return refuse(Status::InvalidBackup, "That backup cannot be read as a show. Nothing was changed.");
+        }
+
+        // Keep the file as it is now, whatever was backed up recently, so the
+        // restore itself can be undone. Without that copy the restore stops.
+        std::error_code ec;
+        std::optional<std::string> previous_bytes;
+        if (std::filesystem::is_regular_file(std::filesystem::status(path, ec))) {
+            show_backups::BackupTiming timing;
+            timing.force = true;
+            const auto undo = show_backups::backup_before_overwrite(path, timing);
+            using Outcome = show_backups::BackupOutcome;
+            if (undo.outcome == Outcome::Created) {
+                Logger::info("Show backup saved before restore: {}", undo.name);
+                if (!undo.detail.empty()) Logger::warn("Show backup: {}", undo.detail);
+            }
+            if (undo.outcome != Outcome::Created && undo.outcome != Outcome::SkippedIdentical) {
+                Logger::warn("Show backup: restore of '{}' refused, the current show could not be backed up: {}",
+                             backup_name, undo.detail);
+                return refuse(Status::Failed, "The current show could not be backed up first, so nothing was changed.");
+            }
+            result.undo_backup = undo.name;
+            previous_bytes = read_file_bytes(path);
+            if (!previous_bytes)
+                return refuse(Status::Failed, "The current show file could not be read, so nothing was changed.");
+        }
+
+        std::string write_error;
+        if (!write_file_atomically(path, *backup_bytes, write_error)) {
+            Logger::error("Show backup: could not write '{}' while restoring '{}': {}",
+                          util::path_to_utf8(path), backup_name, write_error);
+            return refuse(Status::Failed, "The show file could not be replaced. Nothing was changed.");
+        }
+
+#ifdef LIVEPLAY_TEST_HOOKS
+        hold_backup_restore_for_test();
+#endif
+        // Reload exactly as Open does. If a cue started or the show changed in
+        // the meantime, put the file back: a refused restore changes nothing.
+        json header;
+        if (!load(path, std::chrono::steady_clock::time_point::max(), session, &header,
+                  /*require_idle=*/true)) {
+            std::string rollback_error;
+            bool rolled_back = false;
+            if (previous_bytes) {
+                rolled_back = write_file_atomically(path, *previous_bytes, rollback_error);
+            } else {
+                std::error_code remove_error;
+                std::filesystem::remove(path, remove_error);
+                rolled_back = !remove_error;
+                rollback_error = remove_error.message();
+            }
+            if (!rolled_back) {
+                Logger::error("Show backup: restore of '{}' was refused and '{}' could not be put back: {}. "
+                              "Its previous contents are in backup '{}'.",
+                              backup_name, util::path_to_utf8(path), rollback_error, result.undo_backup);
+            }
+            if (auto blocker = restore_blocker(); !blocker.empty())
+                return refuse(Status::Busy, std::move(blocker));
+            if (project_session_id() != session)
+                return refuse(Status::SessionChanged, "project session changed before the backup could be restored");
+            Logger::error("Show backup: '{}' was restored to disk but could not be opened", backup_name);
+            return refuse(Status::Failed, "The backup could not be opened. Nothing was changed.");
+        }
+
+        // The restored file equals a backup that is still kept, and the undo
+        // copy was made a moment ago: the next save follows the normal interval.
+        std::uint64_t open_revision;
+        {
+            std::lock_guard lock{mutex_};
+            open_revision = project_open_revision_;
+        }
+        backup_baseline_known_ = true;
+        backup_baseline_revision_ = open_revision;
+        backup_baseline_path_ = path;
+        last_show_backup_at_ = std::chrono::steady_clock::now();
+
+        Logger::info("Show backup restored: {}", backup_name);
+        result.status = Status::Restored;
+        result.header = std::move(header);
+        return result;
+    } catch (const std::exception& ex) {
+        Logger::error("ProjectState::restore_show_backup failed: {}", ex.what());
+        return refuse(Status::Failed, "The backup could not be restored.");
     }
 }
 
@@ -2211,7 +2503,7 @@ json ProjectState::full_document() const {
     std::lock_guard lock{mutex_};
     json out = document_;
     if (out.contains("items"))         annotate_items_with_cue_ids(out["items"],         item_uuid_to_cue_);
-    if (out.contains("cartOnlyItems")) annotate_items_with_cue_ids(out["cartOnlyItems"], item_uuid_to_cue_);
+    if (out.contains("quickPlayItems")) annotate_items_with_cue_ids(out["quickPlayItems"], item_uuid_to_cue_);
     // Inject computed output-target levels so the client never needs to
     // hardcode platform loudness values.
     if (!out.contains("settings") || !out["settings"].is_object())
@@ -2285,12 +2577,12 @@ json ProjectState::audio_readiness() const {
 
 json ProjectState::header_document() const {
     std::lock_guard lock{mutex_};
-    // Cart-only items carry waveform data is already lazy, but the array
+    // QuickPlay items carry waveform data is already lazy, but the array
     // itself is small relative to the full playlist. We DO include it
-    // because the cart slots reference these items and the workspace
-    // can't paint cart buttons without them.
-    json cart_only = document_.value("cartOnlyItems", json::array());
-    annotate_items_with_cue_ids(cart_only, item_uuid_to_cue_);
+    // because the QuickPlay slots reference these items and the workspace
+    // can't paint QuickPlay buttons without them.
+    json quick_play_items = document_.value("quickPlayItems", json::array());
+    annotate_items_with_cue_ids(quick_play_items, item_uuid_to_cue_);
 
     const auto& items = document_.value("items", json::array());
     const std::size_t item_count = items.is_array() ? items.size() : 0;
@@ -2308,10 +2600,10 @@ json ProjectState::header_document() const {
         {"lastModified", read_last_modified(document_)},
         {"theme",        document_.value("theme",         json::object())},
         {"settings",     std::move(settings_out)},
-        {"cartItems",    document_.value("cartItems",     json::array())},
-        {"cartSlotKeys", document_.value("cartSlotKeys",  json::object())},
+        {"quickPlaySlots", document_.value("quickPlaySlots", json::array())},
+        {"quickPlaySlotKeys", document_.value("quickPlaySlotKeys", json::object())},
         {"playbackKeys", document_.value("playbackKeys",  json::object())},
-        {"cartOnlyItems", std::move(cart_only)},
+        {"quickPlayItems", std::move(quick_play_items)},
         {"itemCount",    item_count},
         {"needsRepair", pending_repair_info_.repaired},
         {"repairIssues", pending_repair_info_.issues},
@@ -2364,8 +2656,8 @@ bool ProjectState::replace_full_document(const json& doc, bool new_session) {
         return false;
     }
     json migrated = std::move(prepared.document);
-    if (prepared.cart_migrated)
-        Logger::info("ProjectState: migrated legacy Cart data to One Shots.");
+    if (prepared.quick_play_migrated)
+        Logger::info("ProjectState: migrated legacy slot data to independent QuickPlays.");
     std::lock_guard operation_lock{project_operation_mutex_};
     {
     std::scoped_lock preparation_lock{playback_preparation_mutex_, preview_preparation_mutex_};
@@ -2483,7 +2775,7 @@ void ProjectState::publish_crash_resume_state() {
 // the engine.
 // ---------------------------------------------------------------------------
 audio::CueId ProjectState::add_item(const json& item, const std::string& parent_uuid,
-                                    bool cart_only) {
+                                    bool quick_play_only) {
     if (!item.is_object()) return {};
     const std::string uuid = item.value("uuid", std::string{});
     if (uuid.empty()) return {};
@@ -2504,15 +2796,15 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
         }
 
         float parent_gain = 1.0f;
-        if (cart_only) {
-            // Cart-bound cue: lives in the separate cartOnlyItems array so it
-            // is mirrored to the engine (cart hotkeys can trigger it) without
+        if (quick_play_only) {
+            // QuickPlay cue: lives in the separate quickPlayItems array so it
+            // is mirrored to the engine (QuickPlay hotkeys can trigger it) without
             // ever appearing in the playlist tree.
-            if (!document_.contains("cartOnlyItems") ||
-                !document_["cartOnlyItems"].is_array()) {
-                document_["cartOnlyItems"] = json::array();
+            if (!document_.contains("quickPlayItems") ||
+                !document_["quickPlayItems"].is_array()) {
+                document_["quickPlayItems"] = json::array();
             }
-            document_["cartOnlyItems"].push_back(item);
+            document_["quickPlayItems"].push_back(item);
         } else if (parent_uuid.empty()) {
             if (!document_.contains("items") || !document_["items"].is_array()) {
                 document_["items"] = json::array();
@@ -2543,7 +2835,7 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
         // Queue this import and its children. The mirror owns existing items,
         // and retrying one of them here can put a stalled path ahead of the import.
         json inserted{{"items", json::array({item})}};
-        if (!cart_only) cache_group_gains_locked(inserted["items"], parent_gain);
+        if (!quick_play_only) cache_group_gains_locked(inserted["items"], parent_gain);
         for_each_item(inserted, [&](json& it, const std::string&) {
             if (it.value("type", std::string{}) != "audio") return;
             const std::string u = it.value("uuid", std::string{});
@@ -2887,12 +3179,12 @@ bool ProjectState::remove_item(const std::string& uuid) {
         if (document_.contains("items")) {
             removed = erase_from(document_["items"]);
         }
-        if (!removed && document_.contains("cartOnlyItems")) {
-            removed = erase_from(document_["cartOnlyItems"]);
+        if (!removed && document_.contains("quickPlayItems")) {
+            removed = erase_from(document_["quickPlayItems"]);
         }
-        // Clean up cart bindings that reference this uuid.
-        if (document_.contains("cartItems") && document_["cartItems"].is_array()) {
-            auto& arr = document_["cartItems"];
+        // Clean up QuickPlay slot bindings that reference this uuid.
+        if (document_.contains("quickPlaySlots") && document_["quickPlaySlots"].is_array()) {
+            auto& arr = document_["quickPlaySlots"];
             arr.erase(std::remove_if(arr.begin(), arr.end(),
                                      [&](const json& c){
                                          return c.value("itemUuid", std::string{}) == uuid;
@@ -3442,7 +3734,7 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
     std::vector<int> start_behavior_target_index;
     std::string  end_behavior_action;
     std::string  end_behavior_target_uuid;
-    bool         one_shot = false;
+    bool         quick_play = false;
     std::vector<int> end_behavior_target_index;
     audio::CueId target_cue;
     json item_snapshot;
@@ -3471,11 +3763,11 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
             }
         };
         if (doc.contains("items"))              walk(doc["items"]);
-        if (!found && doc.contains("cartOnlyItems")) walk(doc["cartOnlyItems"]);
+        if (!found && doc.contains("quickPlayItems")) walk(doc["quickPlayItems"]);
 
         if (found) {
             item_snapshot = *found;
-            one_shot      = is_one_shot_cue(*found);
+            quick_play    = is_quick_play_cue(*found);
             in_point      = json_get_or(*found, "inPoint",         0.0);
             out_point     = json_get_or(*found, "outPoint",         0.0);
             fade_out_dur  = json_get_or(*found, "fadeOutDuration",  1.0);
@@ -3760,6 +4052,7 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
 
     // Register with the sequencer so it can handle end-behaviour, crossfade,
     // and stop-fade autonomously — even when the client is disconnected.
+    bool replaced_follow_override = false;
     {
         const bool looping = (end_behavior_action == "loop");
         // A looping cue plays forever (the audio thread seeks back to the
@@ -3795,6 +4088,7 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
         si.ducked        = std::move(ducks_made);
         si.duck_release_sec = duck_release_sec;
         si.custom_actions = std::move(custom_actions_snapshot);
+        si.quick_play = quick_play;
         if (recovering) {
             for (auto& action : si.custom_actions)
                 action.triggered = action.time_point <= play_start;
@@ -3809,10 +4103,16 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
         // Remove any prior sequencer entry for this item (re-play case).
         sequenced_items_.erase(
             std::remove_if(sequenced_items_.begin(), sequenced_items_.end(),
-                           [&](const SequencedItem& x){ return x.uuid == uuid; }),
+                           [&](const SequencedItem& x){
+                               if (x.uuid != uuid) return false;
+                               replaced_follow_override |= x.continue_armed || x.follow_suppressed;
+                               return true;
+                           }),
             sequenced_items_.end());
         sequenced_items_.push_back(std::move(si));
     }
+    // Cue to Continue belongs to one pass; a replay starts from the saved ending.
+    if (replaced_follow_override) broadcast_cue_follow(uuid, "");
 
     // Playback just moved somewhere the server's own guess didn't predict, so
     // drop a stale auto-arming — the clients then fall back to the "Up Next"
@@ -3820,14 +4120,14 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
     // the one we just started) instead of showing the item armed before the
     // operator jumped. An arming the OPERATOR made is left alone: they chose it
     // deliberately and GO must still honour it.
-    // Cart-only items are excluded: firing an SFX pad is not "moving the
+    // QuickPlay items are excluded: firing an SFX pad is not "moving the
     // playlist", and blanking the arming there would leave GO with nothing to
     // fire until the next cue ended.
     {
         bool stale = false;
         {
             std::lock_guard lock{mutex_};
-            if (!one_shot && !next_item_override_.empty() &&
+            if (!quick_play && !next_item_override_.empty() &&
                 !next_item_override_manual_ &&
                 next_item_override_ != uuid) {
                 std::function<bool(const json&)> in_playlist = [&](const json& arr) -> bool {
@@ -3935,7 +4235,7 @@ bool ProjectState::cue_to_continue(const std::string& uuid,
     {
         std::lock_guard lock{mutex_};
         for_each_item(document_, [&](json& item, const std::string&) {
-            if (item.value("uuid", std::string{}) == uuid) quick_play = is_one_shot_cue(item);
+            if (item.value("uuid", std::string{}) == uuid) quick_play = is_quick_play_cue(item);
         });
         if (!quick_play) target_uuid = resolve_loop_continuation_target_locked(uuid);
     }
@@ -3984,6 +4284,11 @@ bool ProjectState::cue_to_continue(const std::string& uuid,
         it->continue_target_uuid = target_uuid;
         it->continue_armed = true;
         it->continue_to_play_next = quick_play;
+        it->follow_suppressed = false;
+        // Kept so un-arming can hand the pass back its own timing.
+        it->follow_saved_crossfade_sec = it->crossfade_sec;
+        it->follow_saved_start_next_time = it->start_next_time;
+        it->follow_saved_start_next_fade_sec = it->start_next_fade_sec;
         it->crossfade_sec = 0.0;
         it->start_next_time = 0.0;
         it->start_next_fade_sec = 0.0;
@@ -3998,6 +4303,135 @@ bool ProjectState::cue_to_continue(const std::string& uuid,
     Logger::playback("CUE TO CONTINUE: item '{}' target='{}'", uuid,
                      target_uuid);
     return true;
+}
+
+void ProjectState::broadcast_cue_follow(const std::string& uuid, const char* follow) {
+    std::function<void(const json&)> cb;
+    {
+        std::lock_guard lock{mutex_};
+        cb = ui_state_broadcaster_;
+    }
+    if (cb) cb(json{{"type", "doc_patch"}, {"op", "cue_follow_set"},
+                    {"itemUuid", uuid}, {"follow", follow}});
+}
+
+std::string ProjectState::cue_follow_state(const std::string& uuid) {
+    std::lock_guard slock{sequencer_mutex_};
+    for (const auto& item : sequenced_items_) {
+        if (item.uuid != uuid) continue;
+        if (item.continue_armed) return "armed";
+        if (item.follow_suppressed) return "suppressed";
+    }
+    return {};
+}
+
+bool ProjectState::set_cue_follow(const std::string& uuid, bool follow,
+                                  std::optional<std::uint64_t> expected_stop_revision) {
+    if (uuid.empty()) return false;
+
+    // A QuickPlay saved with Play Next already follows without being armed.
+    bool authored_follow = false;
+    double in_point = 0.0;
+    {
+        std::lock_guard lock{mutex_};
+        for_each_item(document_, [&](json& item, const std::string&) {
+            if (item.value("uuid", std::string{}) != uuid) return;
+            authored_follow = is_quick_play_cue(item) && item.contains("endBehavior") &&
+                item["endBehavior"].is_object() &&
+                item["endBehavior"].value("action", std::string{}) == "next";
+            in_point = json_get_or(item, "inPoint", 0.0);
+        });
+    }
+
+    enum class Change { None, Arm, Unarmed, Suppressed, Unsuppressed };
+    auto change = Change::None;
+    std::shared_ptr<audio::PlaybackItem> restore_loop;
+    {
+        std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
+        if (expected_stop_revision && *expected_stop_revision != stop_revision()) return false;
+        std::lock_guard slock{sequencer_mutex_};
+        const auto it = std::find_if(
+            sequenced_items_.begin(), sequenced_items_.end(),
+            [&](const SequencedItem& item) { return item.uuid == uuid; });
+        if (it == sequenced_items_.end()) return false;
+        const auto restore_timing = [&] {
+            it->crossfade_sec = it->follow_saved_crossfade_sec;
+            it->start_next_time = it->follow_saved_start_next_time;
+            it->start_next_fade_sec = it->follow_saved_start_next_fade_sec;
+        };
+        if (follow) {
+            if (it->follow_suppressed) {
+                it->follow_suppressed = false;
+                restore_timing();
+                change = Change::Unsuppressed;
+            } else if (!it->continue_armed && !authored_follow) {
+                change = Change::Arm;
+            }
+        } else if (it->continue_armed) {
+            it->continue_armed = false;
+            it->continue_to_play_next = false;
+            it->continue_target_uuid.clear();
+            restore_timing();
+            // Arming switched the decoder loop off; give a saved Loop back.
+            if (it->end_action == "loop") restore_loop = engine_.find_cue(it->cue_id);
+            change = Change::Unarmed;
+        } else if (authored_follow && !it->follow_suppressed) {
+            it->follow_suppressed = true;
+            it->follow_saved_crossfade_sec = it->crossfade_sec;
+            it->follow_saved_start_next_time = it->start_next_time;
+            it->follow_saved_start_next_fade_sec = it->start_next_fade_sec;
+            it->crossfade_sec = 0.0;
+            it->start_next_time = 0.0;
+            it->start_next_fade_sec = 0.0;
+            change = Change::Suppressed;
+        }
+    }
+
+    switch (change) {
+    case Change::None:
+        return true;
+    case Change::Arm:
+        if (!cue_to_continue(uuid, expected_stop_revision)) return false;
+        broadcast_cue_follow(uuid, "armed");
+        return true;
+    case Change::Unarmed:
+        // Like arming, this reseeks the decoder on the control thread with no
+        // project or sequencer lock held.
+        if (restore_loop) restore_loop->set_loop(true, in_point);
+        Logger::playback("CUE TO CONTINUE cancelled: item '{}'", uuid);
+        broadcast_cue_follow(uuid, "");
+        return true;
+    case Change::Suppressed:
+        Logger::playback("PLAY NEXT cancelled for this pass: item '{}'", uuid);
+        broadcast_cue_follow(uuid, "suppressed");
+        return true;
+    case Change::Unsuppressed:
+        Logger::playback("PLAY NEXT restored for this pass: item '{}'", uuid);
+        broadcast_cue_follow(uuid, "");
+        return true;
+    }
+    return false;
+}
+
+std::optional<std::string> ProjectState::quick_play_advance_target(const std::string& source_uuid) {
+    {
+        bool quick_play = false;
+        std::string action;
+        std::lock_guard lock{mutex_};
+        for_each_item(document_, [&](json& item, const std::string&) {
+            if (item.value("uuid", std::string{}) != source_uuid) return;
+            quick_play = is_quick_play_cue(item);
+            if (item.contains("endBehavior") && item["endBehavior"].is_object())
+                action = item["endBehavior"].value("action", std::string{});
+        });
+        if (!quick_play) return std::nullopt;
+        // Go to Item / Go to Index keep their authored target. Loop, Nothing
+        // and anything unrecognised resolve to no follow at all.
+        if (action != "next") return resolve_next_item_locked(source_uuid);
+    }
+    // Play Next: whatever GO would start right now. state_summary() takes
+    // mutex_ itself, so it runs after the lock above is released.
+    return play_next_playlist_target(source_uuid);
 }
 
 std::string ProjectState::play_next_playlist_target(const std::string& source_uuid) {
@@ -4227,7 +4661,7 @@ json ProjectState::state_summary() const {
         double           duration  = 0.0;  // full-file seconds (0 = unknown)
         double           in_point  = 0.0;
         double           out_point = 0.0;  // 0 = play to end
-        std::vector<int> index;            // playlist index path; empty for cart-only items
+        std::vector<int> index;            // playlist index path; empty for QuickPlay items
     };
     std::unordered_map<std::string, ItemFacts> facts;
     // uuid → (cue, duration from decode metadata)
@@ -4238,7 +4672,7 @@ json ProjectState::state_summary() const {
     std::string locale_now;
     std::unordered_map<std::string, long long> trigger_seq;
     json project_block;
-    json cart_bindings = json::array();
+    json slot_bindings = json::array();
 
     {
         std::lock_guard lock{mutex_};
@@ -4284,10 +4718,10 @@ json ProjectState::state_summary() const {
         std::vector<int> path;
         if (document_.contains("items")) walk(document_["items"], path);
 
-        // Cart-only items live outside the playlist tree — record their names
-        // so cart bindings resolve, but with no index path.
-        if (document_.contains("cartOnlyItems") && document_["cartOnlyItems"].is_array()) {
-            for (const auto& it : document_["cartOnlyItems"]) {
+        // QuickPlay items live outside the playlist tree — record their names
+        // so slot bindings resolve, but with no index path.
+        if (document_.contains("quickPlayItems") && document_["quickPlayItems"].is_array()) {
+            for (const auto& it : document_["quickPlayItems"]) {
                 if (!it.is_object()) continue;
                 const std::string uuid = it.value("uuid", std::string{});
                 if (uuid.empty() || facts.count(uuid)) continue;
@@ -4316,9 +4750,9 @@ json ProjectState::state_summary() const {
         locale_now    = ui_locale_;
         trigger_seq   = item_trigger_seq_;
 
-        if (document_.contains("cartItems") && document_["cartItems"].is_array()) {
-            for (const auto& c : document_["cartItems"]) {
-                if (c.is_object()) cart_bindings.push_back(c);
+        if (document_.contains("quickPlaySlots") && document_["quickPlaySlots"].is_array()) {
+            for (const auto& c : document_["quickPlaySlots"]) {
+                if (c.is_object()) slot_bindings.push_back(c);
             }
         }
     }
@@ -4339,7 +4773,7 @@ json ProjectState::state_summary() const {
         if (s.transport == audio::TransportState::Stopped) continue;
         on_air.push_back(OnAir{uuid, cue.value, s.transport, s.playhead_seconds, duration});
     }
-    // Document order (index path, lexicographic); cart-only items last.
+    // Document order (index path, lexicographic); QuickPlay items last.
     std::sort(on_air.begin(), on_air.end(), [&](const OnAir& a, const OnAir& b) {
         const auto& ia = facts[a.uuid].index;
         const auto& ib = facts[b.uuid].index;
@@ -4384,7 +4818,7 @@ json ProjectState::state_summary() const {
     if (next_uuid.empty() && !on_air.empty()) {
         std::lock_guard lock{mutex_};
         for (const auto& e : on_air) {
-            if (facts[e.uuid].index.empty()) continue; // Cart-only cues have no playlist successor.
+            if (facts[e.uuid].index.empty()) continue; // QuickPlay cues have no playlist successor.
             const auto n = resolve_next_item_locked(e.uuid, /*manual_go=*/true);
             if (!n.empty()) { next_uuid = n; next_source = "auto"; break; }
         }
@@ -4416,9 +4850,9 @@ json ProjectState::state_summary() const {
                                          [&](const OnAir& e){ return e.uuid == selected_uuid; });
     }
 
-    // Cart bindings, decorated with the bound item's name, colour + live state.
-    json cart = json::array();
-    for (const auto& c : cart_bindings) {
+    // QuickPlay slot bindings, decorated with the bound item's name, colour + live state.
+    json quick_plays = json::array();
+    for (const auto& c : slot_bindings) {
         const int slot = c.value("slot", -1);
         const std::string uuid = c.value("itemUuid", std::string{});
         if (slot < 0 || uuid.empty()) continue;
@@ -4429,7 +4863,7 @@ json ProjectState::state_summary() const {
         }
         entry["playing"] = std::any_of(on_air.begin(), on_air.end(),
                                        [&](const OnAir& e){ return e.uuid == uuid; });
-        cart.push_back(std::move(entry));
+        quick_plays.push_back(std::move(entry));
     }
 
     return json{
@@ -4445,7 +4879,7 @@ json ProjectState::state_summary() const {
             {"gainDb",         engine_.master_gain_db()},
             {"limiterEnabled", engine_.limiter_enabled()},
         }},
-        {"cart",    std::move(cart)},
+        {"quickPlays", std::move(quick_plays)},
         {"preview", json{
             {"active",   !current_preview_item_uuid().empty()},
             {"itemUuid", current_preview_item_uuid()},
@@ -4467,11 +4901,11 @@ std::string ProjectState::go(std::optional<std::uint64_t> expected_stop_revision
     return target;
 }
 
-std::string ProjectState::cart_slot_item_uuid(int slot) const {
+std::string ProjectState::quick_play_slot_item_uuid(int slot) const {
     std::lock_guard lock{mutex_};
-    if (!document_.contains("cartItems") || !document_["cartItems"].is_array())
+    if (!document_.contains("quickPlaySlots") || !document_["quickPlaySlots"].is_array())
         return {};
-    for (const auto& c : document_["cartItems"]) {
+    for (const auto& c : document_["quickPlaySlots"]) {
         if (c.is_object() && c.value("slot", -1) == slot)
             return c.value("itemUuid", std::string{});
     }
@@ -4532,7 +4966,7 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
             }
         };
         if (doc.contains("items"))              walk(doc["items"]);
-        if (!found && doc.contains("cartOnlyItems")) walk(doc["cartOnlyItems"]);
+        if (!found && doc.contains("quickPlayItems")) walk(doc["quickPlayItems"]);
         if (!found) return false;
 
         type = found->value("type", std::string{});
@@ -5193,15 +5627,15 @@ audio::CueId ProjectState::current_preview_cue_id() const {
 }
 
 // ---------------------------------------------------------------------------
-// Cart slot bindings
+// QuickPlay slot bindings
 // ---------------------------------------------------------------------------
-bool ProjectState::set_cart_slot(int slot, const std::string& item_uuid) {
+bool ProjectState::set_quick_play_slot(int slot, const std::string& item_uuid) {
     if (slot < 0 || slot >= 64) return false;
     std::lock_guard lock{mutex_};
-    if (!document_.contains("cartItems") || !document_["cartItems"].is_array()) {
-        document_["cartItems"] = json::array();
+    if (!document_.contains("quickPlaySlots") || !document_["quickPlaySlots"].is_array()) {
+        document_["quickPlaySlots"] = json::array();
     }
-    auto& arr = document_["cartItems"];
+    auto& arr = document_["quickPlaySlots"];
     // Remove any existing binding for this slot.
     arr.erase(std::remove_if(arr.begin(), arr.end(),
                              [&](const json& c){
@@ -5216,12 +5650,12 @@ bool ProjectState::set_cart_slot(int slot, const std::string& item_uuid) {
     return true;
 }
 
-bool ProjectState::clear_cart_slot(int slot) {
+bool ProjectState::clear_quick_play_slot(int slot) {
     std::lock_guard lock{mutex_};
-    if (!document_.contains("cartItems") || !document_["cartItems"].is_array()) {
+    if (!document_.contains("quickPlaySlots") || !document_["quickPlaySlots"].is_array()) {
         return false;
     }
-    auto& arr = document_["cartItems"];
+    auto& arr = document_["quickPlaySlots"];
     const auto before = arr.size();
     arr.erase(std::remove_if(arr.begin(), arr.end(),
                              [&](const json& c){
@@ -5255,7 +5689,7 @@ bool ProjectState::patch_settings(
         const double db = ceiling->get<double>();
         if (!std::isfinite(db) || db < -60.0 || db > 0.0) return false;
     }
-    if (auto count = patch.find("cartSlotCount");
+    if (auto count = patch.find("quickPlaySlotCount");
         count != patch.end() && !count->is_null()) {
         if (!count->is_number_integer()) return false;
         const auto slots = count->get<std::int64_t>();
@@ -5420,7 +5854,7 @@ json ProjectState::upgrade_legacy_document(const json& legacy) const {
         out["cues"].push_back(std::move(c));
     };
     if (legacy.contains("carts") && legacy["carts"].is_array()) {
-        for (auto& cart : legacy["carts"]) add_cue(cart);
+        for (auto& it : legacy["carts"]) add_cue(it);
     }
     if (legacy.contains("playlist") && legacy["playlist"].is_array()) {
         for (auto& it : legacy["playlist"]) add_cue(it);
@@ -5441,7 +5875,8 @@ json ProjectState::upgrade_legacy_document(const json& legacy) const {
 
 bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::path& project_path,
                                   std::chrono::steady_clock::time_point deadline,
-                                  const std::string& expected_session, json* loaded_header) {
+                                  const std::string& expected_session, json* loaded_header,
+                                  bool require_idle) {
     std::optional<project_file::PreparedDocument> client_document;
     if (project_file::is_client_document(doc_in)) {
         project_file::PreparedDocument prepared;
@@ -5554,7 +5989,10 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     // operations are serialized by project_operation_mutex_, and the mirror's
     // document generation check fences stale publication.
     const bool timed_open = deadline != std::chrono::steady_clock::time_point::max();
-    if (!timed_open) {
+    // A conditional open may still be refused below; it must not cancel
+    // playback intents until it is certain to go ahead.
+    const bool conditional_open = timed_open || require_idle;
+    if (!conditional_open) {
         std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
         ++playback_intent_revision_;
     }
@@ -5570,11 +6008,14 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     std::scoped_lock preparation_lock{playback_preparation_mutex_, preview_preparation_mutex_};
     std::lock_guard lifecycle_lock{playback_lifecycle_mutex_};
     // An expired request may have waited for preparation or the old mirror.
-    if (std::chrono::steady_clock::now() >= deadline) {
+    // With the lifecycle lock held no cue can start, so an idle show stays
+    // idle until the switch below; a busy one is left exactly as it was.
+    if (std::chrono::steady_clock::now() >= deadline ||
+        (require_idle && (resume_old_mirror || playback_active()))) {
         if (resume_old_mirror) start_async_mirror();
         return false;
     }
-    if (timed_open) ++playback_intent_revision_;
+    if (conditional_open) ++playback_intent_revision_;
     {
         std::lock_guard slock{sequencer_mutex_};
         sequenced_items_.clear();
@@ -5594,8 +6035,8 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
         item_trigger_seq_.clear();
     }
     if (client_document) {
-        if (client_document->cart_migrated)
-            Logger::info("ProjectState: migrated legacy Cart data to One Shots.");
+        if (client_document->quick_play_migrated)
+            Logger::info("ProjectState: migrated legacy slot data to independent QuickPlays.");
         RepairInfo repair{
             client_document->repair.repaired,
             client_document->repair.issues,
@@ -5670,9 +6111,21 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     return true;
 }
 
+bool ProjectState::is_supported_show_document(const json& doc) const {
+    const auto has_array = [&doc](const char* key) {
+        const auto field = doc.find(key);
+        return field != doc.end() && field->is_array();
+    };
+    if (!doc.is_object()) return false;
+    const bool legacy = is_legacy_document(doc) &&
+        (has_array("carts") || has_array("playlist") || has_array("cues_legacy"));
+    return project_file::is_client_document(doc) || has_array("cues") || legacy;
+}
+
 bool ProjectState::load(const std::filesystem::path& path,
                         std::chrono::steady_clock::time_point deadline,
-                        const std::string& expected_session, json* loaded_header) {
+                        const std::string& expected_session, json* loaded_header,
+                        bool require_idle) {
     if (std::chrono::steady_clock::now() >= deadline) return false;
     const auto session = expected_session.empty() ? project_session_id() : expected_session;
     if (!project_file::is_native_project(path)) {
@@ -5689,13 +6142,7 @@ bool ProjectState::load(const std::filesystem::path& path,
         json doc;
         f >> doc;
         if (std::chrono::steady_clock::now() >= deadline) return false;
-        const auto has_array = [&doc](const char* key) {
-            const auto field = doc.find(key);
-            return field != doc.end() && field->is_array();
-        };
-        const bool legacy = is_legacy_document(doc) &&
-            (has_array("carts") || has_array("playlist") || has_array("cues_legacy"));
-        if (!project_file::is_client_document(doc) && !has_array("cues") && !legacy) {
+        if (!is_supported_show_document(doc)) {
             Logger::error("ProjectState::load: unsupported show document in '{}'", util::path_to_utf8(path));
             return false;
         }
@@ -5711,7 +6158,7 @@ bool ProjectState::load(const std::filesystem::path& path,
         if (path.has_parent_path() && doc.is_object()) {
             doc["folderPath"] = util::path_to_utf8(path.parent_path());
         }
-        return load_from_json(doc, path, deadline, session, loaded_header);
+        return load_from_json(doc, path, deadline, session, loaded_header, require_idle);
     } catch (const std::exception& ex) {
         Logger::error("ProjectState::load failed: {}", ex.what());
         return false;
@@ -5943,7 +6390,10 @@ void ProjectState::sequencer_loop() {
                     si.stop_fade_sec <= 0.0 && si.start_next_time <= 0.0;
                 const double until_next = si.start_next_time > 0.0 ? si.start_next_time - pos
                                                                   : remaining - si.crossfade_sec;
-                if (!si.continue_armed && !si.advance_triggered && !si.start_next_triggered && remaining > 0.0 &&
+                // A QuickPlay never pre-arms the playlist cue it will follow into:
+                // GO and Up Next stay entirely the operator's until it ends.
+                if (!si.quick_play && !si.follow_suppressed &&
+                    !si.continue_armed && !si.advance_triggered && !si.start_next_triggered && remaining > 0.0 &&
                     until_next <= kPrepareFollowSec &&
                     (si.end_action == "next" ||
                      (plain_follow && (si.end_action == "goto-item" || si.end_action == "goto-index")))) {
@@ -5993,16 +6443,18 @@ void ProjectState::sequencer_loop() {
                 if (terminal) {
                     if (!playback_generations_.claim_terminal(
                             p.item.uuid, p.item.playback_generation)) continue;
-                    // A continuation may have been armed after collecting EOF.
+                    // Cue to Continue may have been armed, un-armed or cancelled
+                    // after collecting EOF; the live entry is the operator's last word.
                     const auto current = std::find_if(sequenced_items_.begin(), sequenced_items_.end(),
                         [&](const SequencedItem& item) {
                             return item.uuid == p.item.uuid &&
                                    item.playback_generation == p.item.playback_generation;
                         });
-                    if (current != sequenced_items_.end() && current->continue_armed) {
-                        p.item.continue_armed = true;
+                    if (current != sequenced_items_.end()) {
+                        p.item.continue_armed = current->continue_armed;
                         p.item.continue_to_play_next = current->continue_to_play_next;
                         p.item.continue_target_uuid = current->continue_target_uuid;
+                        p.item.follow_suppressed = current->follow_suppressed;
                     }
                     std::erase_if(sequenced_items_, [&](const SequencedItem& item) {
                         return item.uuid == p.item.uuid &&
@@ -6010,6 +6462,13 @@ void ProjectState::sequencer_loop() {
                     });
                 }
             }
+            const auto follow_cancelled = [&] {
+                std::lock_guard slock{sequencer_mutex_};
+                return std::any_of(sequenced_items_.begin(), sequenced_items_.end(), [&](const SequencedItem& item) {
+                    return item.uuid == p.item.uuid && item.playback_generation == p.item.playback_generation &&
+                           item.follow_suppressed;
+                });
+            };
           try {
             switch (p.kind) {
             case PendingAction::Kind::PlaybackError: {
@@ -6052,6 +6511,8 @@ void ProjectState::sequencer_loop() {
                 break;
 
             case PendingAction::Kind::Crossfade: {
+                // Collected before the operator cancelled this pass's follow.
+                if (follow_cancelled()) break;
                 const bool buffered = p.item.end_action == "next" && !music_backup_for(p.item.uuid).empty();
                 const auto next_uuid = resolve_advance_target(p.item.uuid, buffered);
                 // Start the incoming cue before committing the outgoing fade:
@@ -6086,6 +6547,7 @@ void ProjectState::sequencer_loop() {
             }
 
             case PendingAction::Kind::StartNext: {
+                if (follow_cancelled()) break;
                 const bool buffered = p.item.end_action == "next" && !music_backup_for(p.item.uuid).empty();
                 const auto next_uuid = resolve_advance_target(p.item.uuid, buffered);
                 const bool started = !next_uuid.empty() &&
@@ -6493,6 +6955,7 @@ void ProjectState::release_duck_owners(const SequencedItem& item) {
 }
 
 std::string ProjectState::resolve_advance_target(const std::string& source_uuid, bool manual_override_only) {
+    if (auto quick_play_target = quick_play_advance_target(source_uuid)) return *quick_play_target;
     std::lock_guard lock{mutex_};
     return !next_item_for_go_only_ && !next_item_override_.empty() &&
         (!manual_override_only || next_item_override_manual_)
@@ -6511,7 +6974,7 @@ std::string ProjectState::music_backup_for(const std::string& source_uuid) {
             const auto uuid = json_get_or(item, "uuid", std::string{});
             if (uuid == source_uuid) {
                 const auto* scope = group ? &item : parent;
-                if (scope && !is_one_shot_cue(item) && json_get_or(*scope, "keepMusicGoing", false)) {
+                if (scope && !is_quick_play_cue(item) && json_get_or(*scope, "keepMusicGoing", false)) {
                     backup = json_get_or(*scope, "backupMusicGroup", std::string{});
                     if (backup.empty() && settings != document_.end())
                         backup = json_get_or(*settings, "backupMusicGroup", std::string{});
@@ -6611,8 +7074,19 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
             auto it = item_uuid_to_cue_.find(stopped_uuid);
             if (it != item_uuid_to_cue_.end()) stopped_cue = it->second;
         }
+        // A QuickPlay is an anytime trigger outside the playlist. One playing
+        // over the tail of this cue must not stop the playlist from queueing
+        // its next cue: the operator would be left with nothing on GO, and a
+        // QuickPlay ending on Play Next would have nowhere to hand over to.
+        std::vector<audio::CueId> quick_play_cues;
+        for_each_item(document_, [&](json& item, const std::string&) {
+            if (!is_quick_play_cue(item)) return;
+            const auto cue = item_uuid_to_cue_.find(item.value("uuid", std::string{}));
+            if (cue != item_uuid_to_cue_.end()) quick_play_cues.push_back(cue->second);
+        });
         for (auto& [_, c] : cues_) {
             if (c.id == stopped_cue) continue;
+            if (std::find(quick_play_cues.begin(), quick_play_cues.end(), c.id) != quick_play_cues.end()) continue;
             if (auto pi = engine_.find_cue(c.id)) {
                 const auto ts = pi->stats().transport;
                 if (ts == audio::TransportState::Playing  ||
@@ -6646,9 +7120,9 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
             walk(document_["items"], p);
         }
         if (!found) return;
-        // A One Shot is an anytime trigger. Stopping or finishing it must not
+        // A QuickPlay is an anytime trigger. Stopping or finishing it must not
         // advance, replace, or otherwise disturb the Program Up Next pointer.
-        if (is_one_shot_cue(*found)) return;
+        if (is_quick_play_cue(*found)) return;
         // Only the "nothing" end behaviour is armed here — every other action
         // is auto-advanced by the sequencer itself.
         std::string action = "nothing";
@@ -6718,6 +7192,15 @@ void ProjectState::handle_item_ended(std::unique_lock<std::recursive_mutex>& lif
         Logger::playback("END BEHAVIOUR suppressed for '{}' "
                          "(Start Next marker already fired)", item.uuid);
         complete_group_runs_for_item(lifecycle_lock, item.uuid);
+        return;
+    }
+
+    // The operator switched Cue to Continue off for this pass: it ends the
+    // way a QuickPlay with no ending does, and Up Next is left alone.
+    if (item.follow_suppressed) {
+        Logger::playback("END BEHAVIOUR cancelled for '{}' (Cue to Continue off)", item.uuid);
+        arm_next_after_stop(item.uuid, /*was_manual=*/false);
+        if (current()) complete_group_runs_for_item(lifecycle_lock, item.uuid);
         return;
     }
 

@@ -238,19 +238,19 @@ function loadItemsSync(dependencies: Record<string, unknown>) {
       const restoreWaveform = () => {};
       const triggerWaveformUpdate = () => {};
       const buildWaveformFromChannels = () => ({ peaks: [0.1] });
-      const useCartItems = () => ({
-        getCartOnlyItem: (uuid: string) => currentProject.value?.cartOnlyItems?.find((i: any) => i.uuid === uuid),
-        addCartOnlyItem() {}, removeCartOnlyItem() {},
+      const useQuickPlayItems = () => ({
+        getQuickPlayItem: (uuid: string) => currentProject.value?.quickPlayItems?.find((i: any) => i.uuid === uuid),
+        addQuickPlayItem() {}, removeQuickPlayItem() {},
       });
       const findItemByUuid = (uuid: string) => findItemAndParent(uuid)?.item
-        ?? currentProject.value?.cartOnlyItems?.find((i: any) => i.uuid === uuid);
-      ${slice('  const toJSON =', '  const isCartWindowMode =')}
+        ?? currentProject.value?.quickPlayItems?.find((i: any) => i.uuid === uuid);
+      ${slice('  const toJSON =', '  const isQuickPlayWindowMode =')}
       ${slice('  const updateIndices =', '  // Add an item to the project')}
       ${slice('    let lastItems:', '    // Expose a refresh hook')}
       ${slice('    const findItemAndParent =', '    server().onDocPatch(applyDocPatch);')}
       ${slice('    const flatten =', '    _syncItemsDiffFn = queueItemsDiff;')}
       return { captureBaselines, syncItemsDiff, applyDocPatch, baseline: () => lastItems,
-        baselines: () => ({ items: lastItems, cartOnly: lastCartOnly, cart: lastCart, theme: lastTheme, settings: lastSettings }) };
+        baselines: () => ({ items: lastItems, quickPlayItems: lastQuickPlayItems, quickPlaySlots: lastQuickPlaySlots, theme: lastTheme, settings: lastSettings }) };
     }
   `, { compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 } }).outputText;
   return Function(`${compiled}; return build;`)()({ ...dependencies, isCurrentSaveIdentity, ref, toRaw, watch, markRaw });
@@ -305,7 +305,7 @@ test('a delayed Preview start completion cannot resurrect an audition after Stop
 
 test('Preview broadcasts use the same ordering fence and a new server snapshot resets its scope', () => {
   const h = loadPreviewControls({});
-  const currentProject = ref<any>({ items: [], cartOnlyItems: [] });
+  const currentProject = ref<any>({ items: [], quickPlayItems: [] });
   const sync = loadItemsSync({ currentProject, itemPatchIdentity: loadCreateItemPatchMutationIdentity()('local'),
     previewItemUuid: h.previewItemUuid, previewCueId: h.previewCueId,
     applyPreviewState: h.applyPreviewState, server: () => ({ connected: true }) });
@@ -327,7 +327,7 @@ test('an in-flight item diff stops dispatching after its project or connection i
       const initial = phase === 'move' ? [group('g1', [audio('a')]), group('g2', [])]
         : phase === 'reorder' ? [group('g1', [audio('a'), audio('b')]), group('g2', [audio('c'), audio('d')])]
           : phase === 'add' ? [] : [audio('a'), audio('b')];
-      const currentProject = ref<any>({ items: initial, cartOnlyItems: [] });
+      const currentProject = ref<any>({ items: initial, quickPlayItems: [] });
       const projectFilePathRef = ref('/p.dwcue');
       const projectEpoch = ref(1);
       const sessionLost = ref(false);
@@ -351,7 +351,7 @@ test('an in-flight item diff stops dispatching after its project or connection i
       if (phase === 'reorder') currentProject.value.items.forEach((item: any) => item.children.reverse());
       const pending = sync.syncItemsDiff();
       assert.equal(calls.length, 1, `${phase} must wait for its first mutation`);
-      if (change === 'project') { currentProject.value = { items: [audio('q')], cartOnlyItems: [] }; projectFilePathRef.value = '/q.dwcue'; }
+      if (change === 'project') { currentProject.value = { items: [audio('q')], quickPlayItems: [] }; projectFilePathRef.value = '/q.dwcue'; }
       if (change === 'close') currentProject.value = null;
       if (change === 'reopen') projectEpoch.value++;
       if (change === 'endpoint') srv.serverUrl = 'http://q';
@@ -371,7 +371,7 @@ test('current-project item mutations retain remove/add/update/reorder ordering',
   const currentProject = ref<any>({ items: [
     { uuid: 'g', type: 'group', children: [{ uuid: 'm', type: 'audio' }] },
     { uuid: 'a', type: 'audio', inPoint: 0 }, { uuid: 'b', type: 'audio' }, { uuid: 'r', type: 'audio' },
-  ], cartOnlyItems: [] });
+  ], quickPlayItems: [] });
   const calls: string[] = [];
   const sync = loadItemsSync({ currentProject, itemPatchIdentity: loadCreateItemPatchMutationIdentity()('local'),
     server: () => ({ connected: true,
@@ -396,7 +396,7 @@ test('runtime patches preserve pending authored edits while document patches hyd
     'preview_started', 'preview_stopped', 'waveform_failed', 'unknown_runtime_op']) {
     const item = { type: 'audio', uuid: 'pending-trim', inPoint: 0, outPoint: 12 };
     const requests: unknown[] = [];
-    const currentProject = ref({ items: [item], cartOnlyItems: [] });
+    const currentProject = ref({ items: [item], quickPlayItems: [] });
     const itemPatchIdentity = loadCreateItemPatchMutationIdentity()('local-client');
     const previewItemUuid = ref('old-preview');
     const previewCueId = ref('old-cue');
@@ -431,12 +431,12 @@ test('granular document patches acknowledge only their portion and preserve unre
     { op: 'item_updated', uuid: 'a', patch: { volume: 0.5 } },
     { op: 'item_updated', uuid: 'b', patch: {} },
     { op: 'item_added', uuid: 'c', item: { uuid: 'c', type: 'audio', index: [2], inPoint: 0 } },
-    { op: 'item_added', uuid: 'cart-new', cartOnly: true, item: { uuid: 'cart-new', type: 'audio', index: [-1, 1], inPoint: 0 } },
+    { op: 'item_added', uuid: 'quickplay-new', quickPlayOnly: true, item: { uuid: 'quickplay-new', type: 'audio', index: [-1, 1], inPoint: 0 } },
     { op: 'item_removed', uuid: 'b' },
     { op: 'items_reordered', uuids: ['b', 'a'] },
-    { op: 'cart_slot_set', slot: 0, itemUuid: 'b' },
-    { op: 'cart_slot_set', slot: 0, itemUuid: '' },
-    { op: 'cart_slot_cleared', slot: 0 },
+    { op: 'quickplay_slot_set', slot: 0, itemUuid: 'b' },
+    { op: 'quickplay_slot_set', slot: 0, itemUuid: '' },
+    { op: 'quickplay_slot_cleared', slot: 0 },
     { op: 'theme_patched', theme: { accent: 'blue' } },
     { op: 'settings_patched', settings: { autoSave: false } },
     { op: 'waveform_ready', item_uuid: 'b', duration_ms: 12000, channels: [[0.1]] },
@@ -444,7 +444,7 @@ test('granular document patches acknowledge only their portion and preserve unre
   for (const patch of patches) {
     const currentProject = ref({ items: ['a', 'b'].map((uuid, i) => ({
       uuid, type: 'audio', index: [i], inPoint: 0, volume: 1, duration: 0, outPoint: 0,
-    })), cartOnlyItems: [], cartItems: [{ slot: 0, itemUuid: 'a', index: [-1, 0] }], theme: {}, settings: {} });
+    })), quickPlayItems: [], quickPlaySlots: [{ slot: 0, itemUuid: 'a', index: [-1, 0] }], theme: {}, settings: {} });
     const requests: any[][] = [];
     const sync = loadItemsSync({ currentProject,
       itemPatchIdentity: loadCreateItemPatchMutationIdentity()('local-client'),
@@ -470,9 +470,9 @@ test('granular document patches acknowledge only their portion and preserve unre
 });
 
 test('full server snapshots preserve local fields the server has not changed', async () => {
-  const currentProject = ref<any>({ items: [], cartOnlyItems: [
-    { uuid: 'cart', type: 'audio', index: [-1, 0], inPoint: 0, volume: 1 },
-  ], cartItems: [{ slot: 9, itemUuid: 'original', index: [-1, 9] }],
+  const currentProject = ref<any>({ items: [], quickPlayItems: [
+    { uuid: 'quickplay', type: 'audio', index: [-1, 0], inPoint: 0, volume: 1 },
+  ], quickPlaySlots: [{ slot: 9, itemUuid: 'original', index: [-1, 9] }],
   theme: { background: 'black' }, settings: { autoSave: false, defaultOutputDevice: 'old' } });
   const requests: any[][] = [];
   const sync = loadItemsSync({ currentProject,
@@ -480,14 +480,14 @@ test('full server snapshots preserve local fields the server has not changed', a
     server: () => ({ connected: true, updateProjectItem: async (...args: any[]) => { requests.push(args); } }),
   });
   sync.captureBaselines();
-  currentProject.value.cartOnlyItems[0].inPoint = 1;
-  currentProject.value.cartItems[0].itemUuid = 'pending';
+  currentProject.value.quickPlayItems[0].inPoint = 1;
+  currentProject.value.quickPlaySlots[0].itemUuid = 'pending';
   currentProject.value.theme.background = 'pending';
   currentProject.value.settings.defaultOutputDevice = 'pending';
-  sync.applyDocPatch({ op: 'item_updated', uuid: 'cart', patch: {
-    uuid: 'cart', type: 'audio', index: [-1, 0], inPoint: 0, volume: 0.5,
+  sync.applyDocPatch({ op: 'item_updated', uuid: 'quickplay', patch: {
+    uuid: 'quickplay', type: 'audio', index: [-1, 0], inPoint: 0, volume: 0.5,
   } });
-  sync.applyDocPatch({ op: 'cart_slot_set', slot: 0, itemUuid: 'remote' });
+  sync.applyDocPatch({ op: 'quickplay_slot_set', slot: 0, itemUuid: 'remote' });
   sync.applyDocPatch({ op: 'theme_patched', theme: { background: 'black', accent: 'blue' } });
   sync.applyDocPatch({ op: 'settings_patched', settings: {
     autoSave: false, defaultOutputDevice: 'old', autoCueNextWithoutEndBehavior: false,
@@ -498,22 +498,22 @@ test('full server snapshots preserve local fields the server has not changed', a
   assert.equal(requests.length, 1);
   assert.equal(requests[0][1].inPoint, 1);
   assert.equal(requests[0][1].volume, 0.5);
-  assert.equal(currentProject.value.cartOnlyItems[0].volume, 0.5, 'remote cart-only update reaches its current store item');
+  assert.equal(currentProject.value.quickPlayItems[0].volume, 0.5, 'remote QuickPlay-only update reaches its current store item');
   assert.equal(currentProject.value.theme.background, 'pending');
   assert.equal(currentProject.value.settings.defaultOutputDevice, 'pending');
-  assert.deepEqual(sync.baselines().cart, [
+  assert.deepEqual(sync.baselines().quickPlaySlots, [
     { slot: 9, itemUuid: 'original', index: [-1, 9] }, { slot: 0, itemUuid: 'remote', index: [-1, 0] },
   ]);
   assert.deepEqual(sync.baselines().theme, { background: 'black', accent: 'blue' });
   assert.deepEqual(sync.baselines().settings, { autoSave: false, defaultOutputDevice: 'old', autoCueNextWithoutEndBehavior: false });
   requests.length = 0;
-  currentProject.value.cartOnlyItems[0].inPoint = 3;
-  sync.applyDocPatch({ op: 'item_updated', uuid: 'cart', patch: { inPoint: 2 } });
+  currentProject.value.quickPlayItems[0].inPoint = 3;
+  sync.applyDocPatch({ op: 'item_updated', uuid: 'quickplay', patch: { inPoint: 2 } });
   sync.applyDocPatch({ op: 'theme_patched', theme: { background: 'remote-change' } });
   sync.applyDocPatch({ op: 'settings_patched', settings: { defaultOutputDevice: 'remote-change' } });
   await nextTick();
   await sync.syncItemsDiff();
-  assert.equal(currentProject.value.cartOnlyItems[0].inPoint, 2, 'a changed server value still resolves an actual field conflict');
+  assert.equal(currentProject.value.quickPlayItems[0].inPoint, 2, 'a changed server value still resolves an actual field conflict');
   assert.equal(currentProject.value.theme.background, 'remote-change');
   assert.equal(currentProject.value.settings.defaultOutputDevice, 'remote-change');
   assert.deepEqual(requests, [], 'accepted server changes must not echo back');

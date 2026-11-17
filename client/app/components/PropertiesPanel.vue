@@ -38,7 +38,10 @@
         :fallback-start-path="currentProject?.folderPath" location-context="replace-media"
         @pick="handleReplaceMedia" @close="closePropertiesFilePicker" />
     </template>
-    <div v-else class="properties-content" :class="{ 'properties-content--audio': selectedItem.type === 'audio' }">
+    <div v-else class="properties-content" :class="{
+      'properties-content--audio': selectedItem.type === 'audio',
+      'properties-content--quickplay': !!quickPlay && activeTab === 'basic',
+    }">
       <!-- Basic Info Tab -->
       <div v-if="activeTab === 'basic'" class="tab-panel basic-panel">
         <section class="property-column">
@@ -176,16 +179,59 @@
             </div>
           </div>
           <div v-if="hasSelectedAudioItems" class="property-field">
-            <label class="one-shot-designation__toggle">
+            <label class="quickplay-designation__toggle">
               <input
                 type="checkbox"
-                :checked="oneShotEnabled"
-                @change="handleOneShotDesignationChange"
+                :checked="quickPlayEnabled"
+                @change="handleQuickPlayDesignationChange"
               />
-              <span>{{ t('oneShots.designation') }}</span>
+              <span>{{ t('quickPlays.designation') }}</span>
             </label>
           </div>
-          <p v-if="hasSelectedAudioItems" class="property-help">{{ t('oneShots.designationHelp') }}</p>
+          <p v-if="hasSelectedAudioItems" class="property-help">{{ t('quickPlays.designationHelp') }}</p>
+        </section>
+        <!-- Settings only a QuickPlay has. Everything else on these tabs is the
+             same panel a playlist cue gets. -->
+        <section v-if="quickPlay" class="property-column quickplay-properties">
+          <h4>{{ t('controls.quickPlay', { n: quickPlaySlot + 1 }) }}</h4>
+          <div class="property-field">
+            <span class="property-label">{{ t('quickPlays.retrigger') }}</span>
+            <InlineChoicePicker id="cue-quickplay-retrigger" :label="t('quickPlays.retrigger')"
+              :value="quickPlay.retrigger ?? 'restart'" :options="quickPlayRetriggerOptions"
+              @change="quickPlay.retrigger = $event; handleSave()" />
+          </div>
+          <div class="property-field">
+            <span class="property-label">{{ t('quickPlays.shortcut') }}</span>
+            <div class="input-with-btn">
+              <button type="button" class="quickplay-shortcut-capture"
+                :class="{ 'is-capturing': capturingQuickPlayHotkey }"
+                :disabled="quickPlaySlot < 0"
+                @click="startQuickPlayHotkeyCapture">
+                {{ capturingQuickPlayHotkey ? t('quickPlays.pressShortcut') : (quickPlayHotkeyLabel || t('quickPlays.assignShortcut')) }}
+              </button>
+              <button v-if="quickPlayHotkeyLabel" type="button" class="icon-btn"
+                :title="t('quickPlays.clearShortcut')" :aria-label="t('quickPlays.clearShortcut')"
+                @click="clearQuickPlayHotkey">
+                <span class="material-symbols-rounded" aria-hidden="true">backspace</span>
+              </button>
+            </div>
+            <p v-if="quickPlayHotkeyError" class="property-help property-help--error" role="alert">{{ quickPlayHotkeyError }}</p>
+          </div>
+          <template v-if="duckingMode === 'duck-others'">
+            <div class="property-field">
+              <label for="cue-quickplay-duckFadeIn">{{ t('quickPlays.duckAttack') }}</label>
+              <input id="cue-quickplay-duckFadeIn" type="number" min="0" max="10" step="0.1"
+                :value="audioItem.duckingBehavior?.duckFadeIn ?? 0.25"
+                @change="onQuickPlayDuckFadeChange('duckFadeIn', $event)" />
+            </div>
+            <div class="property-field">
+              <label for="cue-quickplay-duckFadeOut">{{ t('quickPlays.duckRelease') }}</label>
+              <input id="cue-quickplay-duckFadeOut" type="number" min="0" max="10" step="0.1"
+                :value="audioItem.duckingBehavior?.duckFadeOut ?? 1"
+                @change="onQuickPlayDuckFadeChange('duckFadeOut', $event)" />
+            </div>
+          </template>
+          <p class="property-help">{{ t('quickPlays.propertiesHelp') }}</p>
         </section>
       </div>
 
@@ -407,11 +453,13 @@ import {
   type MeasuredLoudness,
 } from '~/utils/audio';
 import {
-  cloneAsIndependentOneShot,
-  isOneShot,
-  nextAvailableOneShotOrder,
-  removeOneShotDesignation,
-} from '~/utils/oneShots';
+  buildQuickPlayCells,
+  cloneAsIndependentQuickPlay,
+  isQuickPlay,
+  nextAvailableQuickPlayOrder,
+  removeQuickPlayDesignation,
+} from '~/utils/quickPlays';
+import { bindingsMatch, eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/useQuickPlayHotkeys';
 
 const {
   selectedItem,
@@ -437,7 +485,7 @@ const { t } = useLocalization();
 const { showHeaderWarning } = useHeaderWarnings();
 const warnShuffle = (status: string) => showHeaderWarning(t(`shuffle.${status}`));
 const { uiMode } = useUiMode();
-const { cartOnlyItems, addCartOnlyItem, removeCartOnlyItem } = useCartItems();
+const { quickPlayItems, addQuickPlayItem, removeQuickPlayItem } = useQuickPlayItems();
 const propertySaveFailed = ref(false);
 const propertySavePending = ref(false);
 let propertySaveAttempt = 0;
@@ -489,49 +537,125 @@ const selectedAudioItems = computed(() => getSelectedItems().filter(
   (item): item is AudioItem => item.type === 'audio',
 ));
 const hasSelectedAudioItems = computed(() => selectedAudioItems.value.length > 0);
-const hasIndependentOneShot = (item: AudioItem): boolean =>
-  (cartOnlyItems.value.has(item.uuid) && isOneShot(item))
-  || Array.from(cartOnlyItems.value.values()).some(
-    oneShot => oneShot.oneShot?.sourceUuid === item.uuid,
+const hasIndependentQuickPlay = (item: AudioItem): boolean =>
+  (quickPlayItems.value.has(item.uuid) && isQuickPlay(item))
+  || Array.from(quickPlayItems.value.values()).some(
+    independentCopy => independentCopy.quickPlay?.sourceUuid === item.uuid,
   );
-const oneShotEnabled = computed(() => selectedAudioItems.value.length > 0
-  && selectedAudioItems.value.every(item => isOneShot(item) || hasIndependentOneShot(item)));
+const quickPlayEnabled = computed(() => selectedAudioItems.value.length > 0
+  && selectedAudioItems.value.every(item => isQuickPlay(item) || hasIndependentQuickPlay(item)));
 
-const handleOneShotDesignationChange = (event: Event) => {
+const handleQuickPlayDesignationChange = (event: Event) => {
   if (!currentProject.value) return;
   const enabled = (event.target as HTMLInputElement).checked;
-  let removedSelectedOneShot = false;
+  let removedSelectedQuickPlay = false;
   selectedAudioItems.value.forEach((item) => {
-    if (enabled && !hasIndependentOneShot(item)) {
-      const order = nextAvailableOneShotOrder(
+    if (enabled && !hasIndependentQuickPlay(item)) {
+      const order = nextAvailableQuickPlayOrder(
         currentProject.value!.items,
-        Array.from(cartOnlyItems.value.values()),
+        Array.from(quickPlayItems.value.values()),
       );
       if (order >= 0) {
-        addCartOnlyItem(cloneAsIndependentOneShot(item, crypto.randomUUID(), order));
+        addQuickPlayItem(cloneAsIndependentQuickPlay(item, crypto.randomUUID(), order));
         // A cue designated by an earlier build is decoupled as soon as the
-        // Properties action is used; the new copy owns all One Shot behavior.
-        if (isOneShot(item)) removeOneShotDesignation(item);
+        // Properties action is used; the new copy owns all QuickPlay behavior.
+        if (isQuickPlay(item)) removeQuickPlayDesignation(item);
       }
     }
     if (!enabled) {
-      if (cartOnlyItems.value.has(item.uuid)) {
-        removeCartOnlyItem(item.uuid);
+      if (quickPlayItems.value.has(item.uuid)) {
+        removeQuickPlayItem(item.uuid);
         selectedItems.value.delete(item.uuid);
-        removedSelectedOneShot ||= selectedItem.value?.uuid === item.uuid;
+        removedSelectedQuickPlay ||= selectedItem.value?.uuid === item.uuid;
       }
-      for (const oneShot of Array.from(cartOnlyItems.value.values())) {
-        if (oneShot.oneShot?.sourceUuid === item.uuid) removeCartOnlyItem(oneShot.uuid);
+      for (const independentCopy of Array.from(quickPlayItems.value.values())) {
+        if (independentCopy.quickPlay?.sourceUuid === item.uuid) removeQuickPlayItem(independentCopy.uuid);
       }
-      if (isOneShot(item)) removeOneShotDesignation(item);
+      if (isQuickPlay(item)) removeQuickPlayDesignation(item);
     }
   });
-  if (removedSelectedOneShot) {
+  if (removedSelectedQuickPlay) {
     selectedItem.value = null;
     propertiesPanelOpen.value = false;
   }
   void handleSave();
 };
+
+// ---- QuickPlay-only settings -------------------------------------------
+// A QuickPlay is an audio cue with a `quickPlay` block, so it uses every tab of
+// this panel unchanged. These are the few settings a playlist cue has no use
+// for: what a second press does, its own key, and how fast it ducks Program.
+const { keyMappings, playbackMappings, updateBinding } = useQuickPlayHotkeys();
+const quickPlay = computed(() => selectedItem.value?.type === 'audio'
+  && selectedItems.value.size <= 1 && isQuickPlay(audioItem.value)
+  ? audioItem.value.quickPlay!
+  : null);
+const quickPlaySlot = computed(() => quickPlay.value && currentProject.value
+  ? buildQuickPlayCells(currentProject.value.items, Array.from(quickPlayItems.value.values()))
+    .findIndex(item => item?.uuid === selectedItem.value?.uuid)
+  : -1);
+const quickPlayRetriggerOptions = computed(() => [
+  { value: 'restart', label: t('quickPlays.restart') },
+  { value: 'ignore', label: t('quickPlays.ignore') },
+] as const);
+const quickPlayHotkeyLabel = computed(() => {
+  const binding = quickPlaySlot.value >= 0 ? keyMappings.value[quickPlaySlot.value] : undefined;
+  return binding ? formatKeyLabel(binding) : '';
+});
+const capturingQuickPlayHotkey = ref(false);
+const quickPlayHotkeyError = ref('');
+const stopQuickPlayHotkeyCapture = () => {
+  capturingQuickPlayHotkey.value = false;
+  quickPlayHotkeyError.value = '';
+};
+const startQuickPlayHotkeyCapture = () => {
+  capturingQuickPlayHotkey.value = true;
+  quickPlayHotkeyError.value = '';
+};
+const clearQuickPlayHotkey = () => {
+  if (!quickPlay.value) return;
+  quickPlay.value.hotkey = null;
+  stopQuickPlayHotkeyCapture();
+  void handleSave();
+};
+// Capture phase, so the key being assigned never also fires its old action.
+const handleQuickPlayHotkeyKeydown = (event: KeyboardEvent) => {
+  if (!capturingQuickPlayHotkey.value || quickPlaySlot.value < 0) return;
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(event.key)) return;
+  const binding = eventToBinding(event);
+  // Stop All always goes through, even in the middle of assigning a key.
+  const stopAll = playbackMappings.value['stop-all'];
+  if (stopAll && bindingsMatch(stopAll, binding)) {
+    capturingQuickPlayHotkey.value = false;
+    return;
+  }
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if (event.key === 'Escape') {
+    capturingQuickPlayHotkey.value = false;
+    return;
+  }
+  if (isReservedCombo(binding)) {
+    quickPlayHotkeyError.value = t('controls.reserved');
+    return;
+  }
+  const result = updateBinding(quickPlaySlot.value, binding);
+  if (result.conflict >= 0) {
+    quickPlayHotkeyError.value = t('quickPlays.shortcutConflict', { name: result.conflict + 1 });
+    return;
+  }
+  stopQuickPlayHotkeyCapture();
+  void handleSave();
+};
+const onQuickPlayDuckFadeChange = (field: 'duckFadeIn' | 'duckFadeOut', event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const value = Math.min(10, Math.max(0, Number(input.value) || 0));
+  input.value = value.toFixed(1);
+  audioItem.value.duckingBehavior = { ...audioItem.value.duckingBehavior, mode: duckingMode.value, [field]: value };
+  void handleSave();
+};
+onMounted(() => document.addEventListener('keydown', handleQuickPlayHotkeyKeydown, true));
+onUnmounted(() => document.removeEventListener('keydown', handleQuickPlayHotkeyKeydown, true));
 
 // LTC output is only meaningful when a project-wide LTC device is configured.
 // The checkbox stays disabled until then to prevent users from "enabling"
@@ -656,8 +780,8 @@ const changeGroupBackup = (value: string) => {
     status => showHeaderWarning(t(`musicContinuity.${status}`)));
 };
 
-// Check if selected item is a cart item
-const isCartItem = computed(() => {
+// Check if selected item is a QuickPlay item
+const isQuickPlayItem = computed(() => {
   if (selectedItem.value && selectedItem.value.type === 'audio') {
     const item = selectedItem.value as AudioItem;
     return item.index && item.index.length > 0 && item.index[0] === -1;
@@ -670,6 +794,8 @@ const activeTab = ref<'basic' | 'playback' | 'output'>(uiMode.value === 'playbac
   ? 'playback'
   : 'basic');
 watch([selectedItem, projectEpoch, activeTab], closePropertiesFilePicker, { flush: 'sync' });
+// A key press must never be captured for a QuickPlay that is no longer shown.
+watch([() => selectedItem.value?.uuid, projectEpoch, activeTab], stopQuickPlayHotkeyCapture, { flush: 'sync' });
 
 const audioTabs = computed(() => [
   { id: 'basic', label: t('properties.basicInfo'), icon: 'info' },
@@ -1306,14 +1432,14 @@ const formatTime = (seconds: number): string => {
   box-shadow: inset 0 1px color-mix(in srgb, var(--color-text-primary) 4%, transparent);
 }
 
+/* Title, tabs and Close sit on top, where every other panel has them. */
 .properties-header {
-  order: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) var(--panel-control-height);
   justify-content: stretch;
   gap: var(--spacing-sm);
-  border-top: 1px solid var(--color-border);
-  border-bottom: 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .properties-panel--group .properties-header {
@@ -1401,7 +1527,7 @@ const formatTime = (seconds: number): string => {
   }
 
   &.active {
-    color: var(--color-accent);
+    color: var(--color-accent-text);
     background-color: var(--color-accent-soft);
     border-bottom-color: var(--color-accent);
   }
@@ -1423,6 +1549,46 @@ const formatTime = (seconds: number): string => {
   width: min(100%, 1120px);
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+
+/* A QuickPlay's Basic tab has one more column: its QuickPlay-only settings.
+   It sits beside the others when the panel is wide enough to keep every
+   column readable, and otherwise wraps onto its own row. */
+.properties-content--quickplay {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@container (max-width: 1240px) {
+  .properties-content--quickplay {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+/* Always the last column, so it is the one that wraps and Cueing never moves. */
+.quickplay-properties {
+  order: 1;
+}
+
+.quickplay-shortcut-capture {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--settings-control-height);
+  padding: 0 var(--spacing-xs);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--control-radius);
+  background: var(--color-control);
+  color: var(--color-text-primary);
+  font-size: var(--type-metadata-size);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quickplay-shortcut-capture.is-capturing {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+.quickplay-shortcut-capture:disabled { opacity: .5; }
 
 .group-level-control {
   display: flex;
@@ -1553,7 +1719,7 @@ const formatTime = (seconds: number): string => {
 
 .property-field > .property-help,
 .property-field > .group-shuffle,
-.property-field > .one-shot-designation__toggle,
+.property-field > .quickplay-designation__toggle,
 .property-field > .ltc-checkbox-label {
   grid-column: 1 / -1;
 }
@@ -1601,14 +1767,14 @@ const formatTime = (seconds: number): string => {
   font-weight: 600;
 }
 
-.one-shot-designation__toggle {
+.quickplay-designation__toggle {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
   cursor: pointer;
 }
 
-.one-shot-designation__toggle input[type="checkbox"] {
+.quickplay-designation__toggle input[type="checkbox"] {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;

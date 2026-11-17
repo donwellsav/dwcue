@@ -1,6 +1,7 @@
 #include "liveplay/net/project_archive.hpp"
 
 #include "liveplay/core/project_file.hpp"
+#include "liveplay/core/show_backups.hpp"
 #include "liveplay/logger.hpp"
 #include "liveplay/net/control_security.hpp"
 #include "liveplay/util/atomic_file.hpp"
@@ -511,6 +512,14 @@ OperationResult export_project(const fs::path& project_folder,
             if (fs::is_symlink(status)) {
                 if (it->is_directory(error) && !error)
                     it.disable_recursion_pending();
+                continue;
+            }
+            // Backups are this machine's local history of the show file, not
+            // part of the show: the folder beside the show is never packed.
+            if (fs::is_directory(status) && it.depth() == 0 &&
+                core::show_backups::is_backup_folder_name(
+                    util::path_to_utf8(it->path().filename()))) {
+                it.disable_recursion_pending();
                 continue;
             }
             if (!fs::is_regular_file(status)) continue;

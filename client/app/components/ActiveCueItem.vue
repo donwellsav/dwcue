@@ -41,16 +41,16 @@
           >
             <span class="material-symbols-rounded" aria-hidden="true">play_arrow</span>
           </button>
+          <!-- A QuickPlay's Cue to Continue is the toggle on its own tile. -->
           <button
-            v-if="isLooping || isQuickPlay"
+            v-if="isLooping && !isQuickPlayCue"
             type="button"
             class="action-btn continue-btn"
-            :disabled="isQuickPlay && !quickPlayNextReady"
             @click="handleContinue"
-            :title="continueLabel"
-            :aria-label="continueLabel"
+            :title="t('actions.cueToContinue')"
+            :aria-label="t('actions.cueToContinue')"
           >
-            <span class="material-symbols-rounded" aria-hidden="true">skip_next</span>
+            <span class="material-symbols-rounded" aria-hidden="true">subdirectory_arrow_right</span>
           </button>
           <button
             v-if="isLooping"
@@ -156,8 +156,7 @@ const props = defineProps<{
   cue: ActiveCueState;
 }>();
 
-const { stopCue, pauseCue, resumeCue, seekCue, queueLoopContinuation, jumpCue,
-  nextItemOverrideUuid, autoNextItemUuid, setNextItemPending } = useAudioEngine();
+const { stopCue, pauseCue, resumeCue, seekCue, queueLoopContinuation, jumpCue } = useAudioEngine();
 const { t } = useLocalization();
 const { findItemByUuid } = useProject();
 
@@ -169,14 +168,7 @@ const audioItem = computed<AudioItem | null>(() => {
 });
 
 const isLooping = computed(() => audioItem.value?.endBehavior?.action === 'loop');
-const isQuickPlay = computed(() => !!audioItem.value?.oneShot);
-const quickPlayNextReady = computed(() => {
-  const uuid = nextItemOverrideUuid.value ?? autoNextItemUuid.value;
-  return !!uuid && uuid !== props.cue.uuid && !setNextItemPending.value;
-});
-const continueLabel = computed(() => t(!isQuickPlay.value
-  ? 'actions.cueToContinue'
-  : quickPlayNextReady.value ? 'oneShots.followPlayNext' : 'oneShots.followPlayNextNeedsCue'));
+const isQuickPlayCue = computed(() => !!audioItem.value?.quickPlay);
 
 // Start Next marker (absolute file time) from the project item, if armed.
 const startNextTime = computed<number | null>(() => {
@@ -301,7 +293,7 @@ const formatTime = (seconds: number): string => {
 }
 
 .warning-border--yellow {
-  border-color: var(--state-up-next);
+  border-color: var(--color-warning);
 }
 
 .warning-border--orange {
@@ -402,15 +394,15 @@ const formatTime = (seconds: number): string => {
 }
 
 .action-btn.continue-btn {
-  border-color: var(--state-playing);
-  background-color: var(--state-playing);
+  border-color: var(--state-up-next);
+  background-color: var(--state-up-next);
   color: var(--color-background);
 }
 
 .action-btn.stop-btn {
-  background-color: var(--color-danger);
-  border-color: var(--color-danger);
-  color: white;
+  border: var(--stop-button-border);
+  background: var(--stop-button-background);
+  color: var(--stop-edge);
 }
 
 .action-btn:hover {
@@ -459,9 +451,9 @@ const formatTime = (seconds: number): string => {
   align-items: center;
   gap: 2px;
   padding: 1px 4px;
-  border: 1px solid color-mix(in srgb, var(--state-playing) 58%, transparent);
+  border: 1px solid color-mix(in srgb, var(--state-up-next) 58%, transparent);
   border-radius: var(--border-radius-sm);
-  color: var(--state-playing);
+  color: var(--state-up-next);
   font-weight: 600;
 }
 
@@ -470,7 +462,7 @@ const formatTime = (seconds: number): string => {
 }
 
 .segue-countdown--imminent {
-  border-color: var(--state-playing);
+  border-color: var(--state-up-next);
   color: var(--color-text-primary);
 }
 
@@ -479,7 +471,7 @@ const formatTime = (seconds: number): string => {
   top: -2px;
   bottom: -2px;
   width: 2px;
-  background: var(--state-playing);
+  background: var(--state-up-next);
   pointer-events: none;
 }
 

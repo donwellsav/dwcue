@@ -26,10 +26,14 @@ function decodeFrame(url, { inPoint, outPoint }) {
     const sampleTimes = [];
     let sample = 0;
     let checking = false;
+    // A seek can land a little after where it was sent: when a file's first
+    // picture is a frame or two after zero, the playhead settles on that frame.
+    // Accept that, within less than the distance between two samples.
+    let tolerance = 0.05;
     const checkFrame = async () => {
       const target = sampleTimes[sample];
       if (settled || target === undefined || checking || video.seeking ||
-          Math.abs(video.currentTime - target) > 0.001 || video.readyState < video.HAVE_CURRENT_DATA) return;
+          Math.abs(video.currentTime - target) > tolerance || video.readyState < video.HAVE_CURRENT_DATA) return;
       checking = true;
       try {
         // Require an actual picture even if only the audio track can supply current data.
@@ -56,6 +60,7 @@ function decodeFrame(url, { inPoint, outPoint }) {
       // shortcut: spot samples cover the cue range; detecting every bad frame needs full decode.
       if (Number.isFinite(span) && span >= 0.004) {
         sampleTimes.push(inPoint + span / 2, end - Math.min(0.04, span / 4));
+        tolerance = Math.max(0.05, Math.min(0.5, span / 4));
       }
       if (inPoint !== video.currentTime) video.currentTime = inPoint;
       void checkFrame();

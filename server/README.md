@@ -73,7 +73,7 @@ server/
 │   │   └── engine.hpp         Tier 3: master bus + device fan-out
 │   ├── core/
 │   │   ├── project_state.hpp  v2 project model + legacy 1.x upgrade
-│   │   └── backup_manager.hpp periodic rotating backups
+│   │   └── show_backups.hpp   save-time backups: naming, rules, restore
 │   ├── meta/
 │   │   ├── metadata.hpp       TagLib wrapper
 │   │   └── waveform.hpp       offline downsample → peak JSON
@@ -451,7 +451,7 @@ Plays an item on `settings.previewDevice` without routing through the live mixer
 | Method · Path | Body | Response | Notes |
 |---------------|------|----------|-------|
 | `GET /api/project`              | — | full project JSON document | The single GET a remote client needs to render the whole project. |
-| `GET /api/project/header`       | — | lightweight header `{ name, itemCount, theme, settings, cart, hasOpenProject, needsRepair, repairIssues, … }` | Repair details belong to the active show and remain in the header until it is saved. |
+| `GET /api/project/header`       | — | lightweight header `{ name, itemCount, theme, settings, quickPlayItems, quickPlaySlots, quickPlaySlotKeys, hasOpenProject, needsRepair, repairIssues, … }` | Repair details belong to the active show and remain in the header until it is saved. |
 | `GET /api/project/items?offset=0&limit=100` | — | `{ "offset": int, "limit": int, "total": int, "items": [...] }` | `limit` clamps to [1,1000]. Top-level items only (groups carry their children inline). |
 | `GET /api/project/progress`     | — | `{ "ready": bool, "loading": bool, "loaded": int, "total": int, "failedCount": int, "failures": [...] }` | Cheap poll for playback readiness and missing/unreadable media. |
 | `POST /api/project/load`        | `{ "path": "/abs/file.dwcue", "openDeadlineMs": 123 }` or `{ "document": { … } }` | header object, augmented with `needsRepair`/`repairIssues` if the document was auto-repaired on load | Broadcasts `project_changed` on success. The controller requests a fresh engine-clock deadline before Open. |
@@ -460,6 +460,8 @@ Plays an item on `settings.previewDevice` without routing through the live mixer
 | `PUT /api/project/document`     | full project JSON document | header object | Replaces the entire in-memory document. Broadcasts `project_changed`. |
 | `POST /api/project/save`        | `{ "path": "/abs/file.dwcue" (optional), "document": { … } (optional) }` | `{ "ok": true, "path": "…" }` | Serialized snapshot + atomic sibling-temp publication to the supplied canonical path or current path. `400` if neither is set; failure leaves the previous file and project identity unchanged. |
 | `POST /api/project/repair`      | — | `{ "repaired": bool, "issues": [string], "saved": bool }` | Forces a re-save of the (already auto-repaired on load) in-memory document. |
+| `GET /api/project/backups`      | — | `{ "ok": true, "backups": [ { "name": "<file name>", "savedAt": <epoch ms>, "size": <bytes> } ] }` | The open show's save-time backups, newest first. Empty when no saved show is open. |
+| `POST /api/project/backups/restore` | `{ "name": "<file name from the list>" }` | header object as for load, plus `"ok": true`, `"restoredFrom"`, `"undoBackup"` (name or `null`) | Backs up the current file first, replaces the show file with the backup and reloads it through the normal load; broadcasts `project_changed`. `400` name is not one of this show's backups, `409` a cue is playing / audio is loading / session changed, `422` the backup is not a readable show, `500` storage failure. Every error leaves the file and the open show unchanged. |
 Project load returns its header while media readiness continues asynchronously; callers use `/api/project/progress` and per-item errors rather than blocking all transport. Play/GO reject an unready selected target without consuming the operator override. Group Play All performs its all-or-nothing readiness preflight, while Stop All/Panic stay callable regardless of loader failures.
 
 Get `/api/project/header?open_deadline=1` immediately before a switch request. Use the returned `openDeadlineMs` as-is and bind the request to the expected show using `X-DWCUE-Project-Session`. The controller requires `createDeadlineSupported: true` before sending New Show. If an older controller calls New Show without a deadline, the engine rejects the request before writing.
@@ -470,7 +472,7 @@ Mutating routes return `{ ok: true, ... }` only — the full document is **not**
 
 | Method · Path | Body | Response | Broadcast op |
 |---------------|------|----------|--------------|
-| `POST /api/project/items`              | `{ "item": { uuid, displayName, type, … }, "parentUuid": "" (root) or "<group-uuid>" }` | `{ "ok": true, "uuid": "…", "cueId": "…" }` | `item_added` |
+| `POST /api/project/items`              | `{ "item": { uuid, displayName, type, … }, "parentUuid": "" (root) or "<group-uuid>", "quickPlayOnly": bool (optional; adds the item to `quickPlayItems` instead of the playlist) }` | `{ "ok": true, "uuid": "…", "cueId": "…" }` | `item_added` |
 | `PATCH /api/project/items/<uuid>`      | partial item JSON (sparse update) | `{ "ok": true, "uuid": "…" }` · `404` if missing | `item_updated` |
 | `DELETE /api/project/items/<uuid>`     | — | `{ "ok": true, "uuid": "…" }` · `404` if missing | `item_removed` |
 | `POST /api/project/items/reorder`      | `{ "parentUuid": "" or "<group>", "uuids": [string, …] }` | `{ "ok": true }` | `items_reordered` |
@@ -483,15 +485,27 @@ Mutating routes return `{ ok: true, ... }` only — the full document is **not**
 
 Project UI settings such as `settings.indexDisplayStart` only change the numbers shown and entered in the client. REST by-index paths stay zero-based for backwards compatibility.
 
-#### QuickPlay cells (legacy cart API)
-
-The current UI calls these quick-play cells **QuickPlays**. The HTTP paths and broadcast
-event names retain `cart` for compatibility with saved projects and external clients.
+#### QuickPlay slots
 
 | Method · Path | Body | Response | Broadcast op |
 |---------------|------|----------|--------------|
-| `POST /api/project/cart`         | `{ "slot": int, "itemUuid": "<uuid>" }` | `{ "ok": true, "slot": int, "itemUuid": "…" }` | `cart_slot_set` |
-| `DELETE /api/project/cart/<int>` | — | `{ "ok": true, "slot": int }` | `cart_slot_cleared` |
+| `POST /api/project/quickplay`         | `{ "slot": int, "itemUuid": "<uuid>" }` | `{ "ok": true, "slot": int, "itemUuid": "…" }` | `quickplay_slot_set` |
+| `DELETE /api/project/quickplay/<int>` | — | `{ "ok": true, "slot": int }` | `quickplay_slot_cleared` |
+| `POST /api/transport/quickplay/<int>/play` | — | `{ "ok": true, "slot": int, "uuid": "…" }`; `404` when the slot is empty | — |
+
+A show document names this feature `quickPlayItems` (the QuickPlay cues), `quickPlaySlots`
+(slot assignments), `quickPlaySlotKeys`, `settings.quickPlaySlotCount` and, per item,
+`quickPlay` (order, retrigger, hotkey, …). `GET /api/state/summary` lists slot assignments
+under `quickPlays`.
+
+Shows saved before the rename use `cartOnlyItems`, `cartItems`, `cartSlotKeys`,
+`settings.cartSlotCount` and per-item `oneShot`. They still open: every document that enters
+the engine (open, archive import, backup restore, a document pushed by a client) is converted
+once by `convert_legacy_quick_play_names`
+([`include/liveplay/core/legacy_quick_play_names.hpp`](include/liveplay/core/legacy_quick_play_names.hpp)),
+and saving writes only the current names. The old routes `/api/project/cart…`,
+`/api/transport/cart/<int>/play`, the ops `cart_slot_set` / `cart_slot_cleared`, the
+`cartOnly` flag and the summary key `cart` no longer exist.
 
 #### Theme & settings
 
@@ -502,7 +516,7 @@ event names retain `cart` for compatibility with saved projects and external cli
 
 #### Project export / import (`.dwcuepack` archives)
 
-A `.dwcuepack` is a raw ZIP of the active `.dwcue` project's folder; it does not add a second manifest or wrapper schema.
+A `.dwcuepack` is a raw ZIP of the active `.dwcue` project's folder; it does not add a second manifest or wrapper schema. The `Backups` folder beside the show (any letter case) is local history and is not packed.
 
 | Method · Path | Body | Response |
 |---------------|------|----------|
@@ -566,12 +580,12 @@ Stopped cues are omitted from `items`. Silent master channels (`peak_db <= -119 
 | `op`                            | Additional fields                                          | Emitted by |
 |---------------------------------|------------------------------------------------------------|------------|
 | `project_changed`               | (none — clients refetch)                                   | `POST /api/project/{load,close}`, `PUT /api/project/document` |
-| `item_added`                    | `uuid`, `parentUuid`, `item`, `cueId`                      | `POST /api/project/items` |
+| `item_added`                    | `uuid`, `parentUuid`, `quickPlayOnly`, `item`, `cueId`     | `POST /api/project/items` |
 | `item_updated`                  | `uuid`, `patch`                                            | `PATCH /api/project/items/<uuid>` |
 | `item_removed`                  | `uuid`                                                     | `DELETE /api/project/items/<uuid>` |
 | `items_reordered`               | `parentUuid`, `uuids` (array)                              | `POST /api/project/items/reorder` |
-| `cart_slot_set`                 | `slot`, `itemUuid`                                         | `POST /api/project/cart` |
-| `cart_slot_cleared`             | `slot`                                                     | `DELETE /api/project/cart/<slot>` |
+| `quickplay_slot_set`            | `slot`, `itemUuid`                                         | `POST /api/project/quickplay` |
+| `quickplay_slot_cleared`        | `slot`                                                     | `DELETE /api/project/quickplay/<slot>` |
 | `theme_patched`                 | `theme` (full resulting theme object)                      | `PATCH /api/project/theme` |
 | `settings_patched`              | `settings` (full resulting settings object)                | `PATCH /api/project/settings` |
 | `master_gain_changed`           | `db`                                                       | `POST /api/master/gain` |
@@ -612,7 +626,7 @@ Unknown `type` values get a `{ "type": "error", "message": "unknown type" }` rep
 
 ```
 1. User triggers QuickPlay #3.
-2. OneShotTile.vue → useLiveplayServer().play(cueId)
+2. The QuickPlay tile → useLiveplayServer().play(cueId)
 3. WebSocket frame { "type": "play", "cue_id": "…" } sent to server.
 4. ControlServer::handle_ws_message → engine_.play(cueId) — O(1) atomic state flip.
 5. AudioEngine render thread, next block:
@@ -623,7 +637,7 @@ Unknown `type` values get a `{ "type": "error", "message": "unknown type" }` rep
    and meters each final hardware-channel sum → hardware DAC.
 7. Render thread also updates source and mixer meters.
 8. Broadcast thread, ~33 ms later at the default cadence: snapshot all meters → JSON → fan out to every WS client.
-9. Client's LiveMeterBar.vue reflects the new levels in the next frame paint.
+9. Client's StereoMeter.vue reflects the new levels in the next frame paint.
 ```
 
 End-to-end transport latency depends on the configured render-block size and the target device's buffering; validate those settings on the deployment hardware.
@@ -644,11 +658,11 @@ The document schema is **v2**. Older native documents with 1.x content are upgra
 - Synthesises stereo master assignments: master channel 0 → default device hw ch 0, master channel 1 → default device hw ch 1.
 - Auto-creates one per-cue mixer channel so each cue still has independent gain/fade.
 
-The upgrade reconstructs cues and baseline routes for older native shows. Verify an upgraded show before live use. The server exposes the full routing API, but the current client does not mount `RoutingMatrixPanel.vue` as an operator screen; the available UI is Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** for a cue.
+The upgrade reconstructs cues and baseline routes for older native shows. Verify an upgraded show before live use. The server exposes the full routing API, but the current client has no routing-matrix screen; the available UI is Settings → **Audio Routing** for devices and Properties → **Output device** / **LTC** for a cue.
 
 ### Backups
 
-`BackupManager` ([`core/backup_manager.hpp`](include/liveplay/core/backup_manager.hpp)) copies the saved project file every ten minutes. It publishes a complete copy before pruning the oldest backups to the existing cap of 20 in the adjacent `backups` folder; a failed copy retains the previous history. Unsaved edits are not included in these periodic copies.
+Backups are made at save time ([`core/show_backups.hpp`](include/liveplay/core/show_backups.hpp)): just before `ProjectState::save()` replaces an existing show file (Save, Save As onto an existing file, autosave and repair all go through it), the file on disk is copied to `<show folder>/Backups/<show stem> <YYYY-MM-DD HH.MM.SS>.dwcue` (local time). At most one is made per five minutes, except on the first save after a show is opened; a copy identical to the newest backup is skipped; the newest ten per show are kept. The copy runs under the save mutex with no project lock held, and a failure is logged and never fails the save. `GET /api/project/backups` and `POST /api/project/backups/restore` list and restore them. Copies left by the retired 10-minute timer (`<show stem>_backup_<date>.dwcue`, in the same folder on Windows and macOS) are never listed, pruned or deleted. The folder is left out of `.dwcuepack` exports.
 
 Native saves are serialized under the project save mutex. The target path and complete document snapshot are resolved under that serialization boundary, written to a sibling temporary file and atomically published. A failed Save As does not adopt the requested path; a pathless save resolves the current canonical path while holding the same lock.
 

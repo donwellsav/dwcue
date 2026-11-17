@@ -199,7 +199,7 @@ function cancelEdit() {
 
 .volume-slider__unit {
   color: var(--color-text-secondary);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;

@@ -32,7 +32,7 @@ test('project session preconditions reject delayed edits after switching or reop
   t.after(async () => { await stopServer(child); await rm(folder, { recursive: true, force: true }); });
   const project = name => ({ name, version: '2.0.0', folderPath: folder,
     items: ['shared', 'sibling'].map(uuid => ({ uuid, type: 'group', children: [], displayName: `${name}-${uuid}` })),
-    cartOnlyItems: [], cartItems: [{ slot: 0, itemUuid: 'shared' }],
+    quickPlayItems: [], quickPlaySlots: [{ slot: 0, itemUuid: 'shared' }],
     settings: { autoSave: true }, theme: { accentColor: '#123456' },
   });
   const p = path.join(folder, 'P.dwcue'), q = path.join(folder, 'Q.dwcue');
@@ -48,7 +48,7 @@ test('project session preconditions reject delayed edits after switching or reop
       await new Promise(resolve => setTimeout(resolve, 5));
     }
     const doc = await (await request(baseUrl, '/api/project')).json();
-    return { name: doc.name, items: doc.items, cartItems: doc.cartItems, theme: doc.theme, settings: doc.settings,
+    return { name: doc.name, items: doc.items, quickPlaySlots: doc.quickPlaySlots, theme: doc.theme, settings: doc.settings,
       path: doc.server.projectFilePath, session: doc.server.projectSessionId };
   };
   const actions = [
@@ -57,8 +57,8 @@ test('project session preconditions reject delayed edits after switching or reop
     ['DELETE', '/api/project/items/shared', {}],
     ['POST', '/api/project/items/reorder', { uuids: ['sibling', 'shared'] }],
     ['POST', '/api/project/items/shuffle', { before: ['shared', 'sibling'] }],
-    ['POST', '/api/project/cart', { slot: 0, itemUuid: 'sibling' }],
-    ['DELETE', '/api/project/cart/0', {}],
+    ['POST', '/api/project/quickplay', { slot: 0, itemUuid: 'sibling' }],
+    ['DELETE', '/api/project/quickplay/0', {}],
     ['PATCH', '/api/project/theme', { accentColor: '#abcdef' }],
     ['PATCH', '/api/project/settings', { autoSave: false }],
     ['PUT', '/api/project/document', project('late-replacement')],
@@ -94,8 +94,8 @@ test('project session preconditions reject delayed edits after switching or reop
             response.end(bytes.subarray(bytes.length - 1));
             assert.equal(await completed, 409, 'an already-sent old-session request must be rejected');
             assert.deepEqual(await current(), before, 'the active show must remain untouched');
-            if (method === 'DELETE' && pathname === '/api/project/cart/0') {
-              const bound = await request(baseUrl, '/api/project/cart', { method: 'POST', body: JSON.stringify({ slot: 0, itemUuid: 'shared' }),
+            if (method === 'DELETE' && pathname === '/api/project/quickplay/0') {
+              const bound = await request(baseUrl, '/api/project/quickplay', { method: 'POST', body: JSON.stringify({ slot: 0, itemUuid: 'shared' }),
                 headers: { 'X-DWCUE-Project-Session': before.session } });
               assert.equal(bound.status, 200, await bound.text());
             }
@@ -166,7 +166,7 @@ test('project session preconditions reject delayed edits after switching or reop
       await writeFile(broken, '{');
       await writeFile(unrelated, '{"event":"This is not a show"}');
       const createPath = path.join(folder, 'New.dwcue');
-      const newShow = { ...project('New'), items: [], cartItems: [] };
+      const newShow = { ...project('New'), items: [], quickPlaySlots: [] };
       const legacyBytes = JSON.stringify(newShow);
       await writeFile(legacy, legacyBytes);
       const originalBytes = await readFile(p, 'utf8');
@@ -477,6 +477,317 @@ test('project session preconditions reject delayed edits after switching or reop
   } catch (error) { error.message += `\nNative server diagnostics:\n${diagnostics}`; throw error; }
 });
 
+test('Cue to Continue on a QuickPlay toggles over the socket and reaches joining clients', { timeout: 30000 }, async t => {
+  const folder = await mkdtemp(path.join(os.tmpdir(), 'dwcue-quickplay-follow-'));
+  const port = await unusedPort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
+    cwd: folder,
+    env: { ...process.env, LIVEPLAY_STATE_DIR: path.join(folder, 'state'),
+      LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let diagnostics = '';
+  child.stdout.on('data', chunk => { diagnostics += chunk; });
+  child.stderr.on('data', chunk => { diagnostics += chunk; });
+  t.after(async () => { await stopServer(child); await rm(folder, { recursive: true, force: true }); });
+  try {
+    await waitForServer(baseUrl, child);
+    const media = path.join(folder, 'silence.wav');
+    await writeFile(media, silentWav(20));
+    const cue = (uuid, extra = {}) => ({
+      uuid, type: 'audio', displayName: uuid, mediaServerPath: media, duration: 20,
+      endBehavior: { action: 'nothing' }, ...extra,
+    });
+    const quickPlay = (uuid, order, extra = {}) => cue(uuid, {
+      index: [-1, order], quickPlay: { order, retrigger: 'restart' },
+      duckingBehavior: { mode: 'no-ducking' }, ...extra,
+    });
+    const show = path.join(folder, 'Follow.dwcue');
+    await writeFile(show, JSON.stringify({
+      name: 'Follow', version: '2.0.0', folderPath: folder,
+      items: [cue('first'), cue('second')],
+      quickPlayItems: [quickPlay('sting', 0), quickPlay('bumper', 1, { endBehavior: { action: 'next' } })],
+      quickPlaySlots: [], settings: { autoSave: false }, theme: { accentColor: '#123456' },
+    }));
+    const loaded = await request(baseUrl, '/api/project/load', { method: 'POST', body: JSON.stringify({ path: show }) });
+    assert.equal(loaded.status, 200, await loaded.clone().text());
+    let readiness;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      readiness = await (await request(baseUrl, '/api/project/progress')).json();
+      if (!readiness.loading) break;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.equal(readiness?.ready, true, JSON.stringify(readiness));
+
+    const wsUrl = 'ws://127.0.0.1:' + port + '/ws?access_token=' + encodeURIComponent(accessToken);
+    const operator = openEventStream(wsUrl);
+    t.after(() => operator.socket.close());
+    await operator.opened;
+    const command = (payload, id) => {
+      const ack = operator.next(message => message.type === 'command_ack' && message.command_id === id);
+      operator.socket.send(JSON.stringify({ ...payload, command_id: id }));
+      return ack;
+    };
+    const followPatch = uuid => operator.next(message =>
+      message.type === 'doc_patch' && message.op === 'cue_follow_set' && message.itemUuid === uuid);
+    // What a window opened mid-pass is told about each playing cue.
+    const joinedFollowStates = async () => {
+      const joiner = openEventStream(wsUrl);
+      try {
+        await joiner.opened;
+        const snapshot = await joiner.next(message => message.type === 'playback_snapshot');
+        return Object.fromEntries(snapshot.cues.map(entry => [entry.item_uuid, entry.follow ?? null]));
+      } finally { joiner.socket.close(); }
+    };
+
+    assert.equal((await command({ type: 'cue_to_continue', item_uuid: 'sting', follow: true }, 'idle')).ok, false,
+      'an idle QuickPlay has no pass to arm');
+    assert.equal((await command({ type: 'play', item_uuid: 'sting' }, 'play-sting')).ok, true);
+    let patch = followPatch('sting');
+    assert.equal((await command({ type: 'cue_to_continue', item_uuid: 'sting', follow: true }, 'arm')).ok, true);
+    assert.equal((await patch).follow, 'armed');
+    assert.deepEqual(await joinedFollowStates(), { sting: 'armed' });
+
+    patch = followPatch('sting');
+    assert.equal((await command({ type: 'cue_to_continue', item_uuid: 'sting', follow: false }, 'disarm')).ok, true);
+    assert.equal((await patch).follow, '', 'un-arming returns the pass to its saved ending');
+    const invalid = await command({ type: 'cue_to_continue', item_uuid: 'sting', follow: 'yes' }, 'invalid');
+    assert.equal(invalid.ok, false);
+    assert.match(invalid.error, /follow must be true or false/);
+
+    assert.equal((await command({ type: 'play', item_uuid: 'bumper' }, 'play-bumper')).ok, true);
+    patch = followPatch('bumper');
+    assert.equal((await command({ type: 'cue_to_continue', item_uuid: 'bumper', follow: false }, 'cancel')).ok, true);
+    assert.equal((await patch).follow, 'suppressed', 'a saved Play Next can be cancelled for one pass');
+    assert.deepEqual(await joinedFollowStates(), { sting: null, bumper: 'suppressed' });
+
+    const document = await (await request(baseUrl, '/api/project')).json();
+    assert.deepEqual(document.quickPlayItems.map(item => item.endBehavior.action), ['nothing', 'next'],
+      'the toggle never edits the saved endings');
+  } catch (error) { error.message += `\nNative server diagnostics:\n${diagnostics}`; throw error; }
+});
+
+// Shows saved before the QuickPlay rename use the field names cartOnlyItems,
+// cartItems, cartSlotKeys, settings.cartSlotCount and the per-item oneShot.
+// However such a document reaches the engine, the engine holds, serves and
+// saves it under the QuickPlay names only, with nothing lost.
+test('shows written with the old cart / one shot names are served and saved with the QuickPlay names', { timeout: 30000 }, async t => {
+  const folder = await mkdtemp(path.join(os.tmpdir(), 'dwcue-legacy-names-'));
+  const showFolder = path.join(folder, 'show');
+  await mkdir(showFolder);
+  const port = await unusedPort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
+    cwd: folder,
+    env: { ...process.env, LIVEPLAY_STATE_DIR: path.join(folder, 'state'),
+      LIVEPLAY_ACCESS_TOKEN: accessToken, LIVEPLAY_ALLOWED_ORIGINS: baseUrl },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let diagnostics = '';
+  child.stdout.on('data', chunk => { diagnostics += chunk; });
+  child.stderr.on('data', chunk => { diagnostics += chunk; });
+  let stream;
+  t.after(async () => {
+    stream?.socket.close();
+    await stopServer(child);
+    await rm(folder, { recursive: true, force: true });
+  });
+
+  const media = path.join(folder, 'silence.wav');
+  await writeFile(media, silentWav(1));
+  const cue = (uuid, extra = {}) => ({
+    uuid, type: 'audio', displayName: uuid, mediaServerPath: media, duration: 1,
+    endBehavior: { action: 'nothing' }, duckingBehavior: { mode: 'no-ducking' }, ...extra,
+  });
+  const hotkey = { key: 'F2', ctrlKey: false, shiftKey: false, altKey: false };
+  // Every renamed field, exactly as an older version wrote it: a QuickPlay
+  // item, a slot assignment with its key, the settings slot count, and a
+  // playlist cue inside a group that carries QuickPlay settings.
+  const oldShow = (targetFolder = showFolder) => ({
+    name: 'Old names', version: '2.0.0', folderPath: targetFolder,
+    items: [{ uuid: 'set', type: 'group', displayName: 'Set', children: [
+      cue('plain'), cue('linked', { oneShot: { order: 2, retrigger: 'ignore' } }),
+    ] }],
+    cartOnlyItems: [cue('pad', { index: [-1, 0], oneShot: { order: 0, retrigger: 'restart' } })],
+    cartItems: [{ slot: 1, itemUuid: 'plain', index: [-1, 1] }],
+    cartSlotKeys: { 1: hotkey },
+    settings: { autoSave: false, cartSlotCount: 24 }, theme: { accentColor: '#123456' },
+  });
+  // Every key, at any depth, that still says "cart" or "oneShot".
+  const oldNames = value => {
+    const found = [];
+    const visit = node => {
+      if (Array.isArray(node)) node.forEach(visit);
+      else if (node && typeof node === 'object') {
+        for (const [key, child] of Object.entries(node)) {
+          if (/cart|oneshot/i.test(key)) found.push(key);
+          visit(child);
+        }
+      }
+    };
+    visit(value);
+    return found;
+  };
+  // The old show's content under the current names: the QuickPlay item, the
+  // slot assignment (now an independent QuickPlay keeping its key), the group
+  // cue's QuickPlay settings, the slot count and the untouched playlist.
+  const assertCurrentNames = (doc, label) => {
+    assert.deepEqual(oldNames(doc), [], `${label}: no key may still say cart or oneShot`);
+    assert.deepEqual(Object.fromEntries(doc.quickPlayItems.map(item => [item.uuid, item.quickPlay])), {
+      pad: { order: 0, retrigger: 'restart' },
+      'plain-one-shot': { order: 1, retrigger: 'restart', hotkey, sourceUuid: 'plain' },
+      'linked-one-shot': { order: 2, retrigger: 'ignore', sourceUuid: 'linked' },
+    }, `${label}: QuickPlay items and their settings`);
+    assert.deepEqual(doc.quickPlaySlots, [], `${label}: slot assignments`);
+    assert.deepEqual(doc.quickPlaySlotKeys, {}, `${label}: slot keys`);
+    assert.equal(doc.settings.quickPlaySlotCount, 24, `${label}: slot count`);
+    assert.deepEqual(doc.items[0].children.map(item => [item.uuid, 'quickPlay' in item]),
+      [['plain', false], ['linked', false]], `${label}: playlist cues`);
+  };
+  const json = async (response, status = 200) => {
+    assert.equal(response.status, status, await response.clone().text());
+    return response.json();
+  };
+  const send = (method, pathname, body) => request(baseUrl, pathname, { method, body: JSON.stringify(body) });
+  const post = (pathname, body = {}) => send('POST', pathname, body);
+  const served = async () => {
+    for (let attempt = 0; ; attempt += 1) {
+      const progress = await json(await request(baseUrl, '/api/project/progress'));
+      if (!progress.loading) break;
+      assert.ok(attempt < 200, 'the show must finish loading');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    return json(await request(baseUrl, '/api/project'));
+  };
+  const onDisk = async file => JSON.parse(await readFile(file, 'utf8'));
+
+  try {
+    await waitForServer(baseUrl, child);
+    const show = path.join(showFolder, 'Old.dwcue');
+    await writeFile(show, JSON.stringify(oldShow()));
+
+    await t.test('opening the old show serves only the current names', async () => {
+      const header = await json(await post('/api/project/load', { path: show }));
+      assert.deepEqual(oldNames(header), []);
+      assert.equal(header.quickPlayItems.length, 3);
+      assertCurrentNames(await served(), 'open');
+      assert.deepEqual(oldNames(await json(await request(baseUrl, '/api/project/header'))), []);
+      assert.deepEqual(oldNames(await json(await request(baseUrl, '/api/state/summary'))), []);
+    });
+
+    // The file on disk still has the old names, so this is the archive an
+    // older version would have made.
+    const archive = path.join(folder, 'Old.dwcuepack');
+    await t.test('an archive of the old show exports', async () => {
+      await json(await post('/api/project/export', { folderPath: showFolder, outputPath: archive }));
+    });
+
+    await t.test('saving writes only the current names', async () => {
+      assert.notDeepEqual(oldNames(await onDisk(show)), [], 'the fixture must start with the old names');
+      await json(await post('/api/project/save', { path: show }));
+      assertCurrentNames(await onDisk(show), 'save');
+    });
+
+    await t.test('a backup written with the old names restores', async () => {
+      const { backups } = await json(await request(baseUrl, '/api/project/backups'));
+      assert.equal(backups.length, 1);
+      assert.notDeepEqual(oldNames(await onDisk(path.join(showFolder, 'Backups', backups[0].name))), [],
+        'the backup holds the file as the older version wrote it');
+      await json(await post('/api/project/backups/restore', { name: backups[0].name }));
+      assertCurrentNames(await served(), 'restore');
+      await json(await post('/api/project/save', { path: show }));
+      assertCurrentNames(await onDisk(show), 'save after restore');
+    });
+
+    await t.test('a document pushed with the old names is converted', async () => {
+      await json(await send('PUT', '/api/project/document', oldShow()));
+      assertCurrentNames(await served(), 'pushed document');
+      await json(await post('/api/project/save', { path: show, document: oldShow() }));
+      assertCurrentNames(await served(), 'document sent with a save');
+      assertCurrentNames(await onDisk(show), 'file written from a document sent with a save');
+    });
+
+    await t.test('slot changes are announced with the QuickPlay op names', async () => {
+      stream = openEventStream(`ws://127.0.0.1:${port}/ws?access_token=${encodeURIComponent(accessToken)}`);
+      await stream.opened;
+      const patches = [];
+      stream.socket.addEventListener('message', event => {
+        const message = JSON.parse(String(event.data));
+        if (message.type === 'doc_patch') patches.push(message);
+      });
+      const patch = op => stream.next(message => message.type === 'doc_patch' && message.op === op);
+
+      let announced = patch('quickplay_slot_set');
+      assert.deepEqual(await json(await post('/api/project/quickplay', { slot: 3, itemUuid: 'pad' })),
+        { ok: true, slot: 3, itemUuid: 'pad' });
+      assert.deepEqual(await announced, { type: 'doc_patch', op: 'quickplay_slot_set', slot: 3, itemUuid: 'pad' });
+      assert.deepEqual((await served()).quickPlaySlots, [{ slot: 3, itemUuid: 'pad', index: [-1, 3] }]);
+
+      const summary = await json(await request(baseUrl, '/api/state/summary'));
+      assert.deepEqual(oldNames(summary), []);
+      assert.equal(summary.quickPlays.length, 1);
+      assert.deepEqual({ slot: summary.quickPlays[0].slot, itemUuid: summary.quickPlays[0].itemUuid,
+        name: summary.quickPlays[0].name }, { slot: 3, itemUuid: 'pad', name: 'pad' });
+
+      assert.deepEqual(await json(await post('/api/transport/quickplay/3/play')), { ok: true, slot: 3, uuid: 'pad' });
+      await json(await post('/api/transport/stop_all', { fade_ms: 0 }));
+      await json(await post('/api/transport/quickplay/4/play'), 404);
+
+      announced = patch('quickplay_slot_cleared');
+      assert.deepEqual(await json(await send('DELETE', '/api/project/quickplay/3')), { ok: true, slot: 3 });
+      assert.deepEqual(await announced, { type: 'doc_patch', op: 'quickplay_slot_cleared', slot: 3 });
+      assert.deepEqual((await served()).quickPlaySlots, []);
+
+      announced = patch('item_added');
+      const added = cue('added', { index: [-1, 7], quickPlay: { order: 7, retrigger: 'restart' } });
+      await json(await post('/api/project/items', { item: added, quickPlayOnly: true }));
+      assert.equal((await announced).quickPlayOnly, true);
+      const after = await served();
+      assert.deepEqual(after.quickPlayItems.find(item => item.uuid === 'added')?.quickPlay,
+        { order: 7, retrigger: 'restart' });
+      assert.equal(after.items.length, 1, 'a QuickPlay-only item stays out of the playlist');
+
+      await json(await send('PATCH', '/api/project/settings', { quickPlaySlotCount: 65 }), 400);
+      await json(await send('PATCH', '/api/project/settings', { quickPlaySlotCount: 32 }));
+      assert.equal((await served()).settings.quickPlaySlotCount, 32);
+
+      assert.deepEqual(oldNames(patches), [], 'no doc_patch may carry an old field name');
+      assert.deepEqual(patches.filter(message => /cart/i.test(message.op)), [], 'no doc_patch may use an old op name');
+      for (const [method, pathname] of [['POST', '/api/project/cart'], ['DELETE', '/api/project/cart/3'],
+        ['POST', '/api/transport/cart/3/play']]) {
+        const response = await send(method, pathname, { slot: 3, itemUuid: 'pad' });
+        assert.equal(response.status, 404, `${method} ${pathname} is no longer a route`);
+        await response.arrayBuffer();
+      }
+      await json(await post('/api/project/save', { path: show }));
+      assert.deepEqual(oldNames(await onDisk(show)), [], 'later saves still contain only the current names');
+    });
+
+    await t.test('a new show created from a document with the old names is written with the current names', async () => {
+      const { openDeadlineMs } = await json(await request(baseUrl, '/api/project/header?open_deadline=1'));
+      const createdFolder = path.join(folder, 'created');
+      await mkdir(createdFolder);
+      const created = path.join(createdFolder, 'Created.dwcue');
+      await json(await post('/api/project/load', { create: { path: created, document: oldShow(createdFolder) }, openDeadlineMs }));
+      assertCurrentNames(await onDisk(created), 'new show file');
+      assertCurrentNames(await served(), 'new show');
+    });
+
+    await t.test('an archive made from the old show imports and opens with the current names', async () => {
+      const extractPath = path.join(folder, 'imported');
+      const imported = await json(await post('/api/project/import', { archivePath: archive, extractPath }));
+      assert.deepEqual(imported.projectFiles, ['Old.dwcue']);
+      const importedShow = path.join(extractPath, 'Old.dwcue');
+      assert.notDeepEqual(oldNames(await onDisk(importedShow)), [], 'the archive holds the file as the older version wrote it');
+      await json(await post('/api/project/load', { path: importedShow }));
+      assertCurrentNames(await served(), 'imported archive');
+      await json(await post('/api/project/save', { path: importedShow }));
+      assertCurrentNames(await onDisk(importedShow), 'save after import');
+    });
+  } catch (error) { error.message += `\nNative server diagnostics:\n${diagnostics}`; throw error; }
+});
+
 async function unusedPort() {
   const socket = net.createServer();
   await new Promise((resolve, reject) => {
@@ -512,7 +823,7 @@ test('waveform caches and analysis identify the current file revision', { timeou
   await writeFile(media, samples(8192)); await utimes(media, date, date);
   await writeFile(show, JSON.stringify({ name: 'waveform-revision', folderPath: folder,
     items: [{ uuid: 'media', type: 'audio', displayName: 'media', mediaServerPath: media }],
-    cartOnlyItems: [], cartItems: [], settings: {} }));
+    quickPlayItems: [], quickPlaySlots: [], settings: {} }));
   const port = await unusedPort(), baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(serverBinary, ['--bind', '127.0.0.1', '--port', String(port)], {
     cwd: folder, env: { ...process.env, LIVEPLAY_STATE_DIR: path.join(folder, 'state'),
@@ -719,7 +1030,7 @@ test('crash recovery respects newer intent and resumes without repeating crossed
         recovering.customActions = [{ timePoint: 0.2, action: { type: 'stop-all' } }];
       }
       const document = { name: 'recovery', folderPath: folder, items: [recovering, cue('newer')],
-        cartOnlyItems: [], cartItems: [], settings: {} };
+        quickPlayItems: [], quickPlaySlots: [], settings: {} };
       await writeFile(show, JSON.stringify(document));
       await writeFile(path.join(stateDir, '.crash-resume.json'), JSON.stringify({
         projectFile: show, itemUuid: 'recovering', positionSec: 0.6,
@@ -896,7 +1207,7 @@ test('a prepared natural handoff publishes the incoming trigger order while play
   const show = path.join(folder, 'Follow.dwcue');
   await writeFile(show, JSON.stringify({
     name: 'Follow', folderPath: folder, items: [cue('outgoing', 'next'), cue('incoming', 'nothing')],
-    cartItems: [], cartOnlyItems: [], settings: { stopAllFadeMs: 0 },
+    quickPlaySlots: [], quickPlayItems: [], settings: { stopAllFadeMs: 0 },
   }));
   const post = (route, body = {}) => request(baseUrl, route, { method: 'POST', body: JSON.stringify(body) });
   await waitForServer(baseUrl, child);

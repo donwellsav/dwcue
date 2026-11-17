@@ -5,15 +5,21 @@
     role="complementary"
     :aria-label="t('settings.helpShortcutsTitle')"
   >
+    <!-- Two lines of shortcuts, the most used first. They wrap like words: as
+         many as the window is wide enough for, and none is ever cut in half. -->
     <div class="shortcuts-bar__items">
-      <span v-for="action in transportActions" :key="action.id" class="shortcuts-bar__item" :title="t(action.labelKey)">
+      <span v-for="action in runningActions" :key="action.id" class="shortcuts-bar__item" :title="t(action.labelKey)">
         <span class="shortcuts-bar__action">{{ t(action.labelKey) }}</span>
         <kbd class="shortcuts-bar__key">{{ playbackKeyLabel(action.id) || '—' }}</kbd>
       </span>
       <span class="shortcuts-bar__item">
-        <span class="shortcuts-bar__action">{{ t('oneShots.defaultShortcuts') }}</span>
+        <span class="shortcuts-bar__action">{{ t('quickPlays.defaultShortcuts') }}</span>
         <kbd class="shortcuts-bar__key">1–9, 0</kbd>
         <kbd class="shortcuts-bar__key">Shift+1–9, Shift+0</kbd>
+      </span>
+      <span v-for="action in otherActions" :key="action.id" class="shortcuts-bar__item" :title="t(action.labelKey)">
+        <span class="shortcuts-bar__action">{{ t(action.labelKey) }}</span>
+        <kbd class="shortcuts-bar__key">{{ playbackKeyLabel(action.id) || '—' }}</kbd>
       </span>
     </div>
     <button type="button" class="shortcuts-bar__edit" @click="openEditor">
@@ -31,16 +37,34 @@
 </template>
 
 <script setup lang="ts">
-// Compact shortcut reference pinned to the bottom of the workspace, in both
-// edit and show mode — operators should never have to guess the keys. The
-// full editor is available under Settings → Shortcuts and from Customize.
-import { PLAYBACK_ACTIONS, useCartHotkeys } from '~/composables/useCartHotkeys';
+// Shortcut reference pinned to the bottom of the workspace, the same in Edit
+// Mode and Show Mode: operators should never have to guess the keys. It is
+// two lines high and lists every keyboard action, the ones used while a show
+// runs first. The full editor is under Settings → Shortcuts and Customize.
+import { PLAYBACK_ACTIONS, useQuickPlayHotkeys } from '~/composables/useQuickPlayHotkeys';
+import type { PlaybackKeyAction } from '~/types/project';
 
-const transportActions = PLAYBACK_ACTIONS.filter(({ id }) =>
-  ['play-next', 'stop-all', 'pause-resume', 'set-up-next'].includes(id));
+// Running a show, in the order an operator reaches for them.
+const RUNNING: PlaybackKeyAction[] = [
+  'play-next', 'pause-resume', 'stop-all', 'set-up-next', 'play-selected', 'select-up', 'select-down',
+  'cue-to-continue', 'jump-cue', 'toggle-loop',
+];
+// The windows and panels next; set-up keys last, since they are the first to
+// go when the window is too narrow for everything.
+const LATER: PlaybackKeyAction[] = [
+  'toggle-video-output', 'toggle-quickplays', 'toggle-detached-quickplays',
+  'capture-video-standby', 'capture-display-standby', 'toggle-settings', 'toggle-properties',
+];
+const byId = (id: PlaybackKeyAction) => PLAYBACK_ACTIONS.find(action => action.id === id)!;
+const runningActions = RUNNING.map(byId);
+// Any action added later still shows, after the ones placed by hand.
+const otherActions = [
+  ...LATER.map(byId),
+  ...PLAYBACK_ACTIONS.filter(({ id }) => !RUNNING.includes(id) && !LATER.includes(id)),
+];
 
 const { t } = useLocalization();
-const { playbackKeyLabel } = useCartHotkeys();
+const { playbackKeyLabel } = useQuickPlayHotkeys();
 
 const open = useState('showShortcutsBar', () => true);
 const showProjectSettings = useState('showProjectSettings', () => false);
@@ -63,12 +87,18 @@ const openEditor = () => {
   flex: 0 0 auto;
 }
 
+/* Exactly two lines, whatever the window width: the shortcuts wrap, and the
+   ones that would start a third line are left out. */
 .shortcuts-bar__items {
+  --shortcut-line: 20px;
   display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 3px var(--spacing-md);
   flex: 1 1 auto;
   min-width: 0;
+  height: calc(2 * var(--shortcut-line) + 3px);
   overflow: hidden;
 }
 
@@ -77,6 +107,7 @@ const openEditor = () => {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  height: var(--shortcut-line);
   white-space: nowrap;
 }
 
@@ -104,7 +135,7 @@ const openEditor = () => {
   flex: none;
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   background: none;
   border: none;
   padding: 2px 4px;

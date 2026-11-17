@@ -1,13 +1,14 @@
 export {};
-import type { TestCardConfig } from '../../electron/test-card-config';
+import type { TestCardConfig } from '../../electron/test-card-config.mjs';
 import type { VideoFraming } from '../../electron/video-output-framing.mjs';
 import type {
-  OneShotMutationIdentity,
-  OneShotMutationRequest,
-  OneShotMutationResult,
-  OneShotProjectEnvelope,
-} from './oneShotMutation';
+  QuickPlayMutationIdentity,
+  QuickPlayMutationRequest,
+  QuickPlayMutationResult,
+  QuickPlayProjectEnvelope,
+} from './quickPlayMutation';
 import type { ProjectFileKind } from '../utils/projectFileFormats';
+import type { CueSheetExportResult, CueSheetPayload } from './cueSheet';
 
 declare global {
   interface Window {
@@ -38,7 +39,6 @@ declare global {
       }) => Promise<{ success: true; path: string } | { success: false; error?: string }>;
       copyFile: (source: string, destination: string) => Promise<{ success: boolean; error?: string }>;
       ensureDirectory: (dirPath: string) => Promise<{ success: boolean; error?: string }>;
-      generateWaveform: (audioPath: string, outputPath: string) => Promise<{ success: boolean; error?: string }>;
       openFolder: (folderPath: string) => Promise<{ success: boolean; error?: string }>;
       getImportPreferences: () => Promise<{
         preferencesSaved: boolean;
@@ -84,8 +84,17 @@ declare global {
       }) => Promise<boolean>;
       clearSpotifyImportRecovery: (activeProjectFolderPath: string) => Promise<boolean>;
       setCurrentProject: (projectPath: string) => Promise<{ success: boolean }>;
+      // File > Export Cue Sheet (PDF): main asks where to save and writes the file.
+      exportCueSheet: (sheet: CueSheetPayload) => Promise<CueSheetExportResult>;
+      // File > Clean Up Media: main lists the files in the show's media folder
+      // that nothing uses and moves the named ones to the Trash. Names only,
+      // never a path; main checks each one again before it moves anything.
+      media?: {
+        listUnused: () => Promise<UnusedMediaList>;
+        trashUnused: (names: string[]) => Promise<UnusedMediaTrashResult>;
+      };
+      keepAwake: (state: { showOpen: boolean; showMode: boolean; playing: boolean }) => Promise<boolean>;
       getFilePath: (file: File) => string | null;
-      checkFfmpeg: () => Promise<{ available: boolean; path: string | null }>;
       searchYouTube: (query: string) => Promise<Array<{
         id: string;
         title: string;
@@ -167,6 +176,8 @@ declare global {
       onMenuOpenProject: (callback: () => void) => void;
       onMenuSaveProject: (callback: () => void) => void;
       onMenuExportProject: (callback: () => void) => void;
+      onMenuExportCueSheet: (callback: () => void) => void;
+      onMenuCleanUpMedia: (callback: () => void) => void;
       onMenuImportProject: (callback: () => void) => void;
       onMenuCloseProject: (callback: () => void) => void;
       onMenuOpenRecentProject: (callback: (event: any, projectPath: string) => void) => void;
@@ -193,7 +204,7 @@ declare global {
       onUpdateDownloaded: (callback: (event: any, info: { version: string }) => void) => void;
       onUpdateError: (callback: (event: any, error: string) => void) => void;
       onMenuCheckForUpdates: (callback: () => void) => void;
-      syncProjectData: (data: any, identity: OneShotMutationIdentity | null, captureSession?: string | null) => void;
+      syncProjectData: (data: any, identity: QuickPlayMutationIdentity | null, captureSession?: string | null) => void;
       app?: {
         relaunch: () => Promise<boolean>;
         exit: () => Promise<boolean>;
@@ -208,22 +219,22 @@ declare global {
       getPendingOpenFile: () => Promise<{ filePath: string; kind: ProjectFileKind } | null>;
       readMidiConfig: () => Promise<Record<string, any>>;
       writeMidiConfig: (config: Record<string, any>) => Promise<{ success: boolean }>;
-      // Cart player window
-      openCartPlayerWindow: (projectFolderPath: string) => Promise<void>;
-      toggleCartPlayerWindow: () => Promise<void>;
-      attachCartPlayerWindow: () => void;
-      getCartWindowProjectData: () => Promise<OneShotProjectEnvelope>;
-      onCartPlayerWindowOpened: (callback: () => void) => void;
-      onCartPlayerWindowClosed: (callback: () => void) => void;
-      onCartWindowProjectUpdate: (callback: (snapshot: OneShotProjectEnvelope) => void) => () => void;
-      requestOneShotMutation: (request: OneShotMutationRequest) => Promise<OneShotMutationResult>;
-      onOneShotMutationRequest: (callback: (request: OneShotMutationRequest) => void) => () => void;
-      completeOneShotMutation: (result: OneShotMutationResult) => void;
+      // QuickPlay window
+      openDetachedQuickPlayWindow: (projectFolderPath: string) => Promise<void>;
+      toggleDetachedQuickPlayWindow: () => Promise<void>;
+      attachDetachedQuickPlayWindow: () => void;
+      getQuickPlayWindowProjectData: () => Promise<QuickPlayProjectEnvelope>;
+      onDetachedQuickPlayWindowOpened: (callback: () => void) => void;
+      onDetachedQuickPlayWindowClosed: (callback: () => void) => void;
+      onQuickPlayWindowProjectUpdate: (callback: (snapshot: QuickPlayProjectEnvelope) => void) => () => void;
+      requestQuickPlayMutation: (request: QuickPlayMutationRequest) => Promise<QuickPlayMutationResult>;
+      onQuickPlayMutationRequest: (callback: (request: QuickPlayMutationRequest) => void) => () => void;
+      completeQuickPlayMutation: (result: QuickPlayMutationResult) => void;
       // UI mode ("show mode") sync across windows
       broadcastUiMode: (mode: 'edit' | 'playback') => void;
       onUiModeSet: (callback: (event: any, mode: 'edit' | 'playback') => void) => void;
-      broadcastCartGridLayouts: (layouts: string) => void;
-      onCartGridLayoutsSet: (callback: (event: any, layouts: string) => void) => void;
+      broadcastQuickPlayGridLayouts: (layouts: string) => void;
+      onQuickPlayGridLayoutsSet: (callback: (event: any, layouts: string) => void) => void;
       // Recent-projects history (last 10 canonical shows opened on this client).
       liveplayProjects?: {
         recentList: () => Promise<Array<{ path: string; name: string; folderPath: string; lastOpened: number }>>;
@@ -239,6 +250,10 @@ declare global {
         restart: () => Promise<VideoOutputStatus>;
         rendererReady: () => Promise<VideoOutputStatus>;
         reportPictureHealth: (health: VideoPictureHealth) => Promise<void>;
+        // What the output page really covers, in CSS pixels of its own screen.
+        reportViewport: (viewport: {
+          innerWidth: number; innerHeight: number; screenWidth: number; screenHeight: number; pixelScale: number;
+        }) => Promise<boolean>;
         diagnostics: () => Promise<unknown>;
         onFrame: (callback: (frame: { jpeg: string; at: number }) => void) => () => void;
         listDisplays: () => Promise<VideoOutputDisplay[]>;
@@ -250,11 +265,15 @@ declare global {
           uuid: string; fileRevision: string | null; inPoint: number; outPoint: number | null;
         }) => Promise<VideoFrameCheckResult | 'canceled'>;
         cancelFrameCheck: (id: string) => void;
-        setCaptureSettings: (displayId: string | null, target: VideoStandbyDestination) => Promise<VideoOutputStatus>;
-        captureStandby: (source: 'output' | 'display', target: VideoStandbyTarget) => Promise<void>;
-        clearStandbyCapture: (target: VideoStandbyTarget) => Promise<void>;
-        getStandbyCapture: (sessionId: string, uuid: string | null, media: string | null) => Promise<VideoStandbyStill>;
-        onStandbyCaptureChanged: (callback: () => void) => () => void;
+        // Make an H.264 copy of a cue's video beside the original. `path` is
+        // the copy; `reason` says why there is none.
+        convertCue: (request: { id: string; sessionId: string; uuid: string }) => Promise<VideoConvertResult>;
+        cancelConvert: (id: string) => void;
+        onConvertProgress: (callback: (progress: { id: string; uuid: string; percent: number }) => void) => () => void;
+        // Which other screen a capture may be taken from.
+        setCaptureSettings: (displayId: string | null) => Promise<VideoOutputStatus>;
+        // A picture of the Video Output, or of that other screen, as a data URL.
+        captureStandby: (source: 'output' | 'display', target: VideoStandbyTarget) => Promise<{ image: string }>;
         setTestCard: (show: boolean) => Promise<boolean>;
         setTestCardConfig: (config: TestCardConfig) => Promise<VideoOutputStatus>;
         setTestCardConnection: (connection: { serverUrl: string; accessToken: string } | null) => Promise<VideoOutputStatus>;
@@ -266,7 +285,30 @@ declare global {
       };
     };
   }
-  type VideoFrameCheckResult = 'ok' | 'unreadable' | 'decode' | 'no-frame' | 'in-point' | 'duration' | 'timeout' | 'probe-error';
+  interface UnusedMediaFile {
+    name: string;
+    size: number;
+    // Milliseconds since the epoch.
+    modifiedAt: number;
+  }
+  // 'remote': the files are on the engine's computer. 'no-folder': the show is
+  // not saved to a folder here. 'unreadable': the show file or a backup could
+  // not be read, so nothing can be called unused.
+  type UnusedMediaList =
+    | { available: true; files: UnusedMediaFile[]; totalBytes: number }
+    | { available: false; reason: 'remote' | 'no-folder' | 'unreadable' };
+  // `kept` were left alone: in use again, changed, or no longer there to list.
+  interface UnusedMediaTrashResult {
+    trashed: string[];
+    failed: string[];
+    kept: string[];
+  }
+  type VideoFrameCheckResult ='ok' | 'unreadable' | 'decode' | 'no-frame' | 'in-point' | 'duration' | 'timeout' | 'probe-error';
+  type VideoConvertResult =
+    | { status: 'converted' | 'reused'; path: string }
+    | { status: 'failed' | 'canceled'; reason: VideoConvertFailure | null };
+  type VideoConvertFailure = 'remote' | 'missing' | 'no-converter' | 'no-encoder' | 'no-picture'
+    | 'already-converted' | 'converter' | 'stalled' | 'write';
   interface VideoOutputShortcut {
     key: string;
     code: string;
@@ -302,12 +344,11 @@ declare global {
     open: boolean;
     displayId: string | null;
     captureDisplayId: string | null;
-    captureTarget: VideoStandbyDestination;
     framing: VideoFraming;
     targetId: string | null;
     targetLabel: string | null;
     displays: VideoOutputDisplay[];
-    warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | null;
+    warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | 'display-not-covered' | null;
     playbackError: VideoPlaybackError | null;
     rendererReady: boolean;
     rendererResponsive: boolean;
@@ -322,15 +363,11 @@ declare global {
     fullscreen: boolean;
   }
 
-  type VideoStandbyDestination = 'session' | 'cue';
+  // The show a capture is for, and the cue when it is for one.
   interface VideoStandbyTarget {
-    identity: OneShotMutationIdentity;
+    identity: QuickPlayMutationIdentity;
     sessionId: string;
     itemUuid: string | null;
-  }
-  interface VideoStandbyStill {
-    standby: string | null;
-    cue: string | null;
   }
 
   interface VideoPictureHealth {

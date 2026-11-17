@@ -341,10 +341,16 @@ watch([() => props.startPath, () => props.fallbackStartPath, () => String(server
     .sel-count { color: var(--color-text-secondary); font-size: 12px; }
   }
 
-  &--staging &__content {
-    height: clamp(128px, 24vh, 192px);
+  // In a panel the list starts compact and takes whatever height the panel
+  // has to give, so a taller panel shows more files.
+  &--staging {
+    flex: 1 1 auto;
     min-height: 0;
-    .entries { flex: 1; min-height: 0; }
+  }
+  &--staging &__content {
+    flex: 1 1 clamp(128px, 24vh, 192px);
+    min-height: 128px;
+    .entries { flex: 1; min-height: 0; max-height: none; }
   }
 
   &--staging &__footer {
@@ -400,7 +406,7 @@ watch([() => props.startPath, () => props.fallbackStartPath, () => String(server
       &.drive .name,
       &.home .name { font-weight: 600; }
       .icon { font-size: 18px; text-align: center; color: var(--color-text-primary); }
-      &.file .icon { color: var(--color-accent); }
+      &.file .icon { color: var(--color-accent-text); }
 
       &.unsupported-file {
         cursor: not-allowed;
@@ -414,7 +420,7 @@ watch([() => props.startPath, () => props.fallbackStartPath, () => String(server
       &.unknown-file .icon { color: var(--color-text-secondary); }
 
       .file-type-note {
-        font-size: 10px;
+        font-size: 11px;
         font-style: italic;
       }
 

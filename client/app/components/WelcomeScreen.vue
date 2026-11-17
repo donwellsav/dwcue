@@ -340,7 +340,7 @@ const openOperatorManual = () => { void window.electronAPI.openOperatorManual();
 const serverUrlDisplay = computed(() => server.serverUrl ?? 'http://127.0.0.1:4480');
 
 // Get app version
-const appVersion = ref('2.6.24');
+const appVersion = ref('2.7.0');
 onMounted(async () => {
   if (import.meta.client && (window as any).electronAPI?.getAppVersion) {
     appVersion.value = await (window as any).electronAPI.getAppVersion();
@@ -456,7 +456,7 @@ async function probeServerReachable(url: string): Promise<void> {
 async function ensureLocalServer(): Promise<boolean> {
   const api = (window as any).electronAPI?.liveplayServer;
   if (!import.meta.client || !api?.setConfig || !api?.ensureRunning) {
-    connectionError.value = t('welcome.connectionFailed') + ' (local server controls unavailable)';
+    connectionError.value = t('welcome.engineUnavailable');
     return false;
   }
 
@@ -464,8 +464,8 @@ async function ensureLocalServer(): Promise<boolean> {
   const res = await api.ensureRunning();
   if (!res?.ok || !res.accessToken) {
     connectionError.value = res?.error
-      ? 'Local server failed to start: ' + res.error
-      : 'Local server failed to provide an access credential. Restart DonWells Cue and try again.';
+      ? t('welcome.engineStartFailed', { reason: res.error })
+      : t('welcome.engineNoAccess');
     return false;
   }
 
@@ -799,7 +799,7 @@ defineExpose({ handleNewProject, handleOpenProject, projectPickerReady, queueSta
 .link-button {
   background: none;
   border: none;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   text-underline-offset: 3px;
   cursor: pointer;
   font-size: inherit;
@@ -865,7 +865,7 @@ defineExpose({ handleNewProject, handleOpenProject, projectPickerReady, queueSta
   flex: 0 0 36px;
   border-radius: var(--border-radius-sm);
   background: var(--color-control);
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .button-label {
@@ -958,7 +958,7 @@ defineExpose({ handleNewProject, handleOpenProject, projectPickerReady, queueSta
   border-color: var(--color-accent);
 }
 .discovered-row:disabled { opacity: 0.5; cursor: default; }
-.discovered-icon { color: var(--color-accent); }
+.discovered-icon { color: var(--color-accent-text); }
 .discovered-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .discovered-name { font-weight: 600; }
 .discovered-meta {
@@ -968,7 +968,7 @@ defineExpose({ handleNewProject, handleOpenProject, projectPickerReady, queueSta
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.discovered-project { color: var(--color-accent); }
+.discovered-project { color: var(--color-accent-text); }
 .discovered-arrow { color: var(--color-text-secondary); }
 .discovered-rescan {
   margin-left: auto;
@@ -982,7 +982,7 @@ defineExpose({ handleNewProject, handleOpenProject, projectPickerReady, queueSta
   cursor: pointer;
   border-radius: 4px;
 }
-.discovered-rescan:hover:not(:disabled) { color: var(--color-accent); background: var(--color-surface-hover); }
+.discovered-rescan:hover:not(:disabled) { color: var(--color-accent-text); background: var(--color-surface-hover); }
 .discovered-rescan:disabled { opacity: 0.5; cursor: default; }
 .discovered-rescan .material-symbols-rounded { font-size: 18px; }
 .discovered-forget {

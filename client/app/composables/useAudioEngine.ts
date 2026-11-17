@@ -30,6 +30,7 @@
 // =====================================================================
 import type { AudioItem, GroupItem } from '~/types/project';
 import { runExclusivePendingAction, runPendingAction } from '~/utils/acknowledgedAction';
+import { quickPlayFollowsUpNext, type CueFollowOverride } from '~/utils/quickPlays';
 
 // ---------------------------------------------------------------------
 // Shapes consumed by Vue components.
@@ -64,7 +65,7 @@ const TRANSPORT_PAUSED    = 4;
 let _wsWired = false;
 
 // jump-cue resolves authored targets client-side because it stops immediately.
-// cue-to-continue is different: the server owns its one-shot runtime target and
+// cue-to-continue is different: the server owns its single-use runtime target and
 // disables only the active playback instance's loop, never the project document.
 // Authored target precedence remains goto-item, then goto-index, then the
 // structural next sibling.
@@ -79,7 +80,7 @@ export const resolveLoopContinuationTarget = (
 
 export const useAudioEngine = () => {
   const { currentProject, findItemByUuid, findItemByIndex, getAllItemsFlat } = useProject();
-  const { cartOnlyItems } = useCartItems();
+  const { quickPlayItems } = useQuickPlayItems();
   const server = useLiveplayServer();
   const { showHeaderWarning } = useHeaderWarnings();
   const { t } = useLocalization();
@@ -87,6 +88,9 @@ export const useAudioEngine = () => {
   // ---- Reactive state ------------------------------------------------
   const activeCues   = useState<Map<string, ActiveCueView>>('activeCues',  () => new Map());
   const activeGroups = useState<Map<string, ActiveGroupView>>('activeGroups', () => new Map());
+  // Server-owned Cue to Continue state per playing item, mirrored from
+  // cue_follow_set patches so every window shows the same toggle.
+  const cueFollowOverrides = useState<Map<string, CueFollowOverride>>('cueFollowOverrides', () => new Map());
 
   // Master meter values read straight off the server's master_channels
   // broadcast (the engine's real master meter). Combines L+R so the
@@ -122,11 +126,11 @@ export const useAudioEngine = () => {
     };
     const fromPlaylist = walk(currentProject.value.items);
     if (fromPlaylist) return fromPlaylist;
-    // Cart-only items live outside the main playlist tree but are still
+    // QuickPlay-only items live outside the main playlist tree but are still
     // valid playback targets — the server annotates them with cueId in
     // header_document() too. Without this branch their cue_state events
     // had nowhere to land and the UI never showed them as playing.
-    for (const it of cartOnlyItems.value.values()) {
+    for (const it of quickPlayItems.value.values()) {
       if (it && (it as any).cueId === cueId) return it as AudioItem;
     }
     return null;
@@ -170,19 +174,25 @@ export const useAudioEngine = () => {
 
   const removeActiveCue = (uuid: string) => {
     activeCues.value.delete(uuid);
+    // The override belongs to the pass that just ended.
+    cueFollowOverrides.value.delete(uuid);
   };
 
   // Server-owned cue-to-continue affects only the currently playing instance.
   // The authored endBehavior remains untouched in the client and on disk.
+  // A looping playlist cue arms once. A QuickPlay toggles: the same control
+  // cancels the follow again for the pass that is playing.
   const queueLoopContinuation = (item: AudioItem): Promise<boolean> => {
     if (!item?.uuid) return Promise.resolve(false);
     return runPendingAction(
       'transport:continue:' + item.uuid,
       async () => {
-        if (item.oneShot && setNextItemPending.value) return false;
-        const accepted = await server.cueToContinue(item.uuid);
-        if (accepted && item.oneShot) {
-          showHeaderWarning(t('oneShots.followPlayNextArmed'));
+        if (!item.quickPlay) return server.cueToContinue(item.uuid);
+        if (setNextItemPending.value) return false;
+        const follow = !quickPlayFollowsUpNext(item, cueFollowOverrides.value.get(item.uuid));
+        const accepted = await server.cueToContinue(item.uuid, follow);
+        if (accepted) {
+          showHeaderWarning(t(follow ? 'quickPlays.followPlayNextArmed' : 'quickPlays.followPlayNextCancelled'));
         }
         return accepted;
       },
@@ -275,7 +285,7 @@ export const useAudioEngine = () => {
     for (const item of getAllItemsFlat(currentProject.value.items)) {
       if (!activeCues.value.has(item.uuid) || item.type !== 'audio') continue;
       const audioItem = item as AudioItem;
-      // Cart-only One Shots live outside the playlist tree (sentinel index
+      // QuickPlay-only cues live outside the playlist tree (sentinel index
       // [-1, 0]): there is no "next playlist item" after one, so they never
       // contribute an Up Next target — and must not walk the tree at all.
       if (audioItem.index.some((i) => i < 0)) continue;
@@ -314,7 +324,7 @@ export const useAudioEngine = () => {
   // Installed exactly once per renderer. Everything below writes only to
   // useState-backed shared state, so a single set of subscribers serves every
   // caller — and a single set is the only safe number. useAudioEngine() is
-  // called per playlist row, per cart slot, per active cue, and from inside
+  // called per playlist row, per QuickPlay slot, per active cue, and from inside
   // event handlers (MainWorkspace's F1 path), and none of these ever
   // unsubscribed. The meters broadcast arrives at frame rate, so each leaked
   // subscriber became permanent per-frame work: re-mounting the playlist —
@@ -335,7 +345,7 @@ export const useAudioEngine = () => {
       // Remove by item_uuid first (activeCues is keyed by item uuid and the
       // server now includes it) — mirroring the upsert path below. Matching
       // only on serverCueId is fragile: when a cue's serverCueId doesn't line
-      // up with the event's cue_id (e.g. cart items, or a cue re-keyed across
+      // up with the event's cue_id (e.g. QuickPlay items, or a cue re-keyed across
       // a crossfade) the scan finds nothing and the entry lingers — which left
       // the outgoing item highlighted after a crossfade completed. Fall back to
       // the serverCueId scan for events that carry no item_uuid.
@@ -355,7 +365,7 @@ export const useAudioEngine = () => {
       // mirrored back to us via a next_item_set doc_patch.
       return;
     }
-    // Prefer item_uuid (server now includes it) so cart items without a
+    // Prefer item_uuid (server now includes it) so QuickPlay items without a
     // cueId annotation are still resolved. Fall back to cueId lookup.
     const item = (item_uuid ? findItemByUuid(item_uuid) : null) ?? findItemByServerCueId(cue_id);
     if (!item || item.type !== 'audio') return;
@@ -373,6 +383,15 @@ export const useAudioEngine = () => {
       masterGainDb.value = snap.master_gain_db;
     }
     nextItemOverrideUuid.value = snap?.next_item_uuid || null;
+    // The snapshot is authoritative for Cue to Continue too: a window opened
+    // or reconnected mid-pass must show the toggle the operator already set.
+    const overrides = new Map<string, CueFollowOverride>();
+    for (const cue of Array.isArray(snap?.cues) ? snap.cues : []) {
+      if (typeof cue?.item_uuid === 'string' && (cue.follow === 'armed' || cue.follow === 'suppressed')) {
+        overrides.set(cue.item_uuid, cue.follow);
+      }
+    }
+    cueFollowOverrides.value = overrides;
   });
 
   // Doc_patch: server-driven state changes other clients might trigger.
@@ -384,6 +403,14 @@ export const useAudioEngine = () => {
         break;
       case 'master_gain_changed':
         if (typeof patch.db === 'number') masterGainDb.value = patch.db;
+        break;
+      case 'cue_follow_set':
+        if (typeof patch.itemUuid !== 'string' || !patch.itemUuid) break;
+        if (patch.follow === 'armed' || patch.follow === 'suppressed') {
+          cueFollowOverrides.value.set(patch.itemUuid, patch.follow);
+        } else {
+          cueFollowOverrides.value.delete(patch.itemUuid);
+        }
         break;
       case 'custom_action_result':
         if (patch.ok === false) console.warn('[useAudioEngine] HTTP cue action failed:', patch.message);
@@ -556,6 +583,7 @@ export const useAudioEngine = () => {
   return {
     activeCues,
     activeGroups,
+    cueFollowOverrides,
     masterOutputLevel,
     masterPeakLevel,
     masterGainDb,

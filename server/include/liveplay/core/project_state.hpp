@@ -18,6 +18,7 @@
 
 #include "liveplay/audio/engine.hpp"
 #include "liveplay/audio/types.hpp"
+#include "liveplay/core/show_backups.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -182,19 +183,55 @@ public:
     ~ProjectState();
 
     // Load a canonical project file (.dwcue JSON). Returns true on success. On
-    // failure, the previous state is preserved.
+    // failure, the previous state is preserved. `require_idle` additionally
+    // refuses, without disturbing anything, while a cue is on air or audio is
+    // still loading; the check is made under the playback lifecycle lock, so
+    // no cue can start between the check and the switch.
     bool load(const std::filesystem::path& path,
               std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max(),
-              const std::string& expected_session = {}, json* loaded_header = nullptr);
+              const std::string& expected_session = {}, json* loaded_header = nullptr,
+              bool require_idle = false);
     // Order all writes, but leave playback and other show operations unlocked
     // during disk I/O. A stale save cannot change the current show's metadata.
+    // The file about to be overwritten is first copied into the show's Backups
+    // folder when the automatic-backup rules call for it (show_backups.hpp); a
+    // failed backup is logged and never fails the save.
     bool save(const std::filesystem::path& path, const json* replacement = nullptr,
               std::filesystem::path* published_path = nullptr, const std::string& expected_session = {});
 
     // Replace state from an in-memory JSON document. Same semantics as load.
     bool load_from_json(const json& doc, const std::filesystem::path& project_path = {},
                         std::chrono::steady_clock::time_point deadline = std::chrono::steady_clock::time_point::max(),
-                        const std::string& expected_session = {}, json* loaded_header = nullptr);
+                        const std::string& expected_session = {}, json* loaded_header = nullptr,
+                        bool require_idle = false);
+
+    // ---- Automatic show-file backups (core/show_backups.hpp) --------------
+    // The open show's backups, newest first. Empty when no saved show is open.
+    std::vector<show_backups::BackupEntry> list_show_backups() const;
+
+    enum class RestoreBackupStatus {
+        Restored,
+        SessionChanged,  // another show was opened meanwhile
+        InvalidName,     // not one of this show's backups
+        Busy,            // a cue is on air or audio is still loading
+        InvalidBackup,   // the backup cannot be read as a show
+        Failed,          // storage error; the show is unchanged
+    };
+    struct RestoreBackupResult {
+        RestoreBackupStatus status = RestoreBackupStatus::Failed;
+        std::string message;      // plain text for the operator when not Restored
+        json header;              // header_document() of the reloaded show
+        std::string undo_backup;  // backup holding the show file as it was before
+    };
+    // Replace the open show file with one of its backups and reload it through
+    // load(). The current file is backed up first, whatever the five-minute
+    // rule says, so the restore can be undone. Refused while the show is busy.
+    // Ordered with save() by the save mutex; on any failure nothing changes.
+    RestoreBackupResult restore_show_backup(const std::string& backup_name,
+                                            const std::string& expected_session = {});
+    // Why a backup cannot be restored right now, in plain words; empty when
+    // nothing is on air and audio has finished loading.
+    std::string restore_blocker();
 
     // Returns and clears any repair info recorded during the last load /
     // load_from_json call. The repair has already been applied in memory;
@@ -208,7 +245,7 @@ public:
     // Serialise the engine-facing portion (cues/mixers/routing).
     json to_json() const;
 
-    // Return the full client-side project document — items, groups, cart,
+    // Return the full client-side project document — items, groups, QuickPlays,
     // theme, hotkeys, settings — as last seen / mutated. Includes engine
     // state where useful (cue_id linkage). Use this in /api/project so the
     // client can render the whole project from a single GET.
@@ -216,7 +253,7 @@ public:
 
     // Lightweight header for the project: everything *except* the items
     // tree. Lets the client paint the workspace shell (theme, settings,
-    // cart slots, project name) before the (potentially large) items
+    // QuickPlay slots, project name) before the (potentially large) items
     // array has even started downloading. `itemCount` is the number of
     // top-level items the client can expect from /api/project/items.
     json header_document() const;
@@ -270,9 +307,9 @@ public:
     // ---- Item-level operations (mirror the client's Project model) -------
     // Insert/update/remove an item in the document, and keep the engine in
     // sync for audio items. `parent_uuid` empty = top level; non-empty =
-    // child of that group. `cart_only` routes the item into the document's
-    // separate `cartOnlyItems` array (cart slots, not the playlist) so a
-    // cart-bound cue never leaks into the playlist tree. Returns the cue_id
+    // child of that group. `quick_play_only` routes the item into the document's
+    // separate `quickPlayItems` array (QuickPlays, not the playlist) so a
+    // QuickPlay cue never leaks into the playlist tree. Returns the cue_id
     // of the newly engine-loaded audio item, or empty for groups / on failure.
     //
     // The returned CueId is valid immediately, but the audio decode happens on
@@ -282,7 +319,7 @@ public:
     // when the decode finishes. play_item() waits for a still-loading cue's own
     // decode (and only that one), so an immediate play after add still works.
     audio::CueId add_item(const json& item, const std::string& parent_uuid = "",
-                          bool cart_only = false);
+                          bool quick_play_only = false);
     bool         update_item(const std::string& uuid, const json& patch,
                              std::unique_lock<std::recursive_mutex>* project_lock = nullptr);
     bool         remove_item(const std::string& uuid);
@@ -343,6 +380,16 @@ public:
     // Returns false when uuid is not an active, sequenced loop or is already armed.
     bool cue_to_continue(const std::string& uuid,
                          std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
+    // Operator toggle for Cue to Continue on the pass that is playing now.
+    // follow=true arms it (or lifts an earlier cancel); follow=false un-arms it,
+    // or cancels a QuickPlay's authored Play Next for this pass only. The
+    // project document is never modified. Every accepted change is fanned out
+    // to clients as a cue_follow_set patch.
+    bool set_cue_follow(const std::string& uuid, bool follow,
+                        std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
+    // "armed", "suppressed", or empty when the playing pass follows its
+    // authored ending. Empty for items that are not playing.
+    std::string cue_follow_state(const std::string& uuid);
 
     // Stop every cue for the global "Stop All" command. When `fade_ms` is
     // provided it is used directly; when omitted the project-wide
@@ -439,7 +486,7 @@ public:
     // Compact machine-readable transport summary: project header facts, every
     // on-air item (name, colour, index path, elapsed/remaining), the effective
     // "Up Next" target, selection + Show Mode, master gain/limiter state and
-    // cart-slot bindings. Built for polling-free control surfaces — fetch once
+    // QuickPlay slot bindings. Built for polling-free control surfaces — fetch once
     // on connect, then keep it fresh from the /ws push messages (cue_state,
     // meters, doc_patch).
     json state_summary() const;
@@ -451,8 +498,8 @@ public:
     // derivable / loaded.
     std::string go(std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
 
-    // Item uuid bound to a cart slot, or empty if the slot is unbound.
-    std::string cart_slot_item_uuid(int slot) const;
+    // Item uuid bound to a QuickPlay slot, or empty if the slot is unbound.
+    std::string quick_play_slot_item_uuid(int slot) const;
 
     // ---- Per-device routing ---------------------------------------------
     // Resolve a unique catalog name or current opened-device id. Opens the
@@ -507,9 +554,9 @@ public:
     // start_preview() picks up the updated previewDevice setting.
     void apply_preview_device_change(std::unique_lock<std::recursive_mutex>& lifecycle_lock);
 
-    // Cart slot binding (slot → item uuid). Slot < 0 clears.
-    bool set_cart_slot(int slot, const std::string& item_uuid);
-    bool clear_cart_slot(int slot);
+    // QuickPlay slot binding (slot → item uuid). Slot < 0 clears.
+    bool set_quick_play_slot(int slot, const std::string& item_uuid);
+    bool clear_quick_play_slot(int slot);
 
     // Theme + project settings patches. Each accepts a JSON object that's
     // shallow-merged into the corresponding section.
@@ -571,7 +618,7 @@ private:
     std::string           project_name_ = "Untitled";
     std::filesystem::path project_file_path_;
 
-    // The full client-side project document (items, cart, theme, etc.). The
+    // The full client-side project document (items, QuickPlays, theme, etc.). The
     // server treats most of this as opaque user data — only audio items have
     // engine-facing meaning, and they are mirrored into `cues_`. We keep the
     // whole document here so a remote client can fetch it back via GET.
@@ -733,6 +780,16 @@ private:
         bool                     continue_armed       = false;
         bool                     continue_to_play_next = false;
         std::string              continue_target_uuid;
+        // Arming or cancelling clears the timing-based follows; toggling back
+        // restores what the pass had before the operator touched it.
+        double                   follow_saved_crossfade_sec       = 0.0;
+        double                   follow_saved_start_next_time     = 0.0;
+        double                   follow_saved_start_next_fade_sec = 0.0;
+        // QuickPlay pass. Its follow always starts at the natural
+        // end on the control thread, like an armed Cue to Continue.
+        bool                     quick_play           = false;
+        // The operator cancelled this pass's authored follow. Runtime-only.
+        bool                     follow_suppressed    = false;
         std::vector<DuckedEntry> ducked;
         double                   duck_release_sec = 1.0;
         std::vector<ScheduledCustomAction> custom_actions;
@@ -766,6 +823,19 @@ private:
     // Serializes snapshot through atomic replace. mutex_ remains brief and is
     // never held during filesystem I/O.
     mutable std::mutex           save_mutex_;
+    // Automatic backups; all guarded by save_mutex_. The baseline identifies
+    // the open (revision + file) whose on-disk "as opened" copy is already
+    // safe, so only the first save after an open bypasses the interval.
+    bool                         backup_baseline_known_ = false;
+    std::uint64_t                backup_baseline_revision_ = 0;
+    std::filesystem::path        backup_baseline_path_;
+    std::optional<std::chrono::steady_clock::time_point> last_show_backup_at_;
+    std::string                  last_show_backup_failure_;
+    std::optional<std::chrono::steady_clock::time_point> last_show_backup_failure_at_;
+    // Called by save() just before the atomic replace, with save_mutex_ held
+    // and no project lock held. Never throws.
+    void backup_show_file_before_overwrite(const std::filesystem::path& path,
+                                           std::uint64_t open_revision) noexcept;
     detail::PlaybackGenerationFence playback_generations_;
     std::thread                sequencer_thread_;
     std::atomic<bool>          sequencer_running_{false};
@@ -788,6 +858,12 @@ private:
     // nothing / no target). An armed "Up Next" override takes precedence and
     // is consumed only by a successful trigger. Takes its own locks.
     std::string resolve_advance_target(const std::string& source_uuid, bool manual_override_only = false);
+    // A QuickPlay lives outside the playlist, so its authored ending cannot use
+    // the playlist's sibling order: Play Next means the cue GO would start, and
+    // Go to Item/Index means that authored target, whatever is armed Up Next.
+    // nullopt when source_uuid is not a QuickPlay. Takes its own locks.
+    std::optional<std::string> quick_play_advance_target(const std::string& source_uuid);
+    void broadcast_cue_follow(const std::string& uuid, const char* follow);
     std::string music_backup_for(const std::string& source_uuid);
     bool start_music_backup(std::unique_lock<std::recursive_mutex>& lifecycle_lock,
                             const std::string& source_uuid, const std::string& missed_target);
@@ -836,6 +912,9 @@ private:
     // end-behaviour "next") use this to avoid restarting a next item the
     // operator already started manually. Groups have no cue → false.
     bool item_on_air(const std::string& uuid);
+    // True while any Program cue, or the preview when `include_preview`, is
+    // not fully stopped (playing, fading or paused).
+    bool playback_active(bool include_preview = true);
 
 public:
     // The control server queues HTTP custom actions on its single bounded
@@ -859,6 +938,8 @@ private:
     // produces a v2-flavoured one with the equivalent routing matrix.
     json upgrade_legacy_document(const json& legacy) const;
     bool is_legacy_document(const json& doc) const;
+    // The schemas load() accepts from a .dwcue file.
+    bool is_supported_show_document(const json& doc) const;
 
 
     // Build an initial empty document with default theme + empty sections.

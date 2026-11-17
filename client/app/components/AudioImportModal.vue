@@ -4,7 +4,7 @@
       <div class="import-media" :class="docked ? 'workspace-import-body' : 'modal'">
         <header v-if="!docked">
           <h2>{{ t('importAudio.title') }}</h2>
-          <Btn type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
+          <Btn class="stop-all-btn" type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
           <button class="x" :aria-label="t('actions.close')" :disabled="busy || pickingLocal" @click="close">✕</button>
         </header>
 
@@ -36,7 +36,7 @@
             <ServerFilePickerModal docked :open="open" :filter="MEDIA_FILE_ACCEPT" :filter-options="[]"
               :fallback-start-path="projectStartPath" location-context="quickplay-import"
               :confirm-label="t('importAudio.importSelected')" @pick="onServerPick([$event])" @close="close" />
-            <p v-if="!server.isLocalServer" class="hint">{{ t('oneShots.hint') }}</p>
+            <p v-if="!server.isLocalServer" class="hint">{{ t('quickPlays.hint') }}</p>
           </template>
           <template v-else-if="server.isLocalServer && hasElectron">
             <ServerFileBrowser v-if="localPicker === 'files'" staging
@@ -847,7 +847,7 @@ function formatBytes(n: number): string {
   .plan-grid {
     display: grid; gap: 8px; margin: 0;
     > div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; align-items: baseline; }
-    dt { color: var(--color-text-tertiary); font-size: 10px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+    dt { color: var(--color-text-tertiary); font-size: 11px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
     dd { min-width: 0; margin: 0; }
     .destination {
       display: block;
@@ -857,7 +857,7 @@ function formatBytes(n: number): string {
   }
   .settings-summary { display: flex; flex-wrap: wrap; gap: 5px; }
   .setting-pill {
-    color: var(--color-text-secondary); font-size: 10px; line-height: 1.4; white-space: nowrap;
+    color: var(--color-text-secondary); font-size: 11px; line-height: 1.4; white-space: nowrap;
     & + &::before { content: '•'; margin-right: 5px; color: var(--color-border-strong); }
     strong { margin-left: 3px; font-weight: 700; &.on { color: var(--color-success); } &.off { color: var(--color-text-tertiary); } }
   }
@@ -868,14 +868,14 @@ function formatBytes(n: number): string {
     .result-actions { display: flex; gap: 6px; }
     ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
     li { display: grid; grid-template-columns: 58px minmax(120px, 1fr) auto; gap: 6px 10px; align-items: center; padding: 7px 8px; background: var(--color-background); border-radius: var(--control-radius); }
-    .result-status { font-size: 10px; font-weight: 750; text-transform: uppercase; }
+    .result-status { font-size: 11px; font-weight: 750; text-transform: uppercase; }
     .ready .result-status { color: var(--color-success); }
     .warning .result-status { color: var(--color-warning); }
     .failed .result-status { color: var(--color-danger); }
     .skipped .result-status { color: var(--color-text-tertiary); }
     .result-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-primary); font-size: 12px; }
-    .result-details { color: var(--color-text-tertiary); font-size: 10px; white-space: nowrap; }
-    .result-reason { grid-column: 2 / -1; color: var(--color-text-secondary); font-size: 10px; line-height: 1.35; }
+    .result-details { color: var(--color-text-tertiary); font-size: 11px; white-space: nowrap; }
+    .result-reason { grid-column: 2 / -1; color: var(--color-text-secondary); font-size: 11px; line-height: 1.35; }
   }
 }
 
@@ -919,7 +919,7 @@ function formatBytes(n: number): string {
   .pane > p { margin: 0; }
   .import-progress, .import-results { grid-column: 1 / -1; }
   .import-progress .btn { flex-shrink: 0; }
-  .import-results ul { max-height: clamp(120px, 26vh, 240px); overflow: auto; overscroll-behavior: contain; }
+  .import-results ul { max-height: clamp(200px, 44vh, 520px); overflow: auto; overscroll-behavior: contain; }
   .import-results li { grid-template-columns: 58px minmax(0, 1fr) auto; }
   .import-results .result-details { white-space: normal; }
   .import-results .result-reason { overflow-wrap: anywhere; }
@@ -927,5 +927,25 @@ function formatBytes(n: number): string {
 
 @container (max-width: 760px) {
   .workspace-import-body { grid-template-columns: minmax(0, 1fr); }
+}
+
+// In the workspace panel the file browser takes all the height the panel has,
+// so a taller panel shows more files instead of more empty space.
+.docked-import {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+
+  > .workspace-import-body {
+    flex: 1 0 auto;
+    grid-template-rows: minmax(0, 1fr);
+    align-content: stretch;
+  }
+  .import-source--picking {
+    align-self: stretch;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .import-source--picking > .pane { min-height: 0; }
+  .import-source--picking > .pane :deep(.picker-dock) { flex: 1 1 clamp(174px, 28vh, 235px); }
 }
 </style>

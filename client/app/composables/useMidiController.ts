@@ -1,5 +1,5 @@
-import { CART_SLOT_COUNT_LIMITS, type AudioItem } from '~/types/project';
-import { buildOneShotSlots } from '~/utils/oneShots';
+import { QUICK_PLAY_SLOT_COUNT_LIMITS, type AudioItem } from '~/types/project';
+import { buildQuickPlayCells } from '~/utils/quickPlays';
 
 // MIDI binding: identifies a specific control on a MIDI device
 export interface MidiBinding {
@@ -26,12 +26,12 @@ export const DEFAULT_MASTER_VOLUME_MULTIPLIER = 1;
 
 // All available actions with display metadata
 export const MIDI_ACTIONS: { id: MidiActionId; labelKey: string; category: string; continuous: boolean; n?: number }[] = [
-  // One Shots. Keep the legacy trigger-slot action ids so saved controller
-  // mappings remain valid after the Cart-to-One-Shot migration.
-  ...Array.from({ length: CART_SLOT_COUNT_LIMITS.max }, (_, i) => ({
+  // QuickPlays. Keep the legacy trigger-slot action ids so saved controller
+  // mappings remain valid after the move from slots to QuickPlays.
+  ...Array.from({ length: QUICK_PLAY_SLOT_COUNT_LIMITS.max }, (_, i) => ({
     id: `trigger-slot-${i}` as MidiActionId,
-    labelKey: 'controls.oneShot',
-    category: 'One Shots',
+    labelKey: 'controls.quickPlay',
+    category: 'QuickPlays',
     continuous: false,
     n: i + 1,
   })),
@@ -113,11 +113,11 @@ export const useMidiController = () => {
   const { playCue, playNext, pauseCue, resumeCue, stopAllCues, activeCues, adjustMasterGain, queueLoopContinuation, jumpCue } = useAudioEngine();
   const { selectedItem, selectedItems, saveProject, currentProject, projectHydrationStatus, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem } = useProject();
   const { sessionLost } = useConnectionGuard();
-  const { cartOnlyItems } = useCartItems();
-  const { playOneShot } = useOneShotPlayback();
-  const oneShotSlots = computed(() => buildOneShotSlots(
+  const { quickPlayItems } = useQuickPlayItems();
+  const { playQuickPlay } = useQuickPlayPlayback();
+  const quickPlayCells = computed(() => buildQuickPlayCells(
     currentProject.value?.items ?? [],
-    Array.from(cartOnlyItems.value.values()),
+    Array.from(quickPlayItems.value.values()),
   ));
 
   // Same active-cue-then-selection fallback toggle-loop/pause-resume use
@@ -129,9 +129,9 @@ export const useMidiController = () => {
         const { findItemByUuid } = useProject();
         const found = findItemByUuid(firstUuid);
         if (found && found.type === 'audio') return found as AudioItem;
-        const { getCartOnlyItem } = useCartItems();
-        const cartItem = getCartOnlyItem(firstUuid);
-        if (cartItem) return cartItem;
+        const { getQuickPlayItem } = useQuickPlayItems();
+        const quickPlayItem = getQuickPlayItem(firstUuid);
+        if (quickPlayItem) return quickPlayItem;
       }
     }
     if (selectedItem.value && selectedItem.value.type === 'audio') {
@@ -147,8 +147,8 @@ export const useMidiController = () => {
     if (actionId !== 'stop-all' && sessionLost.value) return false;
     if (actionId.startsWith('trigger-slot-')) {
       const slot = parseInt(actionId.replace('trigger-slot-', ''), 10);
-      const item = oneShotSlots.value[slot];
-      if (item) return playOneShot(item);
+      const item = quickPlayCells.value[slot];
+      if (item) return playQuickPlay(item);
       return;
     }
     if (actionId !== 'stop-all' && projectHydrationStatus.value !== 'ready') return false;
@@ -163,8 +163,8 @@ export const useMidiController = () => {
           const found = findItemByUuid(firstUuid);
           if (found && found.type === 'audio') targetItem = found as AudioItem;
           if (!targetItem) {
-            const { getCartOnlyItem } = useCartItems();
-            targetItem = getCartOnlyItem(firstUuid);
+            const { getQuickPlayItem } = useQuickPlayItems();
+            targetItem = getQuickPlayItem(firstUuid);
           }
         }
       }
@@ -188,8 +188,8 @@ export const useMidiController = () => {
           const found = findItemByUuid(firstUuid);
           if (found && found.type === 'audio') targetItem = found as AudioItem;
           if (!targetItem) {
-            const { getCartOnlyItem } = useCartItems();
-            targetItem = getCartOnlyItem(firstUuid);
+            const { getQuickPlayItem } = useQuickPlayItems();
+            targetItem = getQuickPlayItem(firstUuid);
           }
         }
       }

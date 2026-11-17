@@ -151,7 +151,7 @@ function folderLabel(folder: string): string {
   background: transparent;
   text-align: left;
 
-  .material-symbols-rounded { flex: 0 0 auto; font-size: 17px; color: var(--color-accent); }
+  .material-symbols-rounded { flex: 0 0 auto; font-size: 17px; color: var(--color-accent-text); }
   span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   &:hover { background: var(--color-surface-hover); color: var(--color-text-primary); }
   &.active { background: var(--color-control); color: var(--color-text-primary); }

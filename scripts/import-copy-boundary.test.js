@@ -68,7 +68,7 @@ test('copy import preserves bytes, rejects reference relocation and pins its pro
       await mkdir(folder);
       const file = path.join(folder, `${name}.dwcue`);
       await writeFile(file, JSON.stringify({
-        name, version: '2.0.0', folderPath: folder, items: [], cartItems: [], settings: {},
+        name, version: '2.0.0', folderPath: folder, items: [], quickPlaySlots: [], settings: {},
       }));
       projects[name] = { folder, file, media: path.join(folder, 'media') };
     }

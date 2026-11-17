@@ -1,6 +1,6 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.6.24
+**Version:** 2.7.0
 **Source revision:** 655ec2a
 **Native engine baseline:** 5e259d0
 **Edition:** 15 November 2026 · English · Operator edition
@@ -28,7 +28,7 @@ The Video Output window is a separate picture renderer on the desktop computer. 
 1. **Confirm the next target before GO.** Read the cue name beside **Play Next** and look for the **Up Next** marker. Selection, an armed target, and a playing cue are different states.
 2. **Rehearse what happens at the end.** Imported cues can have **Play Next** end behavior and **Stop All Other Cues** ducking. Do not assume every new cue stops and waits, or that firing a sting leaves a bed running.
 3. **Treat Preview as a real output.** Choose a separate headphone or monitor output. Sending Preview to the same physical speakers as Main makes it audible to the audience even though its device ownership is safely shared.
-4. **Preserve a known-good show.** Save a rehearsal copy, keep the media with it, and test the exported copy before travel. Autosave is not a versioned backup.
+4. **Preserve a known-good show.** Save a rehearsal copy, keep the media with it, and test the exported copy before travel. Autosave is not a versioned backup. The automatic **Show backups** hold recent copies of the show file only, not its media.
 
 > **CAUTION — Stop is not necessarily instant.** The **Stop All Cues** button and the default **Escape** shortcut use the project's Stop All fade. The default is 1 second; 0 means immediate. Rehearse the configured behavior and know the venue's independent console mute or other emergency-silence procedure.
 
@@ -59,11 +59,11 @@ The Linux x86_64 packages require glibc 2.43 or newer. They were tested on Ubunt
 
 When a newer release is available, the desktop app shows a five-second header notice and leaves an **Update Available** indicator. Open **Settings → About** to check for updates or choose **Download Update**. On the welcome screen, choose **Update Available** or use **Help → Check for Updates**. About opens below the welcome screen. macOS, Windows, and Linux AppImage builds can install in place. DEB and RPM builds open the downloads page. After download, stop playback and Preview and exit Show Mode to use **Install Now**. Choose **Install on Exit** to apply the update on the next app quit. Download and installation each require an operator action.
 
-Connect the audio interface before opening the show. Confirm the correct outputs at the sound console, start with a conservative listening level, connect mains power, and disable sleep for the performance using the operating system's controls. Prevent notification sounds from reaching the audience. Keep a separate copy of the show and its media on reliable storage.
+Connect the audio interface before opening the show. Confirm the correct outputs at the sound console, start with a conservative listening level, and connect mains power. DonWells Cue keeps the computer awake while a show is open, and keeps the display on in Show Mode and while a cue is playing. Closing a laptop lid can still put the computer to sleep. Prevent notification sounds from reaching the audience. Keep a separate copy of the show and its media on reliable storage.
 
-On launch, the desktop normally starts its managed local server automatically. The welcome screen indicates **Using local server on this computer** once connected. If the engine is starting, wait for connection rather than repeatedly reopening the app. The **Connect to a server on the network…** option reveals remote setup; see chapter 10 before using it.
+On launch, the desktop normally starts its managed local server automatically. The welcome screen indicates **Using the audio engine on this computer** once connected. If the engine is starting, wait for connection rather than repeatedly reopening the app. The **Connect to a server on the network…** option reveals remote setup; see chapter 10 before using it.
 
-![Welcome screen connected to the isolated software engine, showing version 2.6.17.](manual-assets/welcome-current.png)
+![Welcome screen using the audio engine on this computer, showing version 2.7.0.](manual-assets/welcome-current.png)
 
 **Procedure — establish a known starting state**
 
@@ -108,9 +108,9 @@ DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; po
 
 ### Edit Mode
 
-Use Edit Mode to import, organize, and configure the show. The top bar contains Settings, Video Output, Level Check, Autosave, and the Show Mode switch. Open **Settings → Shortcuts** for the keyboard reference and editor. While a Settings tab has focus, Left and Right move between tabs and Enter opens the focused tab. Transport sits below the top bar with **Stop All Cues**, the active-cue area, and **Play Next**. The button shows the cue name on multiple lines, its number, and the playable duration. A wider window has room for cue type, group, and loop or group start behavior where applicable. Hover for the full name. The output strip shows the selected device, main level, meters, and true-peak limiter.
+Use Edit Mode to import, organize, and configure the show. The top bar contains Settings, Video Output, Autosave, and the Show Mode switch. **Pre-show check** and **Level Check** open from the top row of **Settings → Audio Routing**. Open **Settings → Shortcuts** for the keyboard reference and editor. While a Settings tab has focus, Left and Right move between tabs and Enter opens the focused tab. Transport sits below the top bar with **Stop All Cues** in its yellow-and-black striped frame, the active-cue area, and the green **Play Next**. The button shows the cue name on multiple lines, its number, and the playable duration. A wider window has room for cue type, group, and loop or group start behavior where applicable. Hover for the full name. The output strip shows the selected device, main level, meters, and true-peak limiter. The clocks at the right of the top bar are **Time Left** for the cue that is playing, **List Left**, and the time of day. **List Left** is the running time from here to the end of the playlist: the rest of the playing cue, then **Up Next** and every cue after it. Time spent waiting for GO is not counted. A narrow window hides List Left to keep the other two clocks.
 
-![Current Edit Mode with the playlist, acknowledged Up Next target, Basic Info and output console.](manual-assets/edit-workspace.png)
+![Edit Mode with the playlist, the Up Next cue edged in green, Basic Info and the output console.](manual-assets/edit-workspace.png)
 
 ![Basic Info with aligned cue details, media, identifiers, and cueing controls.](manual-assets/cue-basic-current.png)
 
@@ -124,19 +124,19 @@ Use Edit Mode to import, organize, and configure the show. The top bar contains 
 
 The cue row provides **Set As Next**, **Preview**, **Play**, **Edit**, and **Delete** controls in Edit Mode. Hover for the current tooltip rather than relying on icon shape alone. **Play** fires a cue directly; **Set As Next** requests a manual GO override without playing it. The displayed target changes only after the engine acknowledges the request; a refusal or lost connection leaves the prior target authoritative. The **Edit** control opens **Properties**, with **Basic Info**, **Playback**, and **Output** tabs.
 
-The cue row's **Delete** button and a bulk keyboard delete open **Delete Items** in the lower panel. Check the cue name or selection count before confirming. Changing the selection leaves the original confirmation targets intact. The playlist, GO, and Stop All remain available. A single selected cue can still be removed directly with the Delete key.
+Select a row to show its **Delete** button; it sits to the left of **Edit**, away from **Play**. Unselected rows give that space to the title. That button and a bulk keyboard delete open **Delete Items** in the lower panel. Check the cue name or selection count before confirming. Changing the selection leaves the original confirmation targets intact. The playlist, GO, and Stop All remain available. A single selected cue can still be removed directly with the Delete key.
 
-An empty QuickPlays bank is collapsed by default. Press **Q** or choose **Show QuickPlays** to reveal it. Assigning a cell can reveal the bank automatically unless you have explicitly chosen its visibility. Playback and shortcut assignments stay active when the bank is collapsed. On a narrow workspace, the bank and playlist share the available width.
+By default the bank beside the playlist shows ten QuickPlays, two across and five down, and the detached window shows twenty, five across and four down; the rest are reached by scrolling. At the default window size they fit without scrolling: a short tile shows one line of its name, and a taller one shows two lines and the **Playing** badge. Change the rows, columns and minimum height in **Settings → User Interface**. In Show Mode the bank leaves out the empty rows after the last QuickPlay; each QuickPlay keeps its place, number and size. Edit Mode shows every cell of the layout. An empty QuickPlays bank is collapsed by default. Press **Q** or choose **Show QuickPlays** to reveal it. Assigning a cell can reveal the bank automatically unless you have explicitly chosen its visibility. Playback and shortcut assignments stay active when the bank is collapsed. On a narrow workspace, the bank and playlist share the available width.
 
-On narrow playlists, cue names appear above the row controls and the toolbar uses icons. Hover over an icon for its label when tooltips are enabled. The header can show the full silence countdown alongside a notice.
+A cue is one line at every window size. On a narrow playlist a long cue name is cut short, with the full name in its tooltip and in **Play Next** and the active-cue area, and the toolbar uses icons. Hover over an icon for its label when tooltips are enabled. The header can show the full silence countdown alongside a notice.
 
 ### Show Mode
 
-Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The QuickPlay Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
+Switch to **Show Mode** for performance after preparation is complete. It is Edit Mode with the editing taken out: the same rows, QuickPlays and transport, at the same size and in the same places, without Import, Add Group, Shuffle, the settings and delete buttons on rows and tiles, drag and drop, or typed levels. The places of those buttons stay empty, and the top bar and transport are unchanged. Nothing moves or changes size when you switch, and the row height and QuickPlays layout in **Settings → User Interface** apply to both modes. GO and assigned controls remain live. The QuickPlay Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
-Rehearse at the actual display size and app zoom. Settings, Properties, QuickPlay Settings, and imports share the lower panel. It fits the content up to 60% of the window, with room reserved for the playlist. On a short window the panel may scroll sooner. Tabs stay along the bottom while the controls scroll. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its adjusted height while the app is open. GO and Stop All stay at the top and the shortcut bar shows a compact reference. **Customize Shortcuts…** opens the full editor. Settings choices for default transition, language, meter display and meter ballistics expand in the panel.
+Rehearse at the actual display size and app zoom. Settings, Properties, and imports share the lower panel. It fits the content up to 60% of the window, with room reserved for the playlist. On a short window the panel may scroll sooner. Tabs stay along the bottom while the controls scroll. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its adjusted height while the app is open. GO and Stop All stay at the top and the shortcut bar along the bottom shows two lines of keyboard shortcuts, the same in both modes. **Customize Shortcuts…** opens the full editor. Settings choices for default transition, language, meter display and meter ballistics expand in the panel.
 
-![Show Mode at a small window size with the silence countdown, cue names, and one-line QuickPlays shortcut reference.](manual-assets/show-mode.png)
+![Show Mode at the same window size as the Edit Mode picture above: the same screen without the editing controls, with the silence countdown, the playing cue edged in red, and Up Next in green.](manual-assets/show-mode.png)
 
 ### Selection is not arming
 
@@ -159,7 +159,7 @@ Accepted GO consumes an override and refused GO retains it. Check readiness, err
 
 ### Local files first
 
-Open **Import Media** from the playlist. For a local engine, **Choose files…** and **Choose folder…** both open in the lower panel. Use **Add** to stage selected files. Choosing a folder stages supported files from it and its subfolders in filename order. Use **Select all** or **Select none** to adjust the batch. **Import as group** puts the selected cues in a group named for the folder.
+Choose **Import** on the playlist bar, then **Media files**. Every file browser opens tall so a folder can be read without constant scrolling: the importers, **Open Project**, **Save As**, archive destinations and the pickers inside Properties. Use the arrows button beside **Close** to make an import panel larger or return it to its usual size, or drag the bar at its top edge. When the show can only import files (a remote engine), **Import** opens Media files directly. For a local engine, **Choose files…** and **Choose folder…** both open in the lower panel. Use **Add** to stage selected files. Choosing a folder stages supported files from it and its subfolders in filename order. Use **Select all** or **Select none** to adjust the batch. **Import as group** puts the selected cues in a group named for the folder.
 
 If a subfolder cannot be read, its relative path appears in a warning. The readable files remain available to import. Restore access and select the skipped subfolder separately if the show needs its files.
 
@@ -215,7 +215,7 @@ Wait for the source copy/download to finish and for media readiness before takin
 
 YouTube and Spotify import controls are available in Edit Mode. They depend on external services and downloader availability. Prepare and verify these imports before the show, not on a live cue call. Use only material you are authorized to obtain and perform; an import feature does not supply a public-performance licence. Once imported, rehearse from the local show media rather than relying on a working internet connection at the venue.
 
-**Import from YouTube** and **Spotify** open in the lower panel. Close the panel or switch to Settings or Properties to make room for the playlist during a job. Reopen the same import to check its progress, results, or retry actions. Use the job’s **Cancel** button to stop the import. **Stop All Cues** controls playback independently.
+Choose **Import** on the playlist bar, then **Import from YouTube** or **Spotify**; each opens in the lower panel. The first online import on a computer downloads the converter it needs once, and later imports reuse it. Do that first import before the show, while the computer is online. Close the panel or switch to Settings or Properties to make room for the playlist during a job. Reopen the same import to check its progress, results, or retry actions. Use the job’s **Cancel** button to stop the import. **Stop All Cues** controls playback independently.
 
 Paste a Spotify link or short share link, then choose **Review tracks** to retrieve usable tracks in playlist order. The review counts entries with missing or invalid Spotify track IDs. Large playlists can take several minutes to review. Use **Select all** or **Select none** above the track list, then **Download & Add** below it. Use **Change Link** to return to the URL field. During a download, the panel shows the current phase, count, and **Cancel**. Resolve unavailable, unmatched or failed entries before taking the cues. **Technical details** shows the downloader's message if review fails.
 
@@ -238,7 +238,7 @@ In **Properties → Basic Info**, use **Replace or relink media** beside **File*
 
 Open **Properties → Playback** for the waveform and the aligned **Cue Timing**, **Fade Settings**, and **Transitions** columns. Set **In Point** and **Out Point** around the part you want to use. Listen to the entrance and exit; a visually quiet waveform may contain room tone, a breath, or an intentional pause. Leave enough material for any fade or transition you configure.
 
-![Playback controls and waveform for the generated practice cue; In/Out and explicit preparation controls are visible.](manual-assets/cue-playback-current.png)
+![Playback controls and waveform for a cue; In and Out points, fades, Trim Silence and Reduce peaks are visible.](manual-assets/cue-playback-current.png)
 
 **Procedure — trim and rehearse one cue**
 
@@ -299,7 +299,38 @@ Do not use a loop as a substitute for rehearsing the loop boundary. Check for cl
 
 Open the group's **Edit** control to see **Start Behavior**, **End Behavior**, and the **Continue with** backup selector together under **Cueing**. **Play First** follows the first-child path and honors each nested group’s Start Behavior. It requires the first child to be ready. A nested **Play All** on that path can start several cues. **Play All** owns the selected descendant subtree and starts each selected playable descendant exactly once, including nested groups. For **Play All**, set each child's ducking for simultaneous playback.
 
-Use the **Group Level** fader in group Properties to lower all audio inside the group, including the soundtrack of video cues. The fader runs from −60 to 0 dB and shows the exact setting beside it. Individual cue gains stay as saved. A cue inside several groups receives the combined attenuation, and cues outside the group keep their own levels.
+Use the **Group Level** fader in group Properties to lower all audio inside the group, including the soundtrack of video cues. The fader runs from −60 to 0 dB and shows the exact setting beside it. The same level appears at the right of the group's row in the playlist, beside **Shuffle**. Every audio cue has the same control on its row for its own **Volume** (−60 to +10 dB). The control is kept small so the title has the row. It is the same in Edit Mode and Show Mode: the level with two stacked arrows, each press moving it half a dB. QuickPlay tiles carry the same control for the QuickPlay's own level (the **Gain** in its settings, up to +12 dB). In Edit Mode you can also type a value; in Show Mode the number is display-only. The row and Properties set one value, and the change is heard at once.
+
+### Cue sheet
+
+Choose **File → Export Cue Sheet (PDF)…** to save a printable summary of the open show: every cue and group in playlist order with its number, title, note, duration, level and what happens at its end, followed by the QuickPlays. The app asks where to save the file; it can then be printed or attached to an email. Exporting only reads the show: it does not save, change or interrupt anything.
+
+### More room for titles
+
+The headphones (preview) button appears on cue rows only when a **Preview Device** is chosen in **Settings → Audio Routing**; without one, the title uses that space. The output meters on the right can be folded to a slim rail with the arrow beside **TP Limiter** and brought back with the arrow on the rail; the limiter keeps working while they are folded, and the choice is remembered.
+
+### Red is live, green is next
+
+The colors follow the tally lights of a vision mixer.
+
+- **Red is live.** The cue that is playing has a red edge, a red number with a play arrow, and a red **Playing** badge in the playlist. A playing QuickPlay has the same red edge and badge on its tile. A paused cue keeps its edge in grey.
+- **Green is next.** The **Up Next** cue has a green edge and a green number with the same double arrow as **Play Next**. **Play Next** and the Play buttons are green. The arrows mean the two can be told apart without relying on color.
+- **Stop is never red.** **Stop All Cues** sits in a frame of yellow-and-black stripes, and each cue's own Stop button has the same striped edge.
+- **Yellow and amber are warnings**, such as the end-of-cue border that takes over as a cue approaches its end.
+- **Words stay white.** Titles are not colored, because white is the easiest to read in a dark room.
+- **The countdown is a stop light of its own.** The time on the live row and **Time Left** in the top bar run green, then yellow, then red as the cue nears its end. It is the one place where green and red do not mean next and live. Change the ranges in **Settings → User Interface → Time Left colors**.
+
+### Find a cue
+
+Two locate buttons sit beside **Playlist** in both modes. The red one with the play arrow scrolls to the cue that is playing, and the green one with the double arrow scrolls to **Up Next**; each opens the group that holds its cue. A button is lit only while there is such a cue.
+
+Type part of a cue's title, note or number in **Find cue** at the top of the playlist, or press **Ctrl+F** (**Cmd+F** on a Mac) to put the cursor there. The playlist jumps to the first match, opens the group that holds it, and outlines the row. **Enter** goes to the next match and **Shift+Enter** to the previous one, and the field shows which match you are on. The list is never filtered or reordered. In Edit Mode the match is also selected. The search works the same way in Show Mode.
+
+> **SAFETY — Escape is still Stop All.** While the cursor is in **Find cue**, **Space** types a space instead of starting the next cue, as in any text field. **Escape** still stops every cue. Use the **×** button in the field to clear the search.
+
+### Notes on the playlist
+
+A cue or group can carry a short note beside its title, for example a standby reminder. In Edit Mode, double-click the title or select the row and press **F2**, type the note, and press **Enter**. Clear the text to remove it; **Escape** leaves it unchanged. A note is not the cue's name: it appears only on the playlist, never on the transport, QuickPlays or the video output, and it does not change the title or the media file. To rename a cue, use **Display Name** in Properties. Individual cue gains stay as saved. A cue inside several groups receives the combined attenuation, and cues outside the group keep their own levels.
 
 ![Group Properties with Group Level, Start Behavior, End Behavior, and backup selection.](manual-assets/group-current.png)
 
@@ -346,7 +377,7 @@ Open **Settings** and choose **Audio Device** for the show. Check the device nam
 
 ![Rear-panel audio-interface connector reference. Use it to discuss labelled outputs, cable seating, and strain relief; the photograph does not certify pinout, signal continuity, gain, or a particular show setup.](manual-assets/audio-connector-photo.jpg)
 
-![The docked Audio Routing tab. Choose the actual show interface on the performance computer.](manual-assets/audio-settings-current.png)
+![The docked Audio Routing tab, with Pre-show check and Level Check in its top row. Choose the actual show interface on the performance computer.](manual-assets/audio-settings-current.png)
 
 **Procedure — prove the Main route end to end**
 
@@ -395,9 +426,9 @@ The selected output target influences meter presentation, loudness targets, and 
 
 The limiter is a maximum, not a measurement target. Signals below its ceiling keep their gain. It only attenuates overs, with continuous lookahead through a ceiling change or an explicit bypass. It does not normalize the show or lift a quiet cue. When Main and Preview share a physical channel, their combined signal receives the final protection; the mapped meters and gain-reduction display report that physical sum.
 
-A limiter reduces digital peaks; it does not protect against an inappropriate acoustic level, a badly balanced cue, a wrong output patch, or downstream console gain. Persistent large gain reduction is a reason to lower and rebalance the source, not to raise the ceiling until the warning disappears. Use **Level Check** during preparation and resolve problems before switching to Show Mode.
+A limiter reduces digital peaks; it does not protect against an inappropriate acoustic level, a badly balanced cue, a wrong output patch, or downstream console gain. Persistent large gain reduction is a reason to lower and rebalance the source, not to raise the ceiling until the warning disappears. Use **Level Check** (**Settings → Audio Routing**) during preparation and resolve problems before switching to Show Mode.
 
-![Output console with its existing output fader, meters and attenuation-only TP Limiter on the virtual output.](manual-assets/output-console-current.png)
+![Output console with the output fader, meters and the attenuation-only TP Limiter.](manual-assets/output-console-current.png)
 
 **Procedure — set a repeatable operating level**
 
@@ -419,6 +450,18 @@ Keep the LTC destination separate from the audience audio path. Do not enable ti
 
 ## 7. Run the show
 
+### Pre-show check
+
+Open **Settings → Audio Routing** and choose **Pre-show check** before doors and after any change to the rig. The report takes the place of Settings in the lower panel. It reads the state of the system and starts nothing: no cue plays and no output is opened. Each line reports **OK**, **Needs attention** or **Not checked**.
+
+- **Audio engine:** running, answering, and the same version as the app.
+- **Output device:** the main output is connected and its audio is running, and so are the Preview, LTC and per-cue outputs the show uses.
+- **Media:** every audio cue and QuickPlay is loaded and ready. A cue with a problem is listed by its number and can be selected from the list.
+- **Show file:** all changes are saved.
+- **Video:** the result of **Check Videos**, when the show has video cues.
+
+The line at the top reads **Ready** when nothing needs attention. If the show changes afterwards the panel says so; choose **Check again**. A pass describes that moment only, and it is not a sound check: confirm actual sound with **Level Check** and at the console.
+
 ### A repeatable GO procedure
 
 1. Confirm the correct show and a connected, ready engine.
@@ -427,7 +470,7 @@ Keep the LTC destination separate from the audience audio path. Do not enable ti
 4. On the cue call, press **Play Next** or its assigned shortcut once.
 5. Confirm the expected active cue and progress, then prepare the next target.
 
-![Transport controls during the generated looping practice cue; the native virtual clock drives its timing.](manual-assets/transport-detail-current.png)
+![Transport during the looping practice cue: Stop All Cues in its striped frame, the playing cue with its own controls, and the green Play Next.](manual-assets/transport-detail-current.png)
 
 ![Production digital-mixer control surface as an operator-position reference. Use it to discuss sightlines and disciplined access to controls; the photograph does not certify the venue, equipment configuration, or show readiness.](manual-assets/stage-operator-photo.jpg)
 
@@ -445,7 +488,7 @@ The default GO key is **Space**. **Enter** sets the selected playlist cue as **U
 
 1. Create a **Play First** group with an audio-only music bed and the intended venue output. Use **Loop** on the bed if it should play until the next GO.
 2. In **Settings → Playback Behaviour**, click the current **Backup music group** and choose a group in the lower panel. In a group’s **Properties → Basic Info**, open **Continue with** to set an override or choose **Use show backup** to inherit the show setting.
-3. Turn on the music-note button beside **Playlist** for top-level cues or on the group row for that group. Green shows it is on. The button is available in both modes after a backup is configured.
+3. Turn on the music-note button on the playlist bar, after the two locators, for top-level cues, or the one on the group row for that group. Green shows it is on. The button is available in both modes after a backup is configured.
 
 ![The green music-note buttons for the playlist and the Walk-in music group.](manual-assets/music-continuity-current.png)
 
@@ -494,31 +537,42 @@ In Edit Mode, click **+** in an empty **QuickPlays** slot. In the lower panel, s
 
 Drop a file from the controller directly onto a slot, including for a remote engine. To make an independent copy of a playlist cue, drag it to a slot or use **Add to QuickPlays** in Basic Info.
 
-The tile gear opens **QuickPlay Settings** below the playlist or detached tiles in both modes. In Edit Mode, **Replace audio** uses the same file browser and the remove control is available.
+In Edit Mode, the tile gear opens the same **Properties** panel a playlist cue uses, with one extra **QuickPlay** column. **Basic Info** holds the name, color, file, **Ducking**, **Start Behavior**, and **End Behavior**. **Playback** has the waveform with trim points, gain, normalizing, fade handles, **Fade Settings**, and **Transitions**. **Output** has the device and timecode. The **QuickPlay** column holds what only a QuickPlay has: **When triggered again**, its **Keyboard Shortcut**, and, with Duck Others selected, **Duck Time** and **Release Time**. The remove control is on the tile.
 
-**Playback**, **When triggered again**, **Ending**, and **Output** expand inside the panel. The playlist and **GO** stay available in the main window. With a choice list open, **Escape** runs Stop All even if the shortcut was remapped. The detached settings header also has its own **Stop All** button. Both stop actions leave the choices open.
+A tile shows its number and time on the top line, its name, and one row of controls: the level, **Play/Stop** and the **Cue to Continue** toggle. The number is a small chip in the tile's own colour. The key appears beside the number only when it is not the number itself, as with the Shift+1 key on QuickPlay 11. In Edit Mode the gear and the remove control sit at the end of the top line; Show Mode takes those two out and changes nothing else. Switch to Edit Mode to change a QuickPlay.
 
-![QuickPlay settings with playback, retrigger, ending, gain and fade controls.](manual-assets/one-shot-settings-current.png)
+The detached QuickPlays window has no Properties panel. There the gear opens a compact **QuickPlay Settings** panel below the tiles in Edit Mode, with **Playback**, **When triggered again**, **Ending**, gain, fades, **Output**, the shortcut, and **Replace audio**. Its **Ending** list offers Stop, Loop, and Play Next; a Go to ending is set in the main window.
+
+Choice lists expand inside the panel. The playlist and **GO** stay available in the main window. With a choice list open, **Escape** runs Stop All even if the shortcut was remapped. The detached settings header also has its own **Stop All** button. Both stop actions leave the choices open.
+
+![The compact QuickPlay Settings panel of the detached window, with playback, retrigger, ending, gain and fade controls, and its own Stop All.](manual-assets/quickplay-settings-current.png)
 
 | Setting | Operator decision |
 | --- | --- |
-| Playback: Overlay | Mix with the program without ducking it. |
-| Playback: Duck Program | Temporarily set other active cues to the absolute Program Level, then restore their prior gains. A quieter cue can be raised; rehearse the actual result. |
-| Playback: Replace Program | Stop the other program cues when firing this QuickPlay. |
+| Ducking: No Ducking (detached panel: Playback: Overlay) | Mix with the program without ducking it. |
+| Ducking: Duck Others (detached panel: Duck Program) | Temporarily set other active cues to the absolute Duck Level, then restore their prior gains. A quieter cue can be raised; rehearse the actual result. |
+| Ducking: Stop All Other Cues (detached panel: Replace Program) | Stop the other program cues when firing this QuickPlay. |
 | When triggered again: Restart | A later accepted trigger starts the QuickPlay again. |
 | When triggered again: Ignore | Ignore further triggers while it is already active. |
-| Ending: Stop / Loop | Finish once or repeat; prepare a stop plan for every loop. |
+| End Behavior: Nothing (detached panel: Ending: Stop) | Play once and stop. |
+| End Behavior: Play Next | When it finishes, play the playlist cue that is **Up Next** at that moment. With nothing queued it just stops. |
+| End Behavior: Go to Item / Go to Index | When it finishes, play that specific cue, whatever is Up Next. |
+| End Behavior: Loop | Repeat; prepare a stop plan for every loop. |
 | Output | Use the project default or a deliberately selected separate device. |
 
-New QuickPlays start with **Replace Program**, a **0.1-second fade-in**, a **0.5-second fade-out**, Ending Stop, and retrigger Restart. Saved cues retain their playback and fade settings. When you choose Duck Program, **Duck Time** and **Release Time** set the attack and recovery. Overlapping duck owners use the strongest absolute Program Level, and restoration follows the surviving owners before returning each cue to its recomputed base gain. Rehearse the actual envelope and the case where one overlapping QuickPlay ends before another.
+New QuickPlays start with **Stop All Other Cues**, a **0.1-second fade-in**, a **0.5-second fade-out**, End Behavior Nothing, and retrigger Restart. Saved cues retain their playback and fade settings. A QuickPlay is outside the playlist, so its **Cross-fade** and **Start Next at Marker** hand over to the playlist's Up Next cue; they apply when its End Behavior is Play Next or Go to. When you choose Duck Others, **Duck Time** and **Release Time** set the attack and recovery. Overlapping duck owners use the strongest absolute Program Level, and restoration follows the surviving owners before returning each cue to its recomputed base gain. Rehearse the actual envelope and the case where one overlapping QuickPlay ends before another.
 
 ### Fire and stop
 
 In either mode, press the tile's **Play** button, its shortcut, or its MIDI control to fire directly. The button changes to **Stop** when playback is active. Use the number row for slots **1–10** and hold **Shift** for slots **11–20**.
 
-To return from a playing QuickPlay to the playlist, set the playlist cue **Up Next** and choose **Cue to Continue** on the active QuickPlay. The default **C** shortcut does this for the active transport target. The QuickPlay finishes its current pass and plays whichever playlist cue is **Up Next** at that point. Use **Stop All** to cancel the handoff. The saved ending stays in the show file for the next play.
+To return from a playing QuickPlay to the playlist, set the playlist cue **Up Next** and press the **Cue to Continue** toggle on the QuickPlay's tile, the bent arrow beside Play/Stop. It lights in the Up Next color. The QuickPlay finishes its current pass and plays whichever playlist cue is **Up Next** at that point. Press the toggle again to switch it off for this play. The default **C** shortcut toggles it for the active transport target. **Stop All** also cancels the handoff.
 
-![QuickPlay 11 in Show Mode with its Play button and Shift+1 shortcut.](manual-assets/one-shot-show-mode.png)
+The toggle belongs to the play in progress and is never saved. While the QuickPlay is not playing, the toggle is unavailable and shows what the saved ending will do: lit for **Play Next**. To make a QuickPlay continue every time, set its **End Behavior** to **Play Next**; the toggle then starts lit on each play, and pressing it cancels the handoff for that play only. The toggle cannot be switched on while no playlist cue is queued.
+
+A playlist cue that ends while a QuickPlay is still playing over it queues the following cue as Up Next as usual, so the QuickPlay has a cue to hand over to.
+
+![QuickPlay 11 in Show Mode with its Play button and Shift+1 shortcut.](manual-assets/quickplay-show-mode.png)
 
 **Procedure — rehearse a QuickPlay**
 
@@ -532,7 +586,7 @@ Press **Q** to show or hide the docked bank. Press **Shift+Q** to open or close 
 
 ### Assign and verify keyboard shortcuts
 
-Open **Settings → Shortcuts**, select a binding, and press the desired key. For a MIDI controller, open **Settings → MIDI** and use **Learn** beside the action. Use the **×** button beside a binding to clear it. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the one-line reference for transport and the two **QuickPlays (defaults)** key ranges. **Customize Shortcuts…** opens the full list. The arrow beside a number on a tile means Shift. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
+Open **Settings → Shortcuts**, select a binding, and press the desired key. For a MIDI controller, open **Settings → MIDI** and use **Learn** beside the action. Use the **×** button beside a binding to clear it. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the two-line reference at the bottom of the window. It lists the keys used while a show runs first (Play Next, Pause / Resume, Stop All, Up Next, selection, Cue to Continue, Jump Cue, Loop), then the two **QuickPlays (defaults)** key ranges, then the window and set-up keys, as many as the window is wide enough for. **Customize Shortcuts…** opens the full list. The arrow beside a number on a tile means Shift. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
 
 ![Keyboard bindings in the docked Shortcuts tab, including the two QuickPlays window controls.](manual-assets/shortcuts-current.png)
 
@@ -556,7 +610,7 @@ In the playlist workspace, Enter, Space, and Escape keep their assigned show act
 
 ### Map a MIDI controller
 
-![MIDI configuration with fixture MIDI access and no detected hardware; assign and rehearse physical controls separately.](manual-assets/midi-current.png)
+![MIDI configuration with no hardware detected; assign and rehearse physical controls separately.](manual-assets/midi-current.png)
 
 1. Connect the controller before the show and open **Settings → MIDI**.
 2. Select the intended **MIDI Device**. **All Devices** listens broadly; choosing a particular controller reduces accidental input from other connected equipment.
@@ -610,23 +664,31 @@ In **Settings → Video Output → Test card**, drop or paste a PNG, JPEG, WebP,
 
 The output shows one picture at a time and cuts to the newest sounding cue. **Full HD**, **Fit to display**, and **100%** are the default picture settings. A 16:9 cue fills a 1920 × 1080 output edge to edge. Video and stills retain their proportions and show the entire source. Black fills any space around the picture.
 
-When a cue has no usable video, the output uses the first available layer in this order. Assigned **Cue image**, captured cue still, captured session standby, saved **Standby image**, then black. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output. A video can play on Video Output while the operator auditions that same cue in Preview.
+When a cue has no usable video, the output uses the first available layer in this order: the cue's own **Cue image**, the show's **Standby image**, then black. A captured picture becomes one of those two. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output. A video can play on Video Output while the operator auditions that same cue in Preview.
 
 Choose an image in **Properties → Basic Info → Cue image** or **Settings → Video Output → Standby image**. Browse in the lower panel, select the file, and click **Open** to copy it to the show's media folder. **Cancel** returns to the previous panel. Selecting another cue closes an unconfirmed cue image picker. The playlist, GO, and Stop All are available while browsing. **Escape** runs Stop All and leaves the picker open.
 
 At an automatic **Play Next** ending, Video Output holds the outgoing video's last frame until the next video has a picture ready. An audio-only cue uses its still or the standby layer. **Stop All** clears the held frame, and a decode failure uses the normal cue image or standby. If the last frame stays frozen, check the output status before pressing GO again. Rehearse through the full ending of each video.
 
-Use H.264 or HEVC media for this source edition. ProRes and other production codecs are not supported by the documented video path. Container extension alone is not a codec guarantee. Test every video on the exact show machine, including its soundtrack, opening frame, end behavior, aspect ratio, and transitions between audio-only and video cues.
+H.264 and HEVC media play as they are. ProRes and other production codecs are converted to an H.264 copy automatically (see **Check videos before the show**), which takes time for a long film. Container extension alone is not a codec guarantee. Test every video on the exact show machine, including its soundtrack, opening frame, end behavior, aspect ratio, and transitions between audio-only and video cues.
 
 > **CAUTION — A fallback can hide a video failure.** If video cannot load or decode, the output can fall through to a cue image, standby image, or black without a blocking show alert. A healthy audio cue does not prove the picture is playing. Watch the actual destination during rehearsal.
 
 ### Check videos before the show
 
-1. With playback and Preview stopped, open **Settings → Video Output** and choose **Check Videos**. The check silently samples each video cue at its **In** point, midpoint, and just before its **Out** point. It uses the end of the video if there’s no valid Out point. It includes cues inside groups and video QuickPlays. Video Output can stay closed.
-2. Read the count and cue names in the dock. Cues that need attention are marked **VIDEO !** on the playlist or QuickPlay tile. For a missing or unreadable clip, check the media location and replace or restore the file. For a decode failure, verify the source or use a compatible copy, then run **Check Videos** again.
-3. Use **Cancel Check** to end the scan. Playback, Stop All, or leaving the panel also ends it. If a clip times out, the scan flags it and ends the run. The status shows how many cues were checked.
+While nothing is playing, the app checks every video cue by itself: when a show opens, after an import, and again when a cue's file or trim changes. It silently samples each video at its **In** point, midpoint, and just before its **Out** point, or the end of the video if there is no valid Out point. It includes cues inside groups and video QuickPlays. Video Output can stay closed.
 
-The check is advisory and keeps the playlist and transport available. Run it again after changing the In or Out point or replacing a video. A pass covers the sampled pictures. Decode errors between those samples can still occur.
+H.264, HEVC (H.265), VP8, VP9 and AV1 play as they are. A video whose picture this computer cannot show is converted automatically, for example ProRes, DNxHD and DNxHR, MPEG-2, Xvid or DivX AVI, Motion JPEG, camera AVCHD (.mts) and WMV. HEVC depends on the computer; where it cannot be shown it is converted too.
+
+- The app makes an H.264 copy beside the original, named with **(converted)**, points the cue at the copy and checks the copy. The original file is never changed. The cue keeps its name, level and trim, and the top bar names each cue as it is converted.
+- The first conversion downloads the converter, the same one the online imports use, so the computer needs the internet once.
+- A conversion works at low priority and stops the moment a cue or Preview starts. It starts again by itself when the show is idle. A long film takes minutes: let it finish before doors.
+- The copy takes disk space beside the original, and a picture with a transparent background loses its transparency.
+- Conversion needs the files on this computer. When the audio engine runs on another computer, nothing is converted and the cue stays marked.
+
+Cues that still need attention are marked **VIDEO !** on the playlist or QuickPlay tile, and **Settings → Video Output** lists them with the reason. For a missing or unreadable clip, restore or replace the file. **Check Videos** checks every video again and tries the conversions again; **Cancel Check** ends a run, and so does playback or Stop All. One clip that times out is flagged and the check moves on. Two in a row end the run, because that points at storage that has stopped answering.
+
+The check is advisory and keeps the playlist and transport available. A pass covers the sampled pictures. Decode errors between those samples can still occur.
 
 ### Set picture framing
 
@@ -648,14 +710,18 @@ In **Settings → Video Output → Picture framing**, click the current **Canvas
 
 Set the HDMI resolution, refresh rate, and display rotation in the operating system. Confirm the received signal at the switcher or display. For a standard projector or TV, rehearse at Full HD with Fit to display at 100%. Check that the corner markers and edges of a framing pattern are visible and its circle is round.
 
-### Capture a standby still
+### Capture a picture
 
-**Capture display** and **Destination** expand inside Video Output settings. Selecting either only sets up the capture. Use a capture button or shortcut when ready.
+A capture takes a picture of what is on **Video Output** and saves it in the show's media folder. You say what it is for as you capture it:
 
-- Press **G** or choose **Capture output** in **Settings → Video Output** to save the current picture from the configured canvas. Bars outside that canvas are excluded.
-- Choose a **Capture display** in **Settings → Video Output**, then press **Shift+G** or choose **Capture display** to save the selected screen. The capture display can be different from the audience display. Grant screen capture permission if the operating system asks.
-- Set **Destination** to **Session standby** for a shared fallback or **Selected cue** for a specific cue. To capture Video Output for a specific cue in one step, select it and click the confidence thumbnail in the header.
-- Capture again to replace the still at that destination. **Clear still** removes the capture for the chosen destination. Assigned cue images always take priority. Use a saved Cue image or Standby image for artwork that must survive closing or reloading the show.
+- **Capture as standby picture** (default **G**) makes it the show's **Standby image**, shown when a cue has no picture of its own.
+- **Capture for cue** (default **Shift+G**) makes it the **Cue image** of one cue: the cue that is playing, or the selected cue when nothing is playing. The button names that cue.
+
+Click the small Video Output picture in the top bar to open the **Capture a picture** panel. It is available in Show Mode, and the same controls are in **Settings → Video Output**. The panel shows the picture just captured with **Undo**, which puts back the picture that was there before, and the current standby and cue pictures with **Clear picture**.
+
+To capture another screen instead, such as a presenter's slide, choose it under **Capture from** and then press a capture button. That choice lasts only while the panel is open; the shortcuts always capture Video Output. The first time, the operating system may ask whether the app may see that screen.
+
+A capture is saved with the show: it is there when the show is opened again and it travels with an exported show. Each capture is its own file, named with the cue and the time, so capturing again replaces the picture in use and leaves the earlier file in the media folder.
 
 ### Recover a frozen or failed video output
 
@@ -671,9 +737,13 @@ The confidence display uses presented-frame and native-audio-clock progress as w
 
 ### Fullscreen, keyboard focus, and blackout
 
-Double-click or use the output window's context controls to change fullscreen. If the assigned display disappears, the app closes that output instead of moving it onto the control display; it can reacquire the assignment when the display returns while the session remains enabled. Recheck the physical output after reconnecting a cable.
+The output assigned to a display covers that display and no other screen. On a Mac it does this without macOS full screen, so the control screen is left alone whatever the Mac's **Displays have separate Spaces** setting, and the assigned output has no fullscreen choice to make. On Windows and Linux, and on the preview window everywhere, double-click or use the output window's context menu to change fullscreen; a Mac preview window in fullscreen covers only the screen it is on. For the same reason no DonWells Cue window uses macOS full screen: on a Mac the control window fills its screen with **View > Zoom** or the green window button.
 
-Eligible playback keys from the focused Video Output are forwarded to the controller. **Escape exits output fullscreen and, with the default shortcut mapping, also invokes Stop All.** If Stop All is remapped, Escape still exits fullscreen. Rehearse this distinction before giving the output window focus during a show.
+If the assigned display disappears, the app closes that output instead of moving it onto the control display or onto another screen, even one of the same model and resolution; it can reacquire the assignment when the display returns while the session remains enabled. If two connected screens could both be the assigned one, the app does not guess: it reports the display as missing until you choose the output display again in Settings. Recheck the physical output after reconnecting a cable.
+
+While the output is on, the app keeps checking that the picture sits exactly on the assigned display: filling it, and reaching onto no other screen. An output that comes out too small, too large, shifted, or on the wrong screen is put back by itself. If it cannot be put right, the Video Output settings show a warning that the output is not sitting exactly on its display. There is only ever one output window.
+
+Eligible playback keys from the focused Video Output are forwarded to the controller. **With the default shortcut mapping, Escape invokes Stop All. On an assigned display the picture stays full screen; on the preview window Escape also leaves fullscreen**, and still does if Stop All is remapped. Rehearse this distinction before giving the output window focus during a show.
 
 There is no dedicated video-blackout button or shortcut in this source. **Stop All is not a separate picture-blackout command**: a configured standby image can remain visible after cues stop. If the show needs a guaranteed independent blackout, prepare and rehearse it on the video switcher/projector or another supported part of the venue system. Closing Video Output can expose the desktop and is not an audience-safe blackout procedure.
 
@@ -745,7 +815,21 @@ A failed autosave or manual save leaves **Save failed** and **Retry** in the hea
 
 Saves run in order. Each captures one document and destination, then writes through a sibling temporary file before atomically replacing the saved show. Slow storage can delay a save or another save behind it. GO and Stop All remain available while the write waits. A failed Save As leaves the active path unchanged. If another controller switches shows during a write, the old save cannot change the new show's path or clear its pending edits. Wait for a save to finish before opening the file you just saved.
 
-The server makes background copies of the existing disk project every 10 minutes into a **backups** folder beside it, retaining at most 20. Those are project-file backups, not full media packages, and they cannot capture unsaved edits that never reached disk. Keep a separate known-good full-show copy as well.
+**Shows and earlier versions.** Shows saved by earlier versions open here with nothing lost, and are saved in the current form from then on. An earlier version of DonWells Cue opens a show saved by this version with its playlist, but without its QuickPlays. The QuickPlays stay in the file, and they return when the show is opened in this version again. QuickPlays added in the earlier version meanwhile are kept as well; where two want the same cell, the returning one takes the next free cell. Keep every computer that will open the show on the same version.
+
+### Show backups
+
+Before a save replaces the show file, the engine keeps a copy of the file it is about to replace in a **Backups** folder beside the show. It makes at most one copy every five minutes, skips a copy identical to the last one, and keeps the ten most recent.
+
+**Settings → Playback Behaviour → Show backups** lists the copies by date and time. Choose **Restore**, then confirm, to replace the open show with that copy. The show as it is now is backed up first, so a restore can itself be undone from the same list. A restore is refused while a cue or Preview is playing.
+
+Earlier versions also copied the show file every 10 minutes. That timer is retired: any of its copies already in the folder are left in place, and they are not shown in the list. Show backups are project-file backups, not full media packages, and they cannot capture unsaved edits that never reached disk. Keep a separate known-good full-show copy as well.
+
+### Clean up unused media
+
+**File → Clean Up Media…** lists the files in the show's media folder that nothing uses any more, such as the originals of converted videos and earlier captures. A file counts as used if this show, any of its **Show backups**, or another show saved in the same folder mentions it, so restoring a backup never points at a missing file. A file that was replaced only recently therefore stays off the list until the backups that still mention it have been replaced by newer ones.
+
+Tick the files to remove and choose **Move … to the Trash** (the **Recycle Bin** on Windows). Nothing is deleted outright: the files can be put back from there. Files changed in the last two minutes are never listed, and files are moved only while nothing is playing. The tool works in Edit Mode, on the computer that holds the show's files.
 
 ### Export a portable show
 
@@ -912,7 +996,7 @@ First protect the audience using the rehearsed stop/mute procedure. Then identif
 
 **Level Check** is a soundcheck tool, not a silent analysis report or headphone preview. It chooses an approximately 5-second window near a cue's loudest available waveform peak and plays it through the normal program transport. Cues with no usable waveform or a fully silent region may be absent from the check.
 
-Entering the mode does not immediately play the first cue. Use its replay/play control, then Previous/Next to move through eligible cues. Previous and Next start playback automatically. While the bar is active, **R** replays, **[** goes to the previous cue, **]** to the next cue, and **Q** exits. These keys do not take over text fields; the normal Space/Stop All pathways remain available.
+Start it with **Level Check** in **Settings → Audio Routing**; the same button stops it. Entering the mode does not immediately play the first cue. Use its replay/play control, then Previous/Next to move through eligible cues. Previous and Next start playback automatically. While the bar is active, **R** replays, **[** goes to the previous cue, **]** to the next cue, and **Q** exits. These keys do not take over text fields; the normal Space/Stop All pathways remain available.
 
 Perform this only during soundcheck with the console operator ready. Normal cue routing, ducking, and sequencing still matter; it is not an isolated substitute for rehearsing a show. Exit and verify that soundcheck playback has stopped before opening the house.
 
@@ -939,10 +1023,11 @@ Share a minimal sample only with permission. Remove tokens, personal paths, priv
 - [ ] Cue gains, overlap/ducking behavior, limiter, and transitions rehearsed.
 - [ ] Loop continuation, Jump Cue, and the configured Stop All fade rehearsed.
 - [ ] Group exits use explicit, checked targets where needed.
+- [ ] **Pre-show check** reads **Ready**, or every flagged line is understood.
 - [ ] Correct GO target is visible; shortcuts checked against this project.
 - [ ] Required QuickPlays and their Play/Stop, keyboard and MIDI controls checked.
 - [ ] MIDI mappings checked on this machine; unused controllers disconnected or filtered.
-- [ ] **Check Videos** completed and flagged cues resolved before rehearsal.
+- [ ] Video check reads **All pictures decoded**: conversions finished and flagged cues resolved before rehearsal.
 - [ ] Video Output opened, display verified, and first frame/standby/fallback checked.
 - [ ] Independent audio emergency-silence and video-blackout procedures agreed.
 - [ ] Mains power, sleep policy, notifications, cables, and spare media ready.
@@ -1002,19 +1087,20 @@ These are source defaults, not a promise about a project's customized assignment
 | Shift+S | Toggle Properties for the selected cue in Edit Mode or while that cue is in Preview |
 | L | Toggle the target cue's saved End Behavior between Loop and Nothing |
 | V | Open or close the Video Output window |
-| G | Capture Video Output as a standby still |
-| Shift+G | Capture the display selected in Video Output settings |
+| G | Capture Video Output as the standby picture |
+| Shift+G | Capture Video Output as the picture for the playing or selected cue |
 | F1 | Separate Play Selected audio action |
-| C | Cue to Continue at the end of the active loop or QuickPlay pass |
+| C | Cue to Continue at the end of the active loop pass; on an active QuickPlay it switches the handoff on or off |
 | J | Jump Cue immediately |
 | 1 through 9, then 0 | Fire QuickPlay slots 1 through 10 in either mode |
 | Shift+1 through Shift+9, then Shift+0 | Fire QuickPlay slots 11 through 20 in either mode |
+| Cmd/Ctrl+F | Put the cursor in **Find cue** on the playlist |
 | Cmd/Ctrl+S | Save Project |
 | Cmd/Ctrl+O | Open Project |
 | Cmd/Ctrl+N | New Project |
 | Cmd/Ctrl+W | Close Project |
 | Cmd/Ctrl+Q | Exit / quit workflow |
-| F11 | Fullscreen |
+| F11 | Fullscreen (Windows and Linux; on a Mac use **View > Zoom** or the green window button) |
 
 The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. New Show, Open Project, archive import and export, Quit, **Unsaved Changes**, and the main window's recovery panel reserve Escape for Stop All. With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
 
@@ -1030,7 +1116,7 @@ The default **Escape** Stop All shortcut works while editing, including in the l
 
 ### About this edition
 
-This edition covers **2.6.24**, based on application source **655ec2a**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
+This edition covers **2.7.0**, based on application source **6a36f4e**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
 
 Earlier checkpoints passed 13 native suites, 74 API checks, client checks, type checking, and renderer generation. Held storage tests exercised late Open, Save ordering, and direct cue registration. Chromium exercised Stop All during field editing, deletion, and imports with a software output and simulated online providers.
 

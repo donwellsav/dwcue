@@ -204,8 +204,7 @@
           :style="{ left: outPointPosition + 'px' }"
         ></div>
         
-        <!-- Fade Handles (hidden for cart items) -->
-        <template v-if="!isCartItem">
+          <!-- Fade handles: the same for playlist cues and QuickPlays. -->
           <!-- Play Fade Handle (fade in end) -->
           <div 
             v-if="playFade > 0"
@@ -261,7 +260,6 @@
               <span class="material-symbols-rounded">skip_next</span>
             </div>
           </div>
-        </template>
         </template>
       </div>
 
@@ -370,7 +368,7 @@
       </div>
     </section>
 
-    <section v-if="!isCartItem" class="fade-controls-section">
+    <section class="fade-controls-section">
       <h4>{{ t('properties.fadeSettings') }}</h4>
       <div class="fade-control-group">
         <label for="cue-trim-playFade">{{ t('properties.playFade') }}</label>
@@ -434,8 +432,15 @@
       </div>
     </section>
 
-    <section v-if="!isCartItem" class="transition-controls-section">
-      <h4>{{ t('properties.transitions') }}</h4>
+    <section class="transition-controls-section">
+      <!-- A QuickPlay is outside the playlist, so its transitions hand over to Up Next. -->
+      <h4 :title="isQuickPlayItem ? t('quickPlays.transitionsHelp') : undefined">
+        {{ t('properties.transitions') }}
+        <span v-if="isQuickPlayItem" class="transition-target">
+          <span class="material-symbols-rounded" aria-hidden="true">subdirectory_arrow_right</span>
+          {{ t('status.upNext') }}
+        </span>
+      </h4>
       <label class="start-next-toggle">
         <input
           type="checkbox"
@@ -559,8 +564,8 @@ const projectControlsReady = computed(() => projectHydrationStatus.value === 're
 const previewCueIsCurrent = computed(() => previewItemUuid.value === props.audioItem.uuid && !!previewCueId.value);
 const previewMeter = useCueMeters(() => previewCueIsCurrent.value ? previewCueId.value || null : null);
 
-// Check if this is a cart item
-const isCartItem = computed(() => {
+// Check if this is a QuickPlay item
+const isQuickPlayItem = computed(() => {
   return props.audioItem.index && props.audioItem.index.length > 0 && props.audioItem.index[0] === -1;
 });
 
@@ -1622,7 +1627,7 @@ const drawWaveform = () => {
     // Start Next marker — the same warning/next colour used throughout the app.
     if (props.audioItem.startNextEnabled && startNextTime.value > 0) {
       const markerTime = startNextTime.value;
-      const markerColor = rootStyle.getPropertyValue('--state-up-next').trim() || '#d8ad35';
+      const markerColor = rootStyle.getPropertyValue('--state-up-next').trim() || '#3ecf7a';
       if (markerTime >= visibleStart.value && markerTime <= visibleEnd.value) {
         const markerX = (markerTime - visibleStart.value) * pixelsPerSecond;
         ctx.strokeStyle = markerColor;
@@ -1692,7 +1697,7 @@ const drawWaveform = () => {
 
   drawPlayheadMarker(
     mainPlayheadPosition.value,
-    rootStyle.getPropertyValue('--state-playing').trim() || '#35a96b',
+    rootStyle.getPropertyValue('--state-playing').trim() || '#ff5a5f',
     false,
   );
   drawPlayheadMarker(
@@ -1978,6 +1983,21 @@ onUnmounted(() => {
   font-size: var(--type-panel-title-size);
 }
 
+.transition-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: auto;
+  color: var(--state-up-next);
+  font-size: var(--type-metadata-size);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.transition-target .material-symbols-rounded {
+  font-size: 15px;
+}
+
 .time-field,
 .fade-control-group,
 .start-next-toggle {
@@ -2122,11 +2142,14 @@ onUnmounted(() => {
 
 .audition-btn--primary {
   border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border));
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .audition-btn--stop {
-  color: var(--color-danger);
+  /* Stop is never red: the striped edge every Stop button wears. */
+  border: var(--stop-button-border);
+  background: var(--stop-button-background);
+  color: var(--stop-edge);
 }
 
 .audition-jump {
@@ -2726,7 +2749,7 @@ onUnmounted(() => {
   height: 20px;
   min-height: 20px;
   padding: 0 6px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .time-input-with-buttons {

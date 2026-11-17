@@ -10,7 +10,7 @@ let viewerActive = false;
 export const useStateViewer = () => {
   const { currentProject } = useProject();
   const { activeCues, activeGroups, masterOutputLevel, masterPeakLevel } = useAudioEngine();
-  const { cartOnlyItems } = useCartItems();
+  const { quickPlayItems } = useQuickPlayItems();
   const { currentLocale } = useLocalization();
 
   const startStateUpdates = () => {
@@ -45,7 +45,7 @@ export const useStateViewer = () => {
           masterPeakLevel: masterPeakLevel.value
         },
         
-        cartItems: cartOnlyItems.value ? JSON.parse(JSON.stringify(cartOnlyItems.value)) : [],
+        quickPlayItems: quickPlayItems.value ? JSON.parse(JSON.stringify(quickPlayItems.value)) : [],
         
         locale: {
           currentLocale: currentLocale.value

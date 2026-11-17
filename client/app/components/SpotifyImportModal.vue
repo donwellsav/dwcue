@@ -1293,7 +1293,7 @@ function resetState() {
   gap: var(--spacing-xs);
   padding: var(--workspace-gutter);
   > p { margin: 0; font-size: var(--type-metadata-size); }
-  :deep(.picker-dock) { height: clamp(168px, 27vh, 225px); }
+  :deep(.picker-dock) { height: clamp(220px, 46vh, 520px); }
 }
 
 .destination-picker-bar,
@@ -1494,7 +1494,8 @@ input {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  max-height: clamp(166px, 29vh, 260px);
+  /* The track list is what the operator reviews: show many rows at once. */
+  max-height: clamp(260px, 52vh, 640px);
   border: 1px solid var(--color-border);
   border-radius: var(--control-radius);
   background: var(--color-background);
