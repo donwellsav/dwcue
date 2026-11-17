@@ -126,19 +126,19 @@ The cue row provides **Set As Next**, **Preview**, **Play**, **Edit**, and **Del
 
 Select a row to show its **Delete** button; it sits to the left of **Edit**, away from **Play**. Unselected rows give that space to the title. That button and a bulk keyboard delete open **Delete Items** in the lower panel. Check the cue name or selection count before confirming. Changing the selection leaves the original confirmation targets intact. The playlist, GO, and Stop All remain available. A single selected cue can still be removed directly with the Delete key.
 
-In Show Mode the bank shows only the rows that hold QuickPlays, and they share the height; each QuickPlay keeps its place and number. Edit Mode shows every cell of the layout. An empty QuickPlays bank is collapsed by default. Press **Q** or choose **Show QuickPlays** to reveal it. Assigning a cell can reveal the bank automatically unless you have explicitly chosen its visibility. Playback and shortcut assignments stay active when the bank is collapsed. On a narrow workspace, the bank and playlist share the available width.
+In Show Mode the bank leaves out the empty rows after the last QuickPlay; each QuickPlay keeps its place, number and size. Edit Mode shows every cell of the layout. An empty QuickPlays bank is collapsed by default. Press **Q** or choose **Show QuickPlays** to reveal it. Assigning a cell can reveal the bank automatically unless you have explicitly chosen its visibility. Playback and shortcut assignments stay active when the bank is collapsed. On a narrow workspace, the bank and playlist share the available width.
 
 On narrow playlists, cue names appear above the row controls and the toolbar uses icons. Hover over an icon for its label when tooltips are enabled. The header can show the full silence countdown alongside a notice.
 
 ### Show Mode
 
-Switch to **Show Mode** for performance after preparation is complete. It simplifies the interface and emphasizes transport and large cue controls. GO and assigned controls remain live. The QuickPlay Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
+Switch to **Show Mode** for performance after preparation is complete. It is Edit Mode with the editing taken out: the same rows, QuickPlays and transport, at the same size and in the same places, without Import, Add Group, Shuffle, the settings and delete buttons on rows and tiles, drag and drop, or typed levels. Nothing moves or changes size when you switch, and the row height and QuickPlays layout in **Settings → User Interface** apply to both modes. GO and assigned controls remain live. The QuickPlay Play/Stop button and keyboard and MIDI triggers work the same way in both modes. Use Edit Mode to change the bank.
 
 In Show Mode the top bar keeps only what a show needs in view: warnings, the **Show Mode** switch and the clocks. **Settings**, **Video Output** and **Autosave** fold into one **Setup** button; press it to reach them. The menu closes when you choose something or press anywhere else.
 
 Rehearse at the actual display size and app zoom. Settings, Properties, and imports share the lower panel. It fits the content up to 60% of the window, with room reserved for the playlist. On a short window the panel may scroll sooner. Tabs stay along the bottom while the controls scroll. Drag the top grip down for more playlist room or up for more controls. You can also focus the grip and use **Up/Down**. Each panel remembers its adjusted height while the app is open. GO and Stop All stay at the top and the shortcut bar shows a compact reference. **Customize Shortcuts…** opens the full editor. Settings choices for default transition, language, meter display and meter ballistics expand in the panel.
 
-![Show Mode at a small window size: the silence countdown, the playing cue edged in red, Up Next in green, the Setup button, and the one-line shortcut reference.](manual-assets/show-mode.png)
+![Show Mode at a small window size: the same layout as Edit Mode without the editing controls, with the silence countdown, the playing cue edged in red, Up Next in green, the Setup button, and the one-line shortcut reference.](manual-assets/show-mode.png)
 
 ### Selection is not arming
 
@@ -490,7 +490,7 @@ The default GO key is **Space**. **Enter** sets the selected playlist cue as **U
 
 1. Create a **Play First** group with an audio-only music bed and the intended venue output. Use **Loop** on the bed if it should play until the next GO.
 2. In **Settings → Playback Behaviour**, click the current **Backup music group** and choose a group in the lower panel. In a group’s **Properties → Basic Info**, open **Continue with** to set an override or choose **Use show backup** to inherit the show setting.
-3. Turn on the music-note button beside **Playlist** for top-level cues or on the group row for that group. Green shows it is on. The button is available in both modes after a backup is configured.
+3. Turn on the music-note button on the playlist bar, after the two locators, for top-level cues, or the one on the group row for that group. Green shows it is on. The button is available in both modes after a backup is configured.
 
 ![The green music-note buttons for the playlist and the Walk-in music group.](manual-assets/music-continuity-current.png)
 
