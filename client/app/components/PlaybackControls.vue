@@ -269,7 +269,7 @@
 // Stop All is server-authoritative. Native diagnostics and orphaned cues are
 // intentionally outside the project-backed activeCues map, so the panic
 // control must remain callable even when that local map is empty.
-import { formatKeyLabel } from '~/composables/useCartHotkeys';
+import { formatKeyLabel } from '~/composables/useQuickPlayHotkeys';
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { useCueMeters } from '~/composables/useLiveMeters';
 
@@ -285,7 +285,7 @@ const {
   saveProject,
   openItemProperties,
 } = useProject();
-const { playbackMappings } = useCartHotkeys();
+const { playbackMappings } = useQuickPlayHotkeys();
 const { t } = useLocalization();
 const server = useLiveplayServer();
 const { uiMode } = useUiMode();

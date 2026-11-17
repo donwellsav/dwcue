@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "ইন্টারফেস ফন্ট সাইজ",
-    "oneShotFontSize": "ওয়ান-শট টেক্সট সাইজ",
+    "quickPlayFontSize": "ওয়ান-শট টেক্সট সাইজ",
     "cycleTrackColors": "নতুন ট্র্যাকে পর্যায়ক্রমে রঙ দিন",
-    "cartLayout": "লেআউট",
+    "quickPlayLayout": "লেআউট",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "কলাম",
@@ -519,7 +519,7 @@
       "error": "আমদানি ব্যর্থ হয়েছে"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlays (ডিফল্ট)",
     "detachedNoPrimary": "মূল প্রকল্প উইন্ডোটি পাওয়া যাচ্ছে না।",
     "detachedWaitingForShow": "QuickPlays আবার সক্রিয় করতে মূল উইন্ডোতে শো পুনরুদ্ধার করুন বা খুলুন।",
@@ -904,8 +904,8 @@
     "title": "নিয়ন্ত্রণ কনফিগার করুন",
     "shortcutBtn": "শর্টকাট",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlays",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlays",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "বিরতি / চালু করুন",
     "toggleLoop": "লুপ টগল করুন",
     "cueToContinue": "Cue to Continue",
@@ -924,7 +924,7 @@
     "masterVolume": "গ্লোবাল মাস্টার ভলিউম",
     "midiDevice": "MIDI ডিভাইস",
     "allDevices": "সব ডিভাইস",
-    "conflictOneShot": "QuickPlay {n}-এ ইতিমধ্যে নির্ধারিত",
+    "conflictQuickPlay": "QuickPlay {n}-এ ইতিমধ্যে নির্ধারিত",
     "conflictAction": "{action} এ ইতিমধ্যে নির্ধারিত",
     "pressAnyKey": "যেকোনো কী চাপুন...",
     "reserved": "এই কী সংমিশ্রণ সংরক্ষিত",

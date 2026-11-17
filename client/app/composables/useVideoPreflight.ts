@@ -1,6 +1,6 @@
 import type { AudioItem } from '~/types/project';
 import { buildWaveformFromChannels } from '~/utils/audio';
-import { buildOneShotSlots } from '~/utils/oneShots';
+import { buildQuickPlayCells } from '~/utils/quickPlays';
 import { nextVideoWork, type VideoWorkCue } from '~/utils/videoPreflightPlan';
 
 type Phase = 'running' | 'done' | 'stopped' | 'stale' | 'interrupted' | 'unavailable';
@@ -47,7 +47,7 @@ function createVideoPreflight() {
   const {
     currentProject, getAllItemsFlat, formatItemIndex, projectEpoch, projectHydrationStatus, previewItemUuid, saveProject,
   } = useProject();
-  const { cartOnlyItems } = useCartItems();
+  const { quickPlayItems } = useQuickPlayItems();
   const { activeCues } = useAudioEngine();
   const { t } = useLocalization();
   const { showHeaderWarning } = useHeaderWarnings();
@@ -71,7 +71,7 @@ function createVideoPreflight() {
 
   const candidates = computed(() => {
     const videos = new Map<string, { item: AudioItem; inPoint: number; outPoint: number | null; source: string }>();
-    for (const item of [...getAllItemsFlat(), ...cartOnlyItems.value.values()]) {
+    for (const item of [...getAllItemsFlat(), ...quickPlayItems.value.values()]) {
       if (item.type !== 'audio' || !(item as AudioItem).hasVideo || videos.has(item.uuid)) continue;
       const audio = item as AudioItem;
       const inPoint = Number.isFinite(audio.inPoint) ? Math.max(0, audio.inPoint) : 0;
@@ -108,7 +108,7 @@ function createVideoPreflight() {
 
   const findings = computed(() => {
     if (!issues.value.size) return [];
-    const slots = buildOneShotSlots(currentProject.value?.items ?? [], [...cartOnlyItems.value.values()]);
+    const slots = buildQuickPlayCells(currentProject.value?.items ?? [], [...quickPlayItems.value.values()]);
     return [...issues.value].flatMap(([uuid, reason]) => {
       const item = candidates.value.get(uuid)?.item;
       if (!item) return [];

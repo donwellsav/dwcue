@@ -120,7 +120,7 @@ import PlaylistSearch from './PlaylistSearch.vue';
 import type { AudioItem, GroupItem, Project, ProjectSettings } from '~/types/project';
 import {
   DEFAULT_AUDIO_ITEM,
-  DEFAULT_CART_SLOT_KEYS,
+  DEFAULT_QUICK_PLAY_SLOT_KEYS,
   DEFAULT_GROUP_ITEM,
   DEFAULT_PROJECT_SETTINGS,
   DEFAULT_THEME,
@@ -131,7 +131,8 @@ import {
 import { useLiveplayServer } from '~/composables/useLiveplayServer';
 import { buildWaveformFromChannels } from '~/utils/audio';
 import { canonicalSpotifyMediaReference } from '~/utils/spotifyImport';
-import { cloneAsPlaylistItem } from '~/utils/oneShots';
+import { cloneAsPlaylistItem } from '~/utils/quickPlays';
+import { convertLegacyQuickPlayNames } from '~/utils/legacyQuickPlayNames';
 import { projectPathInFolder } from '~/utils/projectFileFormats';
 
 const { readOnly } = defineProps<{ readOnly: boolean }>();
@@ -452,11 +453,11 @@ const scanForMissingWaveforms = async () => {
   if (!currentProject.value || !server.connected) return;
   try {
     const folder = currentProject.value.folderPath || '';
-    // Include cart-only items too — they live in a separate array and the
-    // playlist flatten wouldn't otherwise reach them, so cart slots backed
-    // by cart-only audio would never get their waveforms generated.
-    const cartOnly = (currentProject.value.cartOnlyItems ?? []) as AudioItem[];
-    const all = [...getAllItemsFlat(), ...cartOnly];
+    // Include QuickPlay-only items too — they live in a separate array and the
+    // playlist flatten wouldn't otherwise reach them, so QuickPlay slots backed
+    // by QuickPlay-only audio would never get their waveforms generated.
+    const quickPlayOnly = (currentProject.value.quickPlayItems ?? []) as AudioItem[];
+    const all = [...getAllItemsFlat(), ...quickPlayOnly];
     for (const item of all) {
       if (item.type !== 'audio') continue;
       const ai = item as AudioItem;
@@ -501,10 +502,10 @@ watch(
     scheduleWaveformScan();
   },
 );
-// Also watch cartOnlyItems separately — the scanner needs to re-run when
-// new cart items appear (cart hydration happens after the playlist).
+// Also watch quickPlayItems separately — the scanner needs to re-run when
+// new QuickPlay items appear (QuickPlay hydration happens after the playlist).
 watch(
-  () => currentProject.value?.cartOnlyItems?.length ?? 0,
+  () => currentProject.value?.quickPlayItems?.length ?? 0,
   scheduleWaveformScan,
   { immediate: true },
 );
@@ -876,7 +877,7 @@ const importSpotifyTemplate = async (
       : null;
     previousTemplateData = templateRead?.success ? templateRead.data || '' : '';
     const existingTemplate = templateRead?.success && templateRead.data
-      ? JSON.parse(templateRead.data) as Project
+      ? convertLegacyQuickPlayNames(JSON.parse(templateRead.data)) as Project
       : null;
     const templateGroup = existingTemplate?.items?.[0];
     if (targetGroup && templateGroup?.type !== 'group') {
@@ -903,9 +904,9 @@ const importSpotifyTemplate = async (
         type: 'group',
         children: persistedCues,
       } as GroupItem],
-      cartItems: [],
-      cartSlotKeys: { ...DEFAULT_CART_SLOT_KEYS },
-      cartOnlyItems: [],
+      quickPlaySlots: [],
+      quickPlaySlotKeys: { ...DEFAULT_QUICK_PLAY_SLOT_KEYS },
+      quickPlayItems: [],
       theme: { ...DEFAULT_THEME },
       settings,
       createdAt: now,
@@ -1265,9 +1266,9 @@ const handleDragOver = (e: DragEvent) => {
     return;
   }
 
-  // One Shots copy into the playlist; playlist rows reorder and OS files copy
+  // QuickPlays copy into the playlist; playlist rows reorder and OS files copy
   // into the project media root.
-  e.dataTransfer.dropEffect = e.dataTransfer.types.includes('one-shot-uuid')
+  e.dataTransfer.dropEffect = e.dataTransfer.types.includes('quickplay-uuid')
     || e.dataTransfer.types.includes('Files')
     ? 'copy'
     : 'move';
@@ -1280,32 +1281,32 @@ const handleDrop = async (e: DragEvent) => {
   if (showMode.value) return;
   if (!e.dataTransfer) return;
 
-  // A One Shot dragged back into the playlist creates a normal cue and leaves
+  // A QuickPlay dragged back into the playlist creates a normal cue and leaves
   // the source cell ready for the next quick-fire trigger.
-  const oneShotUuid = e.dataTransfer.getData('one-shot-uuid');
-  if (oneShotUuid && currentProject.value) {
-    const source = findItemByUuid(oneShotUuid);
+  const quickPlayUuid = e.dataTransfer.getData('quickplay-uuid');
+  if (quickPlayUuid && currentProject.value) {
+    const source = findItemByUuid(quickPlayUuid);
     if (!source || source.type !== 'audio') return;
     addItem(cloneAsPlaylistItem(source as AudioItem, crypto.randomUUID()));
     await saveProject();
     return;
   }
 
-  // Cart slot dropped onto empty playlist space → promote it to a standalone
-  // playlist item (fresh uuid) appended at the end, and free the cart slot.
+  // QuickPlay slot dropped onto empty playlist space → promote it to a standalone
+  // playlist item (fresh uuid) appended at the end, and free the QuickPlay slot.
   // (Drops landing on an existing row are handled by PlaylistItem.)
-  if (e.dataTransfer.getData('cart-slot') && currentProject.value) {
-    const cartUuid = e.dataTransfer.getData('item-uuid');
-    const { findItemByUuid, deleteCartItems } = useProject();
-    const cartSrc = findItemByUuid(cartUuid);
-    if (!cartSrc || cartSrc.type !== 'audio') return;
+  if (e.dataTransfer.getData('quickplay-slot-promote') && currentProject.value) {
+    const promotedUuid = e.dataTransfer.getData('item-uuid');
+    const { findItemByUuid, deleteQuickPlays } = useProject();
+    const promotedSource = findItemByUuid(promotedUuid);
+    if (!promotedSource || promotedSource.type !== 'audio') return;
     const clone: AudioItem = {
-      ...(cartSrc as AudioItem),
+      ...(promotedSource as AudioItem),
       uuid: crypto.randomUUID(),
       index: [currentProject.value.items.length],
     } as AudioItem;
     addItem(clone);
-    deleteCartItems([cartUuid]);
+    deleteQuickPlays([promotedUuid]);
     return;
   }
 
@@ -1473,7 +1474,7 @@ const handleDrop = async (e: DragEvent) => {
 }
 
 @container (max-width: 580px) {
-  .playlist-header :deep(.cart-toggle__label) { display: none; }
+  .playlist-header :deep(.quickplay-toggle__label) { display: none; }
 }
 
 .playlist-header,

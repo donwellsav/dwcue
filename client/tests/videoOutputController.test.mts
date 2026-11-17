@@ -80,11 +80,11 @@ function audioItem(
   };
 }
 
-function project(items: unknown[], cartOnlyItems: unknown[] = []) {
+function project(items: unknown[], quickPlayItems: unknown[] = []) {
   return {
     folderPath: '/shows/current',
     items,
-    cartOnlyItems,
+    quickPlayItems,
     settings: { videoStandbyImage: 'images/standby.png' },
   };
 }
@@ -557,30 +557,30 @@ test('an old document fetch cannot restore projection after project close', asyn
   h.stop();
 });
 
-test('resolves canonical group children and cart-only video through item_uuid', async () => {
+test('resolves canonical group children and QuickPlay-only video through item_uuid', async () => {
   const groupChild = audioItem('group-child', { hasVideo: true, mediaPath: 'media/group.mp4' });
-  const cartOnly = audioItem('cart-only', {
+  const quickPlayOnly = audioItem('quickplay-only', {
     hasVideo: true,
-    mediaServerPath: '/Volumes/media/cart.mp4',
+    mediaServerPath: '/Volumes/media/quickplay.mp4',
   });
   const harness = createHarness(project([{
     uuid: 'group',
     type: 'group',
     children: [groupChild],
-  }], [cartOnly]));
+  }], [quickPlayOnly]));
   await flush();
 
   harness.emitSnapshot({
-    cues: [snapshotCue('group-child', 'cue-group', 1, 2), snapshotCue('cart-only', 'cue-cart', 2, 3)],
+    cues: [snapshotCue('group-child', 'cue-group', 1, 2), snapshotCue('quickplay-only', 'cue-quickplay', 2, 3)],
     preview: null,
     next_item_uuid: '',
   });
   await flush();
 
-  const cartUrl = new URL(harness.controller.videoSrc.value!);
-  assert.equal(cartUrl.pathname, '/api/media');
-  assert.equal(cartUrl.searchParams.get('item_uuid'), 'cart-only');
-  assert.equal(cartUrl.searchParams.has('path'), false, 'absolute server paths never leak into video URLs');
+  const quickPlayUrl = new URL(harness.controller.videoSrc.value!);
+  assert.equal(quickPlayUrl.pathname, '/api/media');
+  assert.equal(quickPlayUrl.searchParams.get('item_uuid'), 'quickplay-only');
+  assert.equal(quickPlayUrl.searchParams.has('path'), false, 'absolute server paths never leak into video URLs');
 
   harness.emitCue(snapshotCue('group-child', 'cue-group', 3, 6));
   assert.equal(new URL(harness.controller.videoSrc.value!).searchParams.get('item_uuid'), 'group-child');

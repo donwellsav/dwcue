@@ -464,7 +464,7 @@ test('project REST calls carry the bound session while chained creation uses its
     calls.push({ path: url.pathname, session: headers.get('X-DWCUE-Project-Session'), mutation: headers.get('X-DWCUE-Mutation-ID') });
     if (url.pathname === '/api/project/load') openRequests.push(JSON.parse(String(init?.body)));
     return new Response(JSON.stringify(url.pathname === '/api/cues' || url.pathname === '/api/mixers' ? [] : {
-      ok: true, hasOpenProject: true, name: 'Other', items: [], cartItems: [], cartOnlyItems: [], settings: {}, theme: {},
+      ok: true, hasOpenProject: true, name: 'Other', items: [], quickPlaySlots: [], quickPlayItems: [], settings: {}, theme: {},
       ...(supportsOpenDeadline && url.searchParams.has('open_deadline') ? { openDeadlineMs: 123456 } : {}),
       ...(supportsCreateDeadline ? { createDeadlineSupported: true } : {}),
       server: { projectFilePath: '/other.dwcue', projectSessionId: 'other-response-session', mediaRoot: '/other/media', audioLoading: false, audioLoaded: 0, audioTotal: 0 },
@@ -476,8 +476,8 @@ test('project REST calls carry the bound session while chained creation uses its
     await server.addProjectItem({ uuid: 'new', type: 'group', children: [] });
     await server.removeProjectItem('same');
     await server.reorderProjectItems(['new']);
-    await server.setCartSlot(0, 'new');
-    await server.clearCartSlot(0);
+    await server.setQuickPlaySlot(0, 'new');
+    await server.clearQuickPlaySlot(0);
     await server.patchTheme({ accentColor: '#abcdef' });
     await server.patchSettings({ autoSave: false });
     await server.fetchProjectItemsPage();
@@ -521,7 +521,7 @@ test('an open local project cannot send unbound REST edits', async () => {
   const project = nuxtState.get('currentProject')!;
   const before = project.value;
   try {
-    project.value = { name: 'Local', folderPath: '/show', items: [], cartItems: [], cartOnlyItems: [] };
+    project.value = { name: 'Local', folderPath: '/show', items: [], quickPlaySlots: [], quickPlayItems: [] };
     server.projectSessionId = '';
     await assert.rejects(server.patchSettings({ autoSave: false }), /project session/i);
   } finally { project.value = before; }

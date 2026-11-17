@@ -238,16 +238,16 @@ option(LIVEPLAY_BUILD_TESTS "Build the liveplay test binaries" OFF)
 if(LIVEPLAY_BUILD_TESTS)
     target_compile_definitions(liveplay-server PRIVATE LIVEPLAY_TEST_HOOKS=1)
     enable_testing()
-    add_executable(liveplay-one-shot-migration-tests
-        tests/one_shot_migration_test.cpp
+    add_executable(liveplay-quick-play-migration-tests
+        tests/quick_play_migration_test.cpp
     )
-    target_include_directories(liveplay-one-shot-migration-tests
+    target_include_directories(liveplay-quick-play-migration-tests
         PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
-    target_link_libraries(liveplay-one-shot-migration-tests
+    target_link_libraries(liveplay-quick-play-migration-tests
         PRIVATE nlohmann_json::nlohmann_json
     )
-    add_test(NAME one-shot-migration COMMAND liveplay-one-shot-migration-tests)
+    add_test(NAME quick-play-migration COMMAND liveplay-quick-play-migration-tests)
 
     add_executable(liveplay-control-security-tests
         tests/control_security_test.cpp

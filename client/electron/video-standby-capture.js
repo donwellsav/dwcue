@@ -1,7 +1,7 @@
 'use strict';
 
 function findCaptureCue(project, uuid) {
-  const lists = [project?.items, project?.cartOnlyItems];
+  const lists = [project?.items, project?.quickPlayItems];
   while (lists.length) {
     const items = lists.pop();
     if (!Array.isArray(items)) continue;

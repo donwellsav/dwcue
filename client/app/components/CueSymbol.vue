@@ -15,7 +15,7 @@
       <path d="m15 8 6 4-6 4z" />
     </template>
 
-    <template v-else-if="name === 'one-shots'">
+    <template v-else-if="name === 'quickplays'">
       <rect x="3" y="3" width="7" height="7" rx="1" />
       <rect x="14" y="3" width="7" height="7" rx="1" />
       <rect x="3" y="14" width="7" height="7" rx="1" />
@@ -38,7 +38,7 @@
 
 <script setup lang="ts">
 defineProps<{
-  name: 'preview' | 'one-shots' | 'ltc' | 'video-output';
+  name: 'preview' | 'quickplays' | 'ltc' | 'video-output';
 }>();
 </script>
 

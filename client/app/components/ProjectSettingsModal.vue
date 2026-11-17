@@ -305,57 +305,57 @@
               </section>
             </div>
             <div class="settings-rows">
-              <h3 class="settings-section-title">{{ t('oneShots.title') }}</h3>
+              <h3 class="settings-section-title">{{ t('quickPlays.title') }}</h3>
               <section class="settings-field track-height-control">
-                <label for="one-shot-font-scale">{{ t('settings.oneShotFontSize') }}</label>
+                <label for="quickplay-font-scale">{{ t('settings.quickPlayFontSize') }}</label>
                 <input
-                  id="one-shot-font-scale"
+                  id="quickplay-font-scale"
                   type="range"
-                  :min="ONE_SHOT_FONT_SCALE.min"
-                  :max="ONE_SHOT_FONT_SCALE.max"
+                  :min="QUICK_PLAY_FONT_SCALE.min"
+                  :max="QUICK_PLAY_FONT_SCALE.max"
                   step="5"
-                  :value="oneShotFontScale"
-                  @input="onOneShotFontScaleInput"
+                  :value="quickPlayFontScale"
+                  @input="onQuickPlayFontScaleInput"
                 />
-                <output for="one-shot-font-scale">{{ oneShotFontScale }}%</output>
+                <output for="quickplay-font-scale">{{ quickPlayFontScale }}%</output>
               </section>
               <section class="settings-field">
-                <div class="cart-layout-grid">
-                  <div class="cart-layout-grid__header">{{ t('settings.cartLayout') }}</div>
-                  <div class="cart-layout-grid__header">{{ t('settings.minimumCardHeight') }}</div>
-                  <div class="cart-layout-grid__header">{{ t('settings.visibleRows') }}</div>
-                  <div class="cart-layout-grid__header">{{ t('settings.columns') }}</div>
-                  <template v-for="profile in cartGridProfileOptions" :key="profile.id">
-                    <div class="cart-layout-grid__profile">{{ profile.label }}</div>
+                <div class="quickplay-layout-grid">
+                  <div class="quickplay-layout-grid__header">{{ t('settings.quickPlayLayout') }}</div>
+                  <div class="quickplay-layout-grid__header">{{ t('settings.minimumCardHeight') }}</div>
+                  <div class="quickplay-layout-grid__header">{{ t('settings.visibleRows') }}</div>
+                  <div class="quickplay-layout-grid__header">{{ t('settings.columns') }}</div>
+                  <template v-for="profile in quickPlayGridProfileOptions" :key="profile.id">
+                    <div class="quickplay-layout-grid__profile">{{ profile.label }}</div>
                     <input
                       type="number"
-                      class="settings-input cart-layout-input"
-                      :min="CART_GRID_PROFILES[profile.id].minHeight"
-                      :max="CART_GRID_PROFILES[profile.id].maxHeight"
+                      class="settings-input quickplay-layout-input"
+                      :min="QUICK_PLAY_GRID_PROFILES[profile.id].minHeight"
+                      :max="QUICK_PLAY_GRID_PROFILES[profile.id].maxHeight"
                       step="2"
-                      :value="cartGridLayouts[profile.id].minHeight"
+                      :value="quickPlayGridLayouts[profile.id].minHeight"
                       :aria-label="`${profile.label}, ${t('settings.minimumCardHeight')}`"
-                      @change="onCartGridLayoutChange(profile.id, 'minHeight', $event)"
+                      @change="onQuickPlayGridLayoutChange(profile.id, 'minHeight', $event)"
                     />
                     <input
                       type="number"
-                      class="settings-input cart-layout-input"
-                      :min="CART_GRID_LIMITS.rows.min"
-                      :max="CART_GRID_LIMITS.rows.max"
+                      class="settings-input quickplay-layout-input"
+                      :min="QUICK_PLAY_GRID_LIMITS.rows.min"
+                      :max="QUICK_PLAY_GRID_LIMITS.rows.max"
                       step="1"
-                      :value="cartGridLayouts[profile.id].rows"
+                      :value="quickPlayGridLayouts[profile.id].rows"
                       :aria-label="`${profile.label}, ${t('settings.visibleRows')}`"
-                      @change="onCartGridLayoutChange(profile.id, 'rows', $event)"
+                      @change="onQuickPlayGridLayoutChange(profile.id, 'rows', $event)"
                     />
                     <input
                       type="number"
-                      class="settings-input cart-layout-input"
-                      :min="CART_GRID_LIMITS.columns.min"
-                      :max="CART_GRID_LIMITS.columns.max"
+                      class="settings-input quickplay-layout-input"
+                      :min="QUICK_PLAY_GRID_LIMITS.columns.min"
+                      :max="QUICK_PLAY_GRID_LIMITS.columns.max"
                       step="1"
-                      :value="cartGridLayouts[profile.id].columns"
+                      :value="quickPlayGridLayouts[profile.id].columns"
                       :aria-label="`${profile.label}, ${t('settings.columns')}`"
-                      @change="onCartGridLayoutChange(profile.id, 'columns', $event)"
+                      @change="onQuickPlayGridLayoutChange(profile.id, 'columns', $event)"
                     />
                   </template>
                 </div>
@@ -654,14 +654,14 @@ import {
   type ProjectSettings,
 } from '~/types/project';
 import {
-  CART_GRID_LIMITS,
-  CART_GRID_PROFILES,
+  QUICK_PLAY_GRID_LIMITS,
+  QUICK_PLAY_GRID_PROFILES,
   PLAYLIST_ROW_HEIGHTS,
   WAVEFORM_OPACITY,
   UI_FONT_SCALE,
-  ONE_SHOT_FONT_SCALE,
-  type CartGridLayout,
-  type CartGridProfile,
+  QUICK_PLAY_FONT_SCALE,
+  type QuickPlayGridLayout,
+  type QuickPlayGridProfile,
   type PlaylistRowMode,
 } from '~/composables/useUiMode';
 import { normalizeIndexDisplayStart } from '~/utils/indexDisplay';
@@ -717,16 +717,16 @@ const {
   folderPlaylistRowHeight,
   waveformOpacity,
   uiFontScale,
-  oneShotFontScale,
-  cartGridLayouts,
+  quickPlayFontScale,
+  quickPlayGridLayouts,
   headerWarningTiming,
   showTooltips,
   setRegularPlaylistRowHeight,
   setFolderPlaylistRowHeight,
   setWaveformOpacity,
   setUiFontScale,
-  setOneShotFontScale,
-  setCartGridLayout,
+  setQuickPlayFontScale,
+  setQuickPlayGridLayout,
   setHeaderWarningTiming,
   setShowTooltips,
 } = useUiMode();
@@ -746,8 +746,8 @@ function onHeaderWarningTimingChange(field: keyof HeaderWarningTiming, event: Ev
 
 // One layout for the QuickPlays panel and one for the detached window; Edit
 // Mode and Show Mode share them.
-const cartGridProfileOptions = computed<Array<{ id: CartGridProfile; label: string }>>(() => [
-  { id: 'attachedRegular', label: t('oneShots.title') },
+const quickPlayGridProfileOptions = computed<Array<{ id: QuickPlayGridProfile; label: string }>>(() => [
+  { id: 'attachedRegular', label: t('quickPlays.title') },
   { id: 'detachedRegular', label: t('controls.toggleDetachedQuickPlays') },
 ]);
 
@@ -1367,26 +1367,26 @@ function onUiFontScaleInput(e: Event) {
   setUiFontScale((e.target as HTMLInputElement).value);
 }
 
-function onOneShotFontScaleInput(e: Event) {
-  setOneShotFontScale((e.target as HTMLInputElement).value);
+function onQuickPlayFontScaleInput(e: Event) {
+  setQuickPlayFontScale((e.target as HTMLInputElement).value);
 }
 
-function onCartGridLayoutChange(
-  profile: CartGridProfile,
-  field: keyof CartGridLayout,
+function onQuickPlayGridLayoutChange(
+  profile: QuickPlayGridProfile,
+  field: keyof QuickPlayGridLayout,
   e: Event,
 ) {
   const input = e.target as HTMLInputElement;
-  const current = cartGridLayouts.value[profile][field];
+  const current = quickPlayGridLayouts.value[profile][field];
   if (!input.value.trim()) {
     input.value = String(current);
     return;
   }
   const value = Number(input.value);
-  setCartGridLayout(profile, {
+  setQuickPlayGridLayout(profile, {
     [field]: Number.isFinite(value) ? value : current,
   });
-  input.value = String(cartGridLayouts.value[profile][field]);
+  input.value = String(quickPlayGridLayouts.value[profile][field]);
 }
 
 function close() {
@@ -1655,7 +1655,7 @@ function close() {
   padding-block: 3px;
 }
 
-.settings-rows > .settings-field:has(> :is(.cart-layout-grid, .header-warning-settings, .countdown-band-editor)) {
+.settings-rows > .settings-field:has(> :is(.quickplay-layout-grid, .header-warning-settings, .countdown-band-editor)) {
   padding-block: 0;
 }
 
@@ -1885,7 +1885,7 @@ function close() {
   text-align: right;
   white-space: nowrap;
 }
-.cart-layout-grid {
+.quickplay-layout-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) repeat(3, 46px);
   grid-auto-rows: minmax(var(--settings-row-height), auto);
@@ -1893,17 +1893,17 @@ function close() {
   align-items: center;
   line-height: 1.25;
 }
-.cart-layout-grid__header {
+.quickplay-layout-grid__header {
   color: var(--color-text-secondary);
   font-size: 11px;
   font-weight: 600;
 }
-.cart-layout-grid__profile {
+.quickplay-layout-grid__profile {
   color: var(--color-text-primary);
   font-size: 12px;
   font-weight: 500;
 }
-.cart-layout-input {
+.quickplay-layout-input {
   height: var(--settings-control-height);
   min-width: 0;
   padding: 2px;

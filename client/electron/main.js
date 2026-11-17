@@ -35,7 +35,7 @@ const {
 } = require('./ffmpeg-tools');
 const { cleanupConnectionFor, TestCardPlayback } = require('./test-card-playback');
 const { managedWebSocketHeaders } = require('./managed-websocket-origin');
-const { createOneShotMutationBroker, validateIdentity, sameIdentity } = require('./one-shot-mutation-broker');
+const { createQuickPlayMutationBroker, validateIdentity, sameIdentity } = require('./quickplay-mutation-broker');
 const { findCaptureCue, captureImageUrl } = require('./video-standby-capture');
 const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('./video-output-framing.mjs');
 const { planGeometryCorrection, readViewportReport } = require('./video-output-geometry');
@@ -1334,7 +1334,7 @@ function liveplayServerStatus() {
 
 function notifyServerStateChange() {
   const status = liveplayServerStatus();
-  for (const window of new Set([mainWindow, cartPlayerWindow, videoOutputWindow])) {
+  for (const window of new Set([mainWindow, detachedQuickPlayWindow, videoOutputWindow])) {
     if (window && !window.isDestroyed()) {
       window.webContents.send('liveplay-server:state', status);
     }
@@ -2448,9 +2448,9 @@ let currentProjectIdentity = null; // Separate ownership fence; never merged int
 let currentCaptureSession = null;
 let fileToOpen = null; // Store file path if app is opened with a file
 let stateViewerWindow = null; // Debug state viewer window
-let cartPlayerWindow = null;  // Detached cart player window
-const oneShotMutationBroker = createOneShotMutationBroker({
-  getCartWebContents: () => cartPlayerWindow?.webContents ?? null,
+let detachedQuickPlayWindow = null;  // Detached QuickPlay window
+const quickPlayMutationBroker = createQuickPlayMutationBroker({
+  getQuickPlayWebContents: () => detachedQuickPlayWindow?.webContents ?? null,
   getPrimaryWebContents: () => mainWindow?.webContents ?? null,
   getCurrentIdentity: () => currentProjectIdentity,
 });
@@ -2677,14 +2677,14 @@ function createWindow() {
   createMenu('en', isDevMode);
 }
 
-// Create detached QuickPlays window (IPC/query names stay backward compatible).
-function createCartPlayerWindow() {
-  if (cartPlayerWindow) {
-    cartPlayerWindow.focus();
+// Create the detached QuickPlays window.
+function createDetachedQuickPlayWindow() {
+  if (detachedQuickPlayWindow) {
+    detachedQuickPlayWindow.focus();
     return;
   }
 
-  cartPlayerWindow = new BrowserWindow({
+  detachedQuickPlayWindow = new BrowserWindow({
     width: 900,
     height: 700,
     minWidth: 380,
@@ -2704,27 +2704,27 @@ function createCartPlayerWindow() {
   });
 
   if (isDevMode) {
-    cartPlayerWindow.loadURL('http://localhost:3000/?cartWindow=1');
+    detachedQuickPlayWindow.loadURL('http://localhost:3000/?quickPlayWindow=1');
   } else {
     const indexPath = path.join(__dirname, '../.output/public/index.html');
-    cartPlayerWindow.loadFile(indexPath, { query: { cartWindow: '1' } });
+    detachedQuickPlayWindow.loadFile(indexPath, { query: { quickPlayWindow: '1' } });
   }
 
-  cartPlayerWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('[OneShotsWindow] Failed to load:', errorCode, errorDescription);
+  detachedQuickPlayWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('[QuickPlaysWindow] Failed to load:', errorCode, errorDescription);
   });
 
-  cartPlayerWindow.on('closed', () => {
-    cartPlayerWindow = null;
+  detachedQuickPlayWindow.on('closed', () => {
+    detachedQuickPlayWindow = null;
     if (mainWindow) {
-      mainWindow.webContents.send('cart-player-window-closed');
+      mainWindow.webContents.send('detached-quickplay-window-closed');
     }
   });
 
-  // Notify main window that cart window is open
-  cartPlayerWindow.webContents.once('did-finish-load', () => {
+  // Notify main window that QuickPlay window is open
+  detachedQuickPlayWindow.webContents.once('did-finish-load', () => {
     if (mainWindow) {
-      mainWindow.webContents.send('cart-player-window-opened');
+      mainWindow.webContents.send('detached-quickplay-window-opened');
     }
   });
 }
@@ -5432,9 +5432,9 @@ ipcMain.on('sync-project-data', (event, projectData, identity, captureSession = 
     currentProject = nextOpen;
   }
   // Forward every snapshot, including project closure, to the detached window.
-  if (cartPlayerWindow && !cartPlayerWindow.isDestroyed()
-      && !cartPlayerWindow.webContents.isDestroyed()) {
-    cartPlayerWindow.webContents.send('cart-window-project-update', {
+  if (detachedQuickPlayWindow && !detachedQuickPlayWindow.isDestroyed()
+      && !detachedQuickPlayWindow.webContents.isDestroyed()) {
+    detachedQuickPlayWindow.webContents.send('quickplay-window-project-update', {
       project: currentProjectData,
       identity: currentProjectIdentity,
       projectSessionId: currentCaptureSession,
@@ -5442,36 +5442,36 @@ ipcMain.on('sync-project-data', (event, projectData, identity, captureSession = 
   }
 });
 
-// Cart player window IPC handlers
-ipcMain.handle('open-cart-player-window', (event, projectFolderPath) => {
+// QuickPlay window IPC handlers
+ipcMain.handle('open-detached-quickplay-window', (event, projectFolderPath) => {
   requireTrustedIpc(event);
   if (projectFolderPath !== undefined) {
     requireIpcString(projectFolderPath, 'projectFolderPath', MAX_IPC_PATH_LENGTH);
   }
-  createCartPlayerWindow();
+  createDetachedQuickPlayWindow();
 });
 
-ipcMain.handle('toggle-cart-player-window', (event) => {
+ipcMain.handle('toggle-detached-quickplay-window', (event) => {
   requireTrustedIpc(event);
-  if (cartPlayerWindow) cartPlayerWindow.close();
-  else createCartPlayerWindow();
+  if (detachedQuickPlayWindow) detachedQuickPlayWindow.close();
+  else createDetachedQuickPlayWindow();
 });
 
-ipcMain.on('cart-player-window-attach', (event) => {
+ipcMain.on('detached-quickplay-window-attach', (event) => {
   try {
     requireTrustedIpc(event);
   } catch (error) {
-    console.warn('[cart-player-window-attach] rejected event:', error.message);
+    console.warn('[detached-quickplay-window-attach] rejected event:', error.message);
     return;
   }
-  if (cartPlayerWindow) {
-    cartPlayerWindow.close();
+  if (detachedQuickPlayWindow) {
+    detachedQuickPlayWindow.close();
   }
 });
 
 // UI mode (edit / "show mode") sync across windows. Each renderer owns its
 // own state, so broadcast a change from any window to every other window so
-// the detached cart player stays in lockstep with the main window.
+// the detached QuickPlay window stays in lockstep with the main window.
 ipcMain.on('ui-mode-changed', (event, mode) => {
   try {
     requireTrustedIpc(event);
@@ -5490,38 +5490,38 @@ ipcMain.on('ui-mode-changed', (event, mode) => {
   }
 });
 
-ipcMain.on('cart-grid-layouts-changed', (event, layouts) => {
+ipcMain.on('quickplay-grid-layouts-changed', (event, layouts) => {
   try {
     requireTrustedIpc(event);
     requireIpcString(layouts, 'layouts', 4096);
   } catch (error) {
-    console.warn('[cart-grid-layouts-changed] rejected event:', error.message);
+    console.warn('[quickplay-grid-layouts-changed] rejected event:', error.message);
     return;
   }
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.webContents.id === event.sender.id) continue;
     if (win.webContents && !win.webContents.isDestroyed()) {
-      win.webContents.send('cart-grid-layouts-set', layouts);
+      win.webContents.send('quickplay-grid-layouts-set', layouts);
     }
   }
 });
 
-ipcMain.handle('get-cart-window-project-data', (event) => {
+ipcMain.handle('get-quickplay-window-project-data', (event) => {
   requireTrustedIpc(event);
   return { project: currentProjectData, identity: currentProjectIdentity, projectSessionId: currentCaptureSession };
 });
 
-ipcMain.handle('one-shot-mutation:request', (event, request) => {
+ipcMain.handle('quickplay-mutation:request', (event, request) => {
   requireTrustedIpc(event);
-  return oneShotMutationBroker.request(event.sender, request);
+  return quickPlayMutationBroker.request(event.sender, request);
 });
 
-ipcMain.on('one-shot-mutation:complete', (event, result) => {
+ipcMain.on('quickplay-mutation:complete', (event, result) => {
   try {
     requireTrustedIpc(event);
-    oneShotMutationBroker.complete(event.sender, result);
+    quickPlayMutationBroker.complete(event.sender, result);
   } catch (error) {
-    console.warn('[one-shot-mutation:complete] rejected result:', error.message);
+    console.warn('[quickplay-mutation:complete] rejected result:', error.message);
   }
 });
 

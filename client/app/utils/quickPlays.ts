@@ -1,16 +1,14 @@
-// One feature, three names. Operators see "QuickPlay". The code says "one
-// shot" (oneShot, OneShotPanel, .one-shot-tile). Saved shows and the engine
-// say "cart" (cartOnlyItems, cartItems, cartSlotCount, cart_slot_set) and
-// keep each QuickPlay's settings in a field called `oneShot`. The last two are
-// part of the saved-show format and the engine protocol, so they cannot be
-// renamed without migrating every saved show; new code should say QuickPlay
-// in anything an operator can read and follow the surrounding file otherwise.
+// One feature, one name: QuickPlay. Operators, the code, saved shows and the
+// engine all say it (quickPlay, QuickPlayPanel, .quickplay-tile, quickPlayItems,
+// quickPlaySlots, quickplay_slot_set). Shows saved before the rename used other
+// names; utils/legacyQuickPlayNames.ts converts them as a show enters the app
+// and is the only code that still reads them.
 import type { AudioItem, GroupItem } from '../types/project';
 
-export type OneShotPlaybackMode = 'overlay' | 'duck' | 'replace';
+export type QuickPlayPlaybackMode = 'overlay' | 'duck' | 'replace';
 // 'goto' reports a Go to Item / Go to Index ending authored in Properties. The
 // compact picker shows it but cannot create one, because it needs a target.
-export type OneShotEndMode = 'stop' | 'loop' | 'next' | 'goto';
+export type QuickPlayEndMode = 'stop' | 'loop' | 'next' | 'goto';
 
 // Server-owned Cue to Continue state for the pass that is playing right now.
 // 'armed' forces Play Up Next for this pass; 'suppressed' cancels an authored
@@ -19,12 +17,12 @@ export type CueFollowOverride = 'armed' | 'suppressed';
 
 // The layout editor supports up to 16 × 16 cells. Capping bad saved order
 // values here prevents a corrupt project from allocating an unbounded grid.
-export const MAX_ONE_SHOT_SLOTS = 256;
+export const MAX_QUICK_PLAY_SLOTS = 256;
 
-export const isOneShot = (item: AudioItem): boolean =>
-  !!item.oneShot && typeof item.oneShot === 'object';
+export const isQuickPlay = (item: AudioItem): boolean =>
+  !!item.quickPlay && typeof item.quickPlay === 'object';
 
-export const flattenOneShots = (
+export const flattenQuickPlays = (
   items: readonly (AudioItem | GroupItem)[],
   standaloneItems: readonly AudioItem[] = [],
 ): AudioItem[] => {
@@ -34,7 +32,7 @@ export const flattenOneShots = (
   const include = (item: AudioItem) => {
     if (seen.has(item.uuid)) return;
     seen.add(item.uuid);
-    if (isOneShot(item)) found.push({ item, traversal });
+    if (isQuickPlay(item)) found.push({ item, traversal });
     traversal++;
   };
   const walk = (source: readonly (AudioItem | GroupItem)[]) => {
@@ -49,41 +47,41 @@ export const flattenOneShots = (
   walk(items);
   standaloneItems.forEach(include);
   found.sort((a, b) => {
-    const aOrder = Number.isFinite(a.item.oneShot?.order)
-      ? a.item.oneShot!.order : Number.POSITIVE_INFINITY;
-    const bOrder = Number.isFinite(b.item.oneShot?.order)
-      ? b.item.oneShot!.order : Number.POSITIVE_INFINITY;
+    const aOrder = Number.isFinite(a.item.quickPlay?.order)
+      ? a.item.quickPlay!.order : Number.POSITIVE_INFINITY;
+    const bOrder = Number.isFinite(b.item.quickPlay?.order)
+      ? b.item.quickPlay!.order : Number.POSITIVE_INFINITY;
     return aOrder - bOrder || a.traversal - b.traversal;
   });
   return found.map(({ item }) => item);
 };
 
-export const buildOneShotSlots = (
+export const buildQuickPlayCells = (
   items: readonly (AudioItem | GroupItem)[],
   standaloneItems: readonly AudioItem[] = [],
   minimumSlots = 0,
 ): Array<AudioItem | null> => {
-  const oneShots = flattenOneShots(items, standaloneItems);
+  const quickPlays = flattenQuickPlays(items, standaloneItems);
   const safeMinimum = Math.min(
-    MAX_ONE_SHOT_SLOTS,
+    MAX_QUICK_PLAY_SLOTS,
     Math.max(0, Math.floor(Number.isFinite(minimumSlots) ? minimumSlots : 0)),
   );
-  const highestOrder = oneShots.reduce((highest, item) => {
-    const order = item.oneShot?.order;
+  const highestOrder = quickPlays.reduce((highest, item) => {
+    const order = item.quickPlay?.order;
     return typeof order === 'number' && Number.isInteger(order)
-      && order >= 0 && order < MAX_ONE_SHOT_SLOTS
+      && order >= 0 && order < MAX_QUICK_PLAY_SLOTS
       ? Math.max(highest, order)
       : highest;
   }, -1);
   const slotCount = Math.min(
-    MAX_ONE_SHOT_SLOTS,
-    Math.max(safeMinimum, highestOrder + 1, oneShots.length),
+    MAX_QUICK_PLAY_SLOTS,
+    Math.max(safeMinimum, highestOrder + 1, quickPlays.length),
   );
   const slots: Array<AudioItem | null> = Array.from({ length: slotCount }, () => null);
   const unplaced: AudioItem[] = [];
 
-  for (const item of oneShots) {
-    const order = item.oneShot?.order;
+  for (const item of quickPlays) {
+    const order = item.quickPlay?.order;
     if (typeof order === 'number' && Number.isInteger(order)
       && order >= 0 && order < slotCount && !slots[order]) {
       slots[order] = item;
@@ -100,29 +98,29 @@ export const buildOneShotSlots = (
   return slots;
 };
 
-export const nextAvailableOneShotOrder = (
+export const nextAvailableQuickPlayOrder = (
   items: readonly (AudioItem | GroupItem)[],
   standaloneItems: readonly AudioItem[] = [],
 ): number => {
-  const slots = buildOneShotSlots(items, standaloneItems);
+  const slots = buildQuickPlayCells(items, standaloneItems);
   const gap = slots.indexOf(null);
   if (gap >= 0) return gap;
-  return slots.length < MAX_ONE_SHOT_SLOTS ? slots.length : -1;
+  return slots.length < MAX_QUICK_PLAY_SLOTS ? slots.length : -1;
 };
 
-export const nextOneShotOrder = (
+export const nextQuickPlayOrder = (
   items: readonly (AudioItem | GroupItem)[],
   standaloneItems: readonly AudioItem[] = [],
-): number => flattenOneShots(items, standaloneItems).reduce(
-  (next, item) => Number.isFinite(item.oneShot?.order)
-    ? Math.max(next, item.oneShot!.order + 1)
+): number => flattenQuickPlays(items, standaloneItems).reduce(
+  (next, item) => Number.isFinite(item.quickPlay?.order)
+    ? Math.max(next, item.quickPlay!.order + 1)
     : next,
   0,
 );
 
-export const markAsOneShot = (item: AudioItem, order: number): void => {
-  item.oneShot = { order, retrigger: 'restart' };
-  setOneShotPlaybackMode(item, 'replace');
+export const markAsQuickPlay = (item: AudioItem, order: number): void => {
+  item.quickPlay = { order, retrigger: 'restart' };
+  setQuickPlayPlaybackMode(item, 'replace');
   item.playFade = 0.1;
   item.stopFade = 0.5;
   item.fadeOutDuration = item.stopFade;
@@ -132,27 +130,27 @@ export const markAsOneShot = (item: AudioItem, order: number): void => {
   item.endBehavior = { action: 'nothing' };
 };
 
-export const cloneAsIndependentOneShot = (
+export const cloneAsIndependentQuickPlay = (
   source: AudioItem,
   uuid: string,
   order: number,
-  preserveOneShotPlayback = false,
+  preserveQuickPlayPlayback = false,
 ): AudioItem => {
   const clone = JSON.parse(JSON.stringify(source)) as AudioItem;
-  const savedSettings = clone.oneShot;
+  const savedSettings = clone.quickPlay;
   clone.uuid = uuid;
   clone.index = [-1, order];
-  if (preserveOneShotPlayback && savedSettings) {
-    clone.oneShot = { ...savedSettings, order, sourceUuid: savedSettings.sourceUuid ?? source.uuid };
+  if (preserveQuickPlayPlayback && savedSettings) {
+    clone.quickPlay = { ...savedSettings, order, sourceUuid: savedSettings.sourceUuid ?? source.uuid };
   } else {
-    markAsOneShot(clone, order);
-    clone.oneShot!.sourceUuid = source.uuid;
+    markAsQuickPlay(clone, order);
+    clone.quickPlay!.sourceUuid = source.uuid;
   }
   return clone;
 };
 
 /**
- * Copy a One Shot into the playlist without consuming the source cell.
+ * Copy a QuickPlay into the playlist without consuming the source cell.
  *
  * The copy is a normal playlist cue: its quick-fire designation is removed,
  * while the audio file, trim points, gain, and other cue settings stay intact.
@@ -164,24 +162,24 @@ export const cloneAsPlaylistItem = (
   const clone = JSON.parse(JSON.stringify(source)) as AudioItem;
   clone.uuid = uuid;
   clone.index = [0];
-  delete clone.oneShot;
+  delete clone.quickPlay;
   return clone;
 };
 
-export const removeOneShotDesignation = (item: AudioItem): void => {
-  delete item.oneShot;
+export const removeQuickPlayDesignation = (item: AudioItem): void => {
+  delete item.quickPlay;
 };
 
-export const getOneShotPlaybackMode = (item: AudioItem): OneShotPlaybackMode => {
+export const getQuickPlayPlaybackMode = (item: AudioItem): QuickPlayPlaybackMode => {
   const mode = item.duckingBehavior?.mode ?? 'stop-all';
   if (mode === 'duck-others') return 'duck';
   if (mode === 'stop-all') return 'replace';
   return 'overlay';
 };
 
-export const setOneShotPlaybackMode = (
+export const setQuickPlayPlaybackMode = (
   item: AudioItem,
-  mode: OneShotPlaybackMode,
+  mode: QuickPlayPlaybackMode,
 ): void => {
   item.duckingBehavior = {
     ...item.duckingBehavior,
@@ -193,7 +191,7 @@ export const setOneShotPlaybackMode = (
     item.duckingBehavior.duckLevel = 0.1;
 };
 
-export const getOneShotEndMode = (item: AudioItem): OneShotEndMode => {
+export const getQuickPlayEndMode = (item: AudioItem): QuickPlayEndMode => {
   const action = item.endBehavior?.action;
   if (action === 'loop') return 'loop';
   if (action === 'next') return 'next';
@@ -201,7 +199,7 @@ export const getOneShotEndMode = (item: AudioItem): OneShotEndMode => {
   return 'stop';
 };
 
-export const setOneShotEndMode = (item: AudioItem, mode: OneShotEndMode): void => {
+export const setQuickPlayEndMode = (item: AudioItem, mode: QuickPlayEndMode): void => {
   // Re-selecting the reported Go to ending must not discard its target.
   if (mode === 'goto') return;
   item.endBehavior = {
@@ -214,7 +212,7 @@ export const setOneShotEndMode = (item: AudioItem, mode: OneShotEndMode): void =
  * finishes. While it plays, the server-owned override for the current pass
  * wins over the authored Ending; when idle only the authored Ending applies.
  */
-export const oneShotFollowsUpNext = (
+export const quickPlayFollowsUpNext = (
   item: AudioItem,
   override?: CueFollowOverride | null,
 ): boolean => override === 'armed'

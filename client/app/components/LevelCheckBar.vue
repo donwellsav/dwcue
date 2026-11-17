@@ -72,7 +72,7 @@ const formatTime = (seconds: number): string => {
   return `${m}:${s.toFixed(1).padStart(4, '0')}`;
 };
 
-// Capture phase so these keys win over the cart/playback hotkeys while the
+// Capture phase so these keys win over the QuickPlay/playback hotkeys while the
 // bar is up. Keys are deliberately NOT the show-critical ones — Escape and
 // Space must keep reaching panic and play-next during a check: R replays,
 // [ / ] walk cues, Q exits. Letter keys only fire unmodified, so Cmd+R

@@ -319,7 +319,7 @@ import ActionButton from './ActionButton.vue';
 import ItemLevel from './ItemLevel.vue';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
 import { exceedsTruePeakCeiling } from '~/utils/audio';
-import { cloneAsPlaylistItem } from '~/utils/oneShots';
+import { cloneAsPlaylistItem } from '~/utils/quickPlays';
 
 const props = defineProps<{
   item: AudioItem | GroupItem;
@@ -793,7 +793,7 @@ const handleDragStart = (e: DragEvent) => {
     e.dataTransfer.setData('item-uuid', props.item.uuid);
     e.dataTransfer.setData('playlist-reorder', 'true');
     if (props.item.type === 'audio') {
-      // One Shot targets use this explicit type to treat a playlist drag as
+      // QuickPlay targets use this explicit type to treat a playlist drag as
       // a copy while playlist rows continue to use item-uuid for reordering.
       e.dataTransfer.setData('playlist-audio-uuid', props.item.uuid);
     }
@@ -823,8 +823,8 @@ const handleDragOver = (e: DragEvent) => {
   }
   if (!e.dataTransfer) return;
   
-  const isOneShotCopy = e.dataTransfer.types.includes('one-shot-uuid');
-  e.dataTransfer.dropEffect = isOneShotCopy ? 'copy' : 'move';
+  const isQuickPlayCopy = e.dataTransfer.types.includes('quickplay-uuid');
+  e.dataTransfer.dropEffect = isQuickPlayCopy ? 'copy' : 'move';
   
   // Determine drop position based on mouse position
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -857,13 +857,13 @@ const handleDrop = (e: DragEvent) => {
   if (showMode.value) return;
   if (!e.dataTransfer || !currentProject.value) return;
 
-  // A One Shot dragged back into the playlist creates a normal playlist cue
+  // A QuickPlay dragged back into the playlist creates a normal playlist cue
   // and leaves the source cell armed. This is intentionally a copy: the live
   // quick-fire surface must not disappear because a tech reorganized a show.
-  const oneShotUuid = e.dataTransfer.getData('one-shot-uuid');
-  if (oneShotUuid) {
-    if (oneShotUuid === props.item.uuid) return;
-    const source = findItemByUuid(oneShotUuid);
+  const quickPlayUuid = e.dataTransfer.getData('quickplay-uuid');
+  if (quickPlayUuid) {
+    if (quickPlayUuid === props.item.uuid) return;
+    const source = findItemByUuid(quickPlayUuid);
     if (!source || source.type !== 'audio') return;
     insertPlaylistCloneAtTarget(
       cloneAsPlaylistItem(source as AudioItem, crypto.randomUUID()),
@@ -872,22 +872,22 @@ const handleDrop = (e: DragEvent) => {
     return;
   }
 
-  // A cart slot dragged onto the playlist → promote it to an independent
-  // playlist item (fresh uuid) and free the cart slot. A cart cue is a
-  // self-contained copy, so this mirrors the playlist→cart clone in reverse
+  // A QuickPlay slot dragged onto the playlist → promote it to an independent
+  // playlist item (fresh uuid) and free the QuickPlay slot. A QuickPlay cue is a
+  // self-contained copy, so this mirrors the playlist→QuickPlay clone in reverse
   // (rather than sharing one identity across both lists). Detected via the
-  // 'cart-slot' payload that only CartSlot sets.
-  if (e.dataTransfer.getData('cart-slot')) {
-    const cartUuid = e.dataTransfer.getData('item-uuid');
-    const cartSrc = findItemByUuid(cartUuid);
-    if (!cartSrc || cartSrc.type !== 'audio') return;
+  // 'quickplay-slot-promote' payload, which no current component sets.
+  if (e.dataTransfer.getData('quickplay-slot-promote')) {
+    const promotedUuid = e.dataTransfer.getData('item-uuid');
+    const promotedSource = findItemByUuid(promotedUuid);
+    if (!promotedSource || promotedSource.type !== 'audio') return;
 
-    const clone: AudioItem = { ...(cartSrc as AudioItem), uuid: crypto.randomUUID() } as AudioItem;
+    const clone: AudioItem = { ...(promotedSource as AudioItem), uuid: crypto.randomUUID() } as AudioItem;
 
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const y = e.clientY - rect.top;
     const height = rect.height;
-    const { updateIndices, deleteCartItems } = useProject();
+    const { updateIndices, deleteQuickPlays } = useProject();
 
     if (props.item.type === 'group' && y > height * 0.3 && y < height * 0.7) {
       const groupItem = props.item as GroupItem;
@@ -909,8 +909,8 @@ const handleDrop = (e: DragEvent) => {
       updateIndices(parentArray, parentIndex);
     }
 
-    // Unassign the originating cart slot (also persists via saveProject).
-    deleteCartItems([cartUuid]);
+    // Unassign the originating QuickPlay slot (also persists via saveProject).
+    deleteQuickPlays([promotedUuid]);
     return;
   }
 

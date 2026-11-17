@@ -2,21 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { reactive } from 'vue';
 import type { AudioItem, Project } from '../app/types/project';
-import type { OneShotMutationIdentity, OneShotMutationRequest } from '../app/types/oneShotMutation';
-import { isNewerOneShotProject } from '../app/types/oneShotMutation';
-import type { OneShotMutationDraft } from '../app/utils/oneShotMutation';
-import { applyOneShotMutation, createDetachedOneShotMutationClient } from '../app/utils/oneShotMutation';
-import { cloneAsIndependentOneShot } from '../app/utils/oneShots';
+import type { QuickPlayMutationIdentity, QuickPlayMutationRequest } from '../app/types/quickPlayMutation';
+import { isNewerQuickPlayProject } from '../app/types/quickPlayMutation';
+import type { QuickPlayMutationDraft } from '../app/utils/quickPlayMutation';
+import { applyQuickPlayMutation, createDetachedQuickPlayMutationClient } from '../app/utils/quickPlayMutation';
+import { cloneAsIndependentQuickPlay } from '../app/utils/quickPlays';
 
-const identity: OneShotMutationIdentity = {
+const identity: QuickPlayMutationIdentity = {
   projectPath: '/shows/a.dwcue', projectEpoch: 7, ownerSessionId: 'primary-1',
 };
 
 test('a detached recovery requires a newer primary show identity', () => {
-  assert.equal(isNewerOneShotProject(identity, identity), false);
-  assert.equal(isNewerOneShotProject({ ...identity, projectPath: '/shows/old.dwcue', projectEpoch: 6 }, identity), false);
-  assert.equal(isNewerOneShotProject({ ...identity, projectEpoch: 8 }, identity), true);
-  assert.equal(isNewerOneShotProject({ ...identity, ownerSessionId: 'primary-2', projectEpoch: 0 }, identity), true);
+  assert.equal(isNewerQuickPlayProject(identity, identity), false);
+  assert.equal(isNewerQuickPlayProject({ ...identity, projectPath: '/shows/old.dwcue', projectEpoch: 6 }, identity), false);
+  assert.equal(isNewerQuickPlayProject({ ...identity, projectEpoch: 8 }, identity), true);
+  assert.equal(isNewerQuickPlayProject({ ...identity, ownerSessionId: 'primary-2', projectEpoch: 0 }, identity), true);
 });
 const audio = (uuid: string, order: number): AudioItem => ({
   uuid, index: [-1, order], displayName: uuid, color: '#00cc99', type: 'audio',
@@ -25,25 +25,25 @@ const audio = (uuid: string, order: number): AudioItem => ({
   playFade: 0, stopFade: 0, crossFade: 0, customActions: [],
   endBehavior: { action: 'nothing' }, startBehavior: { action: 'nothing' },
   duckingBehavior: { mode: 'duck-others', duckLevel: 0.1 },
-  oneShot: { order, retrigger: 'restart', armed: true },
+  quickPlay: { order, retrigger: 'restart', armed: true },
 });
 const document = () => {
   const playlist = audio('playlist', 0);
   playlist.index = [0];
   const standalone = audio('standalone', 1);
   const project: Project = {
-    name: 'Test', version: '2', folderPath: '/shows/a', items: [playlist], cartItems: [],
-    cartOnlyItems: [standalone], theme: { mode: 'dark', accentColor: '#315fcf' }, settings: {},
+    name: 'Test', version: '2', folderPath: '/shows/a', items: [playlist], quickPlaySlots: [],
+    quickPlayItems: [standalone], theme: { mode: 'dark', accentColor: '#315fcf' }, settings: {},
     createdAt: '', lastModified: '',
   };
-  return { project, cartOnlyItems: new Map([[standalone.uuid, standalone]]), playlist, standalone };
+  return { project, quickPlayItems: new Map([[standalone.uuid, standalone]]), playlist, standalone };
 };
-const request = (value: OneShotMutationDraft): OneShotMutationRequest =>
-  ({ ...value, requestId: crypto.randomUUID(), identity } as OneShotMutationRequest);
+const request = (value: QuickPlayMutationDraft): QuickPlayMutationRequest =>
+  ({ ...value, requestId: crypto.randomUUID(), identity } as QuickPlayMutationRequest);
 
 test('applies every allowed detached field and rejects arbitrary patch keys', () => {
   const state = document();
-  const result = applyOneShotMutation(state, request({
+  const result = applyQuickPlayMutation(state, request({
     kind: 'set-fields', itemUuid: 'standalone', payload: { fields: {
       displayName: 'Updated', color: '#112233', volume: 0.5, playFade: 2, stopFade: 3,
       duckLevel: 0.2, duckFadeIn: 0.3, duckFadeOut: 0.4, deviceOverride: 'out-2',
@@ -57,49 +57,49 @@ test('applies every allowed detached field and rejects arbitrary patch keys', ()
   assert.deepEqual(state.standalone.duckingBehavior, {
     mode: 'stop-all', duckLevel: 0.2, duckFadeIn: 0.3, duckFadeOut: 0.4,
   });
-  assert.equal(state.standalone.oneShot?.retrigger, 'ignore');
-  assert.equal(state.standalone.oneShot?.armed, true, 'existing project metadata is preserved');
-  assert.deepEqual(state.standalone.oneShot?.hotkey, { key: 'F1' });
+  assert.equal(state.standalone.quickPlay?.retrigger, 'ignore');
+  assert.equal(state.standalone.quickPlay?.armed, true, 'existing project metadata is preserved');
+  assert.deepEqual(state.standalone.quickPlay?.hotkey, { key: 'F1' });
   assert.equal(state.standalone.endBehavior.action, 'loop');
   assert.equal(state.standalone.deviceOverride, 'out-2');
-  const cleared = applyOneShotMutation(state, request({
+  const cleared = applyQuickPlayMutation(state, request({
     kind: 'set-fields', itemUuid: 'standalone', payload: { fields: { hotkey: null, deviceOverride: null } },
   }));
   assert.equal(cleared.accepted, true);
   const patch = JSON.parse(JSON.stringify(state.standalone));
-  assert.equal(patch.oneShot.hotkey, null);
+  assert.equal(patch.quickPlay.hotkey, null);
   assert.equal(patch.deviceOverride, null, 'the serialized patch must explicitly clear the old route');
-  const playNext = applyOneShotMutation(state, request({
+  const playNext = applyQuickPlayMutation(state, request({
     kind: 'set-fields', itemUuid: 'standalone', payload: { fields: { endMode: 'next' } },
   }));
   assert.equal(playNext.accepted, true, 'the detached window can set a Play Next ending');
   assert.deepEqual(state.standalone.endBehavior, { action: 'next' });
-  const badEnding = applyOneShotMutation(state, request({
+  const badEnding = applyQuickPlayMutation(state, request({
     kind: 'set-fields', itemUuid: 'standalone', payload: { fields: { endMode: 'goto' } },
-  } as unknown as OneShotMutationDraft));
+  } as unknown as QuickPlayMutationDraft));
   assert.equal(badEnding.accepted, false, 'a Go to ending needs a target and is not a detached field');
   assert.deepEqual(state.standalone.endBehavior, { action: 'next' });
-  const rejected = applyOneShotMutation(state, request({
+  const rejected = applyQuickPlayMutation(state, request({
     kind: 'set-fields', itemUuid: 'standalone',
     payload: { fields: { server: { projectFilePath: '/evil' } } },
-  } as unknown as OneShotMutationDraft));
+  } as unknown as QuickPlayMutationDraft));
   assert.equal(rejected.accepted, false);
 });
 
 test('moves, removes, and replaces topology', () => {
   const state = document();
-  applyOneShotMutation(state, request({
+  applyQuickPlayMutation(state, request({
     kind: 'move-slot', itemUuid: 'standalone', payload: { sourceSlot: 1, targetSlot: 0 },
   }));
-  assert.equal(state.standalone.oneShot?.order, 0);
-  assert.equal(state.playlist.oneShot?.order, 1);
-  applyOneShotMutation(state, request({ kind: 'remove-slot', itemUuid: 'playlist', payload: {} }));
-  assert.equal(state.playlist.oneShot, undefined);
+  assert.equal(state.standalone.quickPlay?.order, 0);
+  assert.equal(state.playlist.quickPlay?.order, 1);
+  applyQuickPlayMutation(state, request({ kind: 'remove-slot', itemUuid: 'playlist', payload: {} }));
+  assert.equal(state.playlist.quickPlay, undefined);
   const replacement = audio('replacement', 0);
-  assert.equal(applyOneShotMutation(state, request({
+  assert.equal(applyQuickPlayMutation(state, request({
     kind: 'replace-slot', payload: { slot: 0, item: replacement },
   })).accepted, true);
-  assert.equal(state.cartOnlyItems.get('replacement')?.uuid, 'replacement');
+  assert.equal(state.quickPlayItems.get('replacement')?.uuid, 'replacement');
 });
 
 test('invalid replacements and slot moves preserve every existing cue', () => {
@@ -112,28 +112,28 @@ test('invalid replacements and slot moves preserve every existing cue', () => {
   ];
   for (const item of invalidReplacements) {
     const state = document();
-    const before = JSON.stringify({ project: state.project, cart: [...state.cartOnlyItems] });
-    const result = applyOneShotMutation(state, request({ kind: 'replace-slot', payload: { slot: 1, item } }));
+    const before = JSON.stringify({ project: state.project, quickPlayItems: [...state.quickPlayItems] });
+    const result = applyQuickPlayMutation(state, request({ kind: 'replace-slot', payload: { slot: 1, item } }));
     assert.equal(result.accepted, false);
-    assert.equal(JSON.stringify({ project: state.project, cart: [...state.cartOnlyItems] }), before);
+    assert.equal(JSON.stringify({ project: state.project, quickPlayItems: [...state.quickPlayItems] }), before);
   }
   for (const slot of [-1, 256, Number.MAX_SAFE_INTEGER, 1.5]) {
     const state = document();
-    assert.equal(applyOneShotMutation(state, request({
+    assert.equal(applyQuickPlayMutation(state, request({
       kind: 'move-slot', itemUuid: 'standalone', payload: { sourceSlot: 1, targetSlot: slot },
     })).accepted, false);
-    assert.equal(applyOneShotMutation(state, request({
+    assert.equal(applyQuickPlayMutation(state, request({
       kind: 'replace-slot', payload: { slot, item: audio('replacement', slot) },
     })).accepted, false);
-    assert.equal(state.standalone.oneShot?.order, 1);
-    assert.equal(state.cartOnlyItems.get('standalone'), state.standalone);
-    assert.equal(state.playlist.oneShot?.order, 0);
+    assert.equal(state.standalone.quickPlay?.order, 1);
+    assert.equal(state.quickPlayItems.get('standalone'), state.standalone);
+    assert.equal(state.playlist.quickPlay?.order, 0);
   }
   const state = document();
-  assert.equal(applyOneShotMutation(state, request({
+  assert.equal(applyQuickPlayMutation(state, request({
     kind: 'move-slot', itemUuid: 'standalone', payload: { sourceSlot: 1, targetSlot: 255 },
   })).accepted, true);
-  assert.equal(state.standalone.oneShot?.order, 255);
+  assert.equal(state.standalone.quickPlay?.order, 255);
 });
 test('replace-slot rejects incomplete or malformed nested AudioItems without changing state', () => {
   const requiredFields: Array<keyof AudioItem> = [
@@ -160,7 +160,7 @@ test('replace-slot rejects incomplete or malformed nested AudioItems without cha
     { ...audio('replacement', 1), customActions: [{
       timePoint: 1, action: { type: 'http-request', request: { method: 'PATCH', url: '/hook', contentType: 'json' } },
     }] },
-    { ...audio('replacement', 1), oneShot: { order: 1, retrigger: 'sometimes' } },
+    { ...audio('replacement', 1), quickPlay: { order: 1, retrigger: 'sometimes' } },
     ...[[-1], [-1, 0], [-1, 1, 0], [-2, 1], [0, -1], [-1, 1.5]].map(index => ({ ...audio('replacement', 1), index })),
     { ...audio('replacement', 1), endBehavior: { action: 'goto-index', targetIndex: [-1, 1] } },
     { ...audio('replacement', 1), customActions: [{ timePoint: 1, action: { type: 'play-index', index: [-1, 1] } }] },
@@ -168,11 +168,11 @@ test('replace-slot rejects incomplete or malformed nested AudioItems without cha
 
   for (const item of [...incomplete, ...malformed]) {
     const state = document();
-    const before = structuredClone({ project: state.project, cart: [...state.cartOnlyItems] });
-    const draft = { kind: 'replace-slot', payload: { slot: 1, item } } as unknown as OneShotMutationDraft;
-    const result = applyOneShotMutation(state, request(draft));
+    const before = structuredClone({ project: state.project, quickPlayItems: [...state.quickPlayItems] });
+    const draft = { kind: 'replace-slot', payload: { slot: 1, item } } as unknown as QuickPlayMutationDraft;
+    const result = applyQuickPlayMutation(state, request(draft));
     assert.equal(result.accepted, false);
-    assert.deepEqual({ project: state.project, cart: [...state.cartOnlyItems] }, before);
+    assert.deepEqual({ project: state.project, quickPlayItems: [...state.quickPlayItems] }, before);
   }
 });
 
@@ -183,31 +183,31 @@ test('replace-slot preserves a complete factory-shaped AudioItem exactly', () =>
   replacement.startBehavior = { action: 'play-item', targetUuid: 'playlist' };
   replacement.endBehavior = { action: 'goto-index', targetIndex: [0] };
   replacement.duckingBehavior = { mode: 'duck-others', duckLevel: 0.25, duckFadeIn: 0.5, duckFadeOut: 1 };
-  const result = applyOneShotMutation(state, request({
+  const result = applyQuickPlayMutation(state, request({
     kind: 'replace-slot', payload: { slot: 1, item: replacement },
   }));
   assert.equal(result.accepted, true);
-  assert.deepEqual(state.cartOnlyItems.get(replacement.uuid), replacement);
-  assert.notEqual(state.cartOnlyItems.get(replacement.uuid), replacement);
+  assert.deepEqual(state.quickPlayItems.get(replacement.uuid), replacement);
+  assert.notEqual(state.quickPlayItems.get(replacement.uuid), replacement);
 });
 
 test('replace-slot accepts the standalone index produced by the playlist clone factory', () => {
   const state = document();
-  const replacement = cloneAsIndependentOneShot(state.playlist, 'cloned-replacement', 1);
-  const result = applyOneShotMutation(state, request({
+  const replacement = cloneAsIndependentQuickPlay(state.playlist, 'cloned-replacement', 1);
+  const result = applyQuickPlayMutation(state, request({
     kind: 'replace-slot', payload: { slot: 1, item: replacement },
   }));
   assert.equal(result.accepted, true);
-  assert.deepEqual(state.cartOnlyItems.get(replacement.uuid)?.index, [-1, 1]);
+  assert.deepEqual(state.quickPlayItems.get(replacement.uuid)?.index, [-1, 1]);
 });
 
 test('detached requests are serialized and stale completions are rejected', async () => {
   const pending: Array<{
-    request: OneShotMutationRequest;
-    resolve(value: { requestId: string; identity: OneShotMutationIdentity; accepted: boolean; persisted: boolean }): void;
+    request: QuickPlayMutationRequest;
+    resolve(value: { requestId: string; identity: QuickPlayMutationIdentity; accepted: boolean; persisted: boolean }): void;
   }> = [];
-  const client = createDetachedOneShotMutationClient({
-    requestOneShotMutation(mutation) {
+  const client = createDetachedQuickPlayMutationClient({
+    requestQuickPlayMutation(mutation) {
       return new Promise(resolve => pending.push({ request: mutation, resolve }));
     },
   }, () => identity);
@@ -240,9 +240,9 @@ test('detached requests cross the IPC boundary as plain DTOs when identity and p
       },
     },
   });
-  let received: OneShotMutationRequest | null = null;
-  const client = createDetachedOneShotMutationClient({
-    async requestOneShotMutation(mutation) {
+  let received: QuickPlayMutationRequest | null = null;
+  const client = createDetachedQuickPlayMutationClient({
+    async requestQuickPlayMutation(mutation) {
       received = structuredClone(mutation);
       return { requestId: mutation.requestId, identity: mutation.identity, accepted: true, persisted: true };
     },

@@ -1,6 +1,6 @@
 <template>
   <article
-    class="one-shot-tile"
+    class="quickplay-tile"
     :class="{
       'is-playing': isPlaying,
       'is-paused': isPaused,
@@ -13,25 +13,25 @@
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
   >
-    <canvas ref="waveformCanvas" class="one-shot-waveform" aria-hidden="true"></canvas>
-    <span class="one-shot-color-rail" aria-hidden="true"></span>
-    <span v-if="isPlaying" class="one-shot-progress" :style="progressStyle" aria-hidden="true"></span>
+    <canvas ref="waveformCanvas" class="quickplay-waveform" aria-hidden="true"></canvas>
+    <span class="quickplay-color-rail" aria-hidden="true"></span>
+    <span v-if="isPlaying" class="quickplay-progress" :style="progressStyle" aria-hidden="true"></span>
     <!-- Number, then time. The key shows only when it is not the slot's own
          number (1 to 9 are their own keys), so a number never appears twice.
          Settings and Remove sit at the end of this line in Edit Mode; Show
          Mode takes them out and nothing else moves. -->
-    <div class="one-shot-topline">
-      <b class="one-shot-index">{{ position + 1 }}</b>
-      <kbd v-if="hotkeyLabel && hotkeyLabel !== String(position + 1)" class="one-shot-hotkey" :title="hotkeyLabel" dir="ltr">{{ hotkeyLabel.replace(/^Shift\+([0-9])$/, '⇧$1') }}</kbd>
-      <span class="one-shot-duration" dir="ltr">{{ currentTimeLabel }}</span>
-      <span class="one-shot-edit">
+    <div class="quickplay-topline">
+      <b class="quickplay-index">{{ position + 1 }}</b>
+      <kbd v-if="hotkeyLabel && hotkeyLabel !== String(position + 1)" class="quickplay-hotkey" :title="hotkeyLabel" dir="ltr">{{ hotkeyLabel.replace(/^Shift\+([0-9])$/, '⇧$1') }}</kbd>
+      <span class="quickplay-duration" dir="ltr">{{ currentTimeLabel }}</span>
+      <span class="quickplay-edit">
       <button
         v-if="!showMode"
         type="button"
-        class="one-shot-control one-shot-settings"
+        class="quickplay-control quickplay-settings-button"
         :class="{ 'is-active': settingsOpen }"
-        :aria-label="t('oneShots.settingsFor', { name: item.displayName })"
-        :title="t('oneShots.settings')"
+        :aria-label="t('quickPlays.settingsFor', { name: item.displayName })"
+        :title="t('quickPlays.settings')"
         :aria-expanded="settingsOpen"
         @click.stop="toggleMenu"
       >
@@ -40,10 +40,10 @@
       <button
         v-if="!showMode"
         type="button"
-        class="one-shot-control one-shot-remove"
+        class="quickplay-control quickplay-remove-button"
         :class="{ 'is-active': removeOpen }"
-        :aria-label="t('oneShots.removeFor', { name: item.displayName })"
-        :title="t('oneShots.remove')"
+        :aria-label="t('quickPlays.removeFor', { name: item.displayName })"
+        :title="t('quickPlays.remove')"
         :aria-expanded="removeOpen"
         @click.stop="toggleRemove"
       >
@@ -52,11 +52,11 @@
       </span>
     </div>
 
-    <div class="one-shot-body">
-      <div class="one-shot-title" :title="item.displayName">{{ item.displayName }}</div>
-      <span v-if="item.hasVideo && videoCheckIssue" class="one-shot-video-issue" role="img"
+    <div class="quickplay-body">
+      <div class="quickplay-title" :title="item.displayName">{{ item.displayName }}</div>
+      <span v-if="item.hasVideo && videoCheckIssue" class="quickplay-video-issue" role="img"
         :title="t(`videoCheck.${videoCheckIssue}`)" :aria-label="t(`videoCheck.${videoCheckIssue}`)">VIDEO !</span>
-      <span v-if="isPlaying" class="one-shot-runtime-state" :class="{ 'is-paused': isPaused }">
+      <span v-if="isPlaying" class="quickplay-runtime-state" :class="{ 'is-paused': isPaused }">
         {{ t(isPaused ? 'status.paused' : 'status.playing') }}
       </span>
     </div>
@@ -64,13 +64,13 @@
     <!-- One row of controls, the same in both modes: the level (the same
          control as a playlist row, on the same value as Gain in its
          settings), then Play and Cue to Continue. -->
-    <div class="one-shot-bottomline">
+    <div class="quickplay-bottomline">
       <ItemLevel :item="item" :read-only="showMode" :max-db="12"
         :persist="() => persist({ volume: item.volume })" />
-      <div class="one-shot-actions">
+      <div class="quickplay-actions">
         <button
           type="button"
-          class="one-shot-control one-shot-transport"
+          class="quickplay-control quickplay-transport"
           :class="{ 'is-stop': isPlaying }"
           :aria-label="transportLabel"
           :title="transportLabel"
@@ -81,7 +81,7 @@
         </button>
         <button
           type="button"
-          class="one-shot-control one-shot-follow"
+          class="quickplay-control quickplay-follow"
           :class="{ 'is-on': followsUpNext }"
           :aria-pressed="followsUpNext"
           :aria-label="followLabel"
@@ -99,7 +99,7 @@
       <section
         v-if="menuOpen"
         class="quickplay-settings"
-        :aria-label="t('oneShots.settingsFor', { name: item.displayName })"
+        :aria-label="t('quickPlays.settingsFor', { name: item.displayName })"
       >
         <h3 class="quickplay-settings-title">{{ item.displayName }}</h3>
         <small
@@ -108,69 +108,69 @@
         >{{ detachedMutationError }}</small>
 
         <div class="popover-field">
-          <span>{{ t('oneShots.playback') }}</span>
-          <InlineChoicePicker id="quickplay-playback" :label="t('oneShots.playback')"
+          <span>{{ t('quickPlays.playback') }}</span>
+          <InlineChoicePicker id="quickplay-playback" :label="t('quickPlays.playback')"
             :value="playbackMode" :options="playbackOptions" @change="onPlaybackModeChange" />
         </div>
 
         <div class="popover-field">
-          <span>{{ t('oneShots.retrigger') }}</span>
-          <InlineChoicePicker id="quickplay-retrigger" :label="t('oneShots.retrigger')"
-            :value="item.oneShot?.retrigger ?? 'restart'" :options="retriggerOptions" @change="onRetriggerChange" />
+          <span>{{ t('quickPlays.retrigger') }}</span>
+          <InlineChoicePicker id="quickplay-retrigger" :label="t('quickPlays.retrigger')"
+            :value="item.quickPlay?.retrigger ?? 'restart'" :options="retriggerOptions" @change="onRetriggerChange" />
         </div>
 
         <div class="popover-field">
-          <span>{{ t('oneShots.ending') }}</span>
-          <InlineChoicePicker id="quickplay-ending" :label="t('oneShots.ending')"
+          <span>{{ t('quickPlays.ending') }}</span>
+          <InlineChoicePicker id="quickplay-ending" :label="t('quickPlays.ending')"
             :value="endMode" :options="endingOptions" @change="onEndModeChange" />
         </div>
 
         <label class="popover-field popover-field--range">
-          <span>{{ t('oneShots.gain') }} <output>{{ volumeDb.toFixed(1) }} dB</output></span>
+          <span>{{ t('quickPlays.gain') }} <output>{{ volumeDb.toFixed(1) }} dB</output></span>
           <input class="app-range" type="range" min="-60" max="12" step="0.5" :value="volumeDb" @input="onVolumeInput" @change="persist({ volume: item.volume })" />
         </label>
 
         <div class="popover-pair">
           <label class="popover-field">
-            <span>{{ t('oneShots.fadeIn') }}</span>
+            <span>{{ t('quickPlays.fadeIn') }}</span>
             <span class="number-with-unit"><input type="number" min="0" max="30" step="0.1" :value="item.playFade" @change="onFadeChange('playFade', $event)" /><span>s</span></span>
           </label>
           <label class="popover-field">
-            <span>{{ t('oneShots.fadeOut') }}</span>
+            <span>{{ t('quickPlays.fadeOut') }}</span>
             <span class="number-with-unit"><input type="number" min="0" max="30" step="0.1" :value="item.stopFade" @change="onFadeChange('stopFade', $event)" /><span>s</span></span>
           </label>
         </div>
 
         <template v-if="playbackMode === 'duck'">
           <label class="popover-field popover-field--range">
-            <span>{{ t('oneShots.duckLevel') }} <output>{{ duckDb.toFixed(1) }} dB</output></span>
+            <span>{{ t('quickPlays.duckLevel') }} <output>{{ duckDb.toFixed(1) }} dB</output></span>
             <input class="app-range" type="range" min="-60" max="0" step="0.5" :value="duckDb" @input="onDuckInput" @change="persist({ duckLevel: item.duckingBehavior.duckLevel ?? 0.1 })" />
           </label>
           <div class="popover-pair">
             <label class="popover-field">
-              <span>{{ t('oneShots.duckAttack') }}</span>
+              <span>{{ t('quickPlays.duckAttack') }}</span>
               <span class="number-with-unit"><input type="number" min="0" max="10" step="0.1" :value="item.duckingBehavior.duckFadeIn ?? 0.25" @change="onDuckFadeChange('duckFadeIn', $event)" /><span>s</span></span>
             </label>
             <label class="popover-field">
-              <span>{{ t('oneShots.duckRelease') }}</span>
+              <span>{{ t('quickPlays.duckRelease') }}</span>
               <span class="number-with-unit"><input type="number" min="0" max="10" step="0.1" :value="item.duckingBehavior.duckFadeOut ?? 1" @change="onDuckFadeChange('duckFadeOut', $event)" /><span>s</span></span>
             </label>
           </div>
         </template>
 
         <div class="popover-field">
-          <span>{{ t('oneShots.output') }}</span>
-          <InlineChoicePicker id="quickplay-output" :label="t('oneShots.output')"
+          <span>{{ t('quickPlays.output') }}</span>
+          <InlineChoicePicker id="quickplay-output" :label="t('quickPlays.output')"
             :value="item.deviceOverride ?? ''" :options="outputOptions" @change="onOutputChange" />
         </div>
 
         <div class="popover-field">
-          <span>{{ t('oneShots.shortcut') }}</span>
+          <span>{{ t('quickPlays.shortcut') }}</span>
           <div class="shortcut-row">
             <button type="button" class="shortcut-capture" :class="{ 'is-capturing': capturingHotkey }" @click="startHotkeyCapture">
-              {{ capturingHotkey ? t('oneShots.pressShortcut') : (hotkeyLabel || t('oneShots.assignShortcut')) }}
+              {{ capturingHotkey ? t('quickPlays.pressShortcut') : (hotkeyLabel || t('quickPlays.assignShortcut')) }}
             </button>
-            <button v-if="hotkeyLabel" type="button" class="shortcut-clear" :aria-label="t('oneShots.clearShortcut')" @click="clearHotkey">
+            <button v-if="hotkeyLabel" type="button" class="shortcut-clear" :aria-label="t('quickPlays.clearShortcut')" @click="clearHotkey">
               <span class="material-symbols-rounded" aria-hidden="true">backspace</span>
             </button>
           </div>
@@ -178,20 +178,20 @@
         </div>
 
         <div v-if="!showMode" class="quickplay-settings-actions">
-          <Btn icon="upload_file" :text="t('oneShots.replaceAudio')" @click="requestImport" />
+          <Btn icon="upload_file" :text="t('quickPlays.replaceAudio')" @click="requestImport" />
         </div>
       </section>
 
       <section
         v-if="removeOpen"
         class="quickplay-remove"
-        :aria-label="t('oneShots.removeConfirmTitle')"
+        :aria-label="t('quickPlays.removeConfirmTitle')"
       >
         <strong>{{ item.displayName }}</strong>
-        <p>{{ t('oneShots.removeConfirmBody') }}</p>
+        <p>{{ t('quickPlays.removeConfirmBody') }}</p>
         <div class="confirm-actions">
           <button type="button" @click="closeEditor">{{ t('common.cancel') }}</button>
-          <button type="button" class="confirm-remove" @click="confirmRemove">{{ t('oneShots.remove') }}</button>
+          <button type="button" class="confirm-remove" @click="confirmRemove">{{ t('quickPlays.remove') }}</button>
         </div>
       </section>
     </Teleport>
@@ -199,22 +199,22 @@
 </template>
 
 <script setup lang="ts">
-import { useDetachedOneShotMutation } from '~/composables/useDetachedOneShotMutation';
+import { useDetachedQuickPlayMutation } from '~/composables/useDetachedQuickPlayMutation';
 import ItemLevel from './ItemLevel.vue';
-import type { AudioItem, CartSlotKeyBinding } from '~/types/project';
-import type { OneShotMutableFields } from '~/types/oneShotMutation';
+import type { AudioItem, QuickPlaySlotKeyBinding } from '~/types/project';
+import type { QuickPlayMutableFields } from '~/types/quickPlayMutation';
 import {
-  getOneShotEndMode,
-  getOneShotPlaybackMode,
-  oneShotFollowsUpNext,
-  setOneShotEndMode,
-  setOneShotPlaybackMode,
-  type OneShotEndMode,
-  type OneShotPlaybackMode,
-} from '~/utils/oneShots';
-import { bindingsMatch, eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/useCartHotkeys';
+  getQuickPlayEndMode,
+  getQuickPlayPlaybackMode,
+  quickPlayFollowsUpNext,
+  setQuickPlayEndMode,
+  setQuickPlayPlaybackMode,
+  type QuickPlayEndMode,
+  type QuickPlayPlaybackMode,
+} from '~/utils/quickPlays';
+import { bindingsMatch, eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/useQuickPlayHotkeys';
 
-const props = defineProps<{ item: AudioItem; position: number; hotkey?: CartSlotKeyBinding }>();
+const props = defineProps<{ item: AudioItem; position: number; hotkey?: QuickPlaySlotKeyBinding }>();
 const emit = defineEmits<{
   (event: 'request-import'): void;
   (event: 'remove'): void;
@@ -238,10 +238,10 @@ const {
   activeCues, stopCue, cueFollowOverrides, queueLoopContinuation,
   nextItemOverrideUuid, autoNextItemUuid, setNextItemPending,
 } = useAudioEngine();
-const { playOneShot } = useOneShotPlayback();
-const { updateBinding, playbackMappings } = useCartHotkeys();
+const { playQuickPlay } = useQuickPlayPlayback();
+const { updateBinding, playbackMappings } = useQuickPlayHotkeys();
 const server = useLiveplayServer();
-const { isDetached, error: detachedMutationError, mutate } = useDetachedOneShotMutation();
+const { isDetached, error: detachedMutationError, mutate } = useDetachedQuickPlayMutation();
 const editorOpen = computed(() => quickPlayEditor.value?.uuid === props.item.uuid &&
   (isDetached || (workspaceImportPanel.value === 'quickplay' && !showProjectSettings.value)));
 const menuOpen = computed(() => editorOpen.value && !quickPlayEditor.value?.remove);
@@ -253,22 +253,22 @@ const activeCue = computed(() => activeCues.value.get(props.item.uuid));
 const isPlaying = computed(() => !!activeCue.value);
 const isPaused = computed(() => activeCue.value?.isPaused === true);
 const playbackOptions = computed(() => [
-  { value: 'overlay', label: t('oneShots.overlay') },
-  { value: 'duck', label: t('oneShots.duck') },
-  { value: 'replace', label: t('oneShots.replace') },
+  { value: 'overlay', label: t('quickPlays.overlay') },
+  { value: 'duck', label: t('quickPlays.duck') },
+  { value: 'replace', label: t('quickPlays.replace') },
 ] as const);
 const retriggerOptions = computed(() => [
-  { value: 'restart', label: t('oneShots.restart') },
-  { value: 'ignore', label: t('oneShots.ignore') },
+  { value: 'restart', label: t('quickPlays.restart') },
+  { value: 'ignore', label: t('quickPlays.ignore') },
 ] as const);
 // A Go to Item / Go to Index ending is authored in Properties (it needs a
 // target). It is shown here so this picker never misreports it as Stop.
 const endingOptions = computed(() => [
-  { value: 'stop' as OneShotEndMode, label: t('oneShots.stop') },
-  { value: 'loop' as OneShotEndMode, label: t('oneShots.loop') },
-  { value: 'next' as OneShotEndMode, label: t('endBehavior.next') },
+  { value: 'stop' as QuickPlayEndMode, label: t('quickPlays.stop') },
+  { value: 'loop' as QuickPlayEndMode, label: t('quickPlays.loop') },
+  { value: 'next' as QuickPlayEndMode, label: t('endBehavior.next') },
   ...(endMode.value === 'goto' ? [{
-    value: 'goto' as OneShotEndMode,
+    value: 'goto' as QuickPlayEndMode,
     label: t(props.item.endBehavior?.action === 'goto-index' ? 'endBehavior.gotoIndex' : 'endBehavior.gotoItem'),
   }] : []),
 ]);
@@ -276,8 +276,8 @@ const outputOptions = computed(() => [
   { value: '', label: t('settings.useProjectDefault') },
   ...(server.devices ?? []).map(device => ({ value: device.id, label: device.display_name })),
 ]);
-const playbackMode = computed(() => getOneShotPlaybackMode(props.item));
-const endMode = computed(() => getOneShotEndMode(props.item));
+const playbackMode = computed(() => getQuickPlayPlaybackMode(props.item));
+const endMode = computed(() => getQuickPlayEndMode(props.item));
 const volumeDb = computed(() => props.item.volume > 0 ? 20 * Math.log10(props.item.volume) : -60);
 const duckDb = computed(() => {
   const level = props.item.duckingBehavior.duckLevel ?? 0.1;
@@ -293,7 +293,7 @@ const settingsOpen = computed(() => isDetached
 // Cue to Continue for this QuickPlay: when it finishes, play the playlist's
 // Up Next. While it plays the server-owned state of this pass is shown and
 // toggled; when idle the tile shows what the saved Ending will do.
-const followsUpNext = computed(() => oneShotFollowsUpNext(
+const followsUpNext = computed(() => quickPlayFollowsUpNext(
   props.item,
   isPlaying.value ? cueFollowOverrides.value.get(props.item.uuid) : null,
 ));
@@ -304,18 +304,18 @@ const upNextReady = computed(() => {
 // Switching it off always works; switching it on needs a cue to go to.
 const followToggleReady = computed(() => isPlaying.value && (followsUpNext.value || upNextReady.value));
 const followLabel = computed(() => t(
-  followsUpNext.value ? (isPlaying.value ? 'oneShots.followPlayNextOn' : 'oneShots.followPlayNextSaved')
-    : !isPlaying.value ? 'oneShots.followPlayNextIdle'
-      : upNextReady.value ? 'oneShots.followPlayNext' : 'oneShots.followPlayNextNeedsCue',
+  followsUpNext.value ? (isPlaying.value ? 'quickPlays.followPlayNextOn' : 'quickPlays.followPlayNextSaved')
+    : !isPlaying.value ? 'quickPlays.followPlayNextIdle'
+      : upNextReady.value ? 'quickPlays.followPlayNext' : 'quickPlays.followPlayNextNeedsCue',
 ));
 const toggleFollow = () => queueLoopContinuation(props.item);
 const transportLabel = computed(() => isPlaying.value
-  ? t('oneShots.stopNamed', { name: props.item.displayName })
-  : t('oneShots.playNamed', { name: props.item.displayName }));
+  ? t('quickPlays.stopNamed', { name: props.item.displayName })
+  : t('quickPlays.playNamed', { name: props.item.displayName }));
 // The tile's colour, and the text colour that reads on a solid block of it
 // (the number chip).
 const tileColor = computed(() => props.item.color || '#315FCF');
-const tileStyle = computed(() => ({ '--one-shot-color': tileColor.value, '--one-shot-ink': readableOn(tileColor.value) }));
+const tileStyle = computed(() => ({ '--quickplay-color': tileColor.value, '--quickplay-ink': readableOn(tileColor.value) }));
 const progressStyle = computed(() => {
   const cue = activeCue.value;
   return { width: `${cue?.duration ? Math.min(100, Math.max(0, cue.currentTime / cue.duration * 100)) : 0}%` };
@@ -330,7 +330,7 @@ function formatDuration(seconds: number): string {
   return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
 }
 
-const persist = (fields: OneShotMutableFields) => {
+const persist = (fields: QuickPlayMutableFields) => {
   if (isDetached) void mutate({ kind: 'set-fields', itemUuid: props.item.uuid, payload: { fields } });
   else void saveProject();
 };
@@ -341,7 +341,7 @@ const requestImport = () => {
 };
 
 const handleTransport = () => {
-  return isPlaying.value ? stopCue(props.item.uuid) : playOneShot(props.item);
+  return isPlaying.value ? stopCue(props.item.uuid) : playQuickPlay(props.item);
 };
 
 const handleDragStart = (event: DragEvent) => {
@@ -353,12 +353,12 @@ const handleDragStart = (event: DragEvent) => {
     event.preventDefault();
     return;
   }
-  // One Shot → Playlist is a copy; One Shot → another cell remains a move.
+  // QuickPlay → Playlist is a copy; QuickPlay → another cell remains a move.
   // copyMove advertises both destinations without consuming the source cue.
   event.dataTransfer.effectAllowed = 'copyMove';
-  event.dataTransfer.setData('one-shot-uuid', props.item.uuid);
-  event.dataTransfer.setData('one-shot-slot', String(props.position));
-  event.dataTransfer.setData('one-shot-to-playlist', 'copy');
+  event.dataTransfer.setData('quickplay-uuid', props.item.uuid);
+  event.dataTransfer.setData('quickplay-slot', String(props.position));
+  event.dataTransfer.setData('quickplay-to-playlist', 'copy');
   isDragging.value = true;
 };
 
@@ -404,20 +404,20 @@ watch(showMode, (show) => {
   if (show && menuOpen.value) closeEditor();
 });
 
-const onPlaybackModeChange = (mode: OneShotPlaybackMode) => {
-  setOneShotPlaybackMode(props.item, mode);
+const onPlaybackModeChange = (mode: QuickPlayPlaybackMode) => {
+  setQuickPlayPlaybackMode(props.item, mode);
   persist({ playbackMode: mode });
 };
 
-const onEndModeChange = (mode: OneShotEndMode) => {
+const onEndModeChange = (mode: QuickPlayEndMode) => {
   if (mode === 'goto') return;
-  setOneShotEndMode(props.item, mode);
+  setQuickPlayEndMode(props.item, mode);
   persist({ endMode: mode });
 };
 
-const onRetriggerChange = (retrigger: NonNullable<OneShotMutableFields['retrigger']>) => {
-  if (!props.item.oneShot) return;
-  props.item.oneShot.retrigger = retrigger;
+const onRetriggerChange = (retrigger: NonNullable<QuickPlayMutableFields['retrigger']>) => {
+  if (!props.item.quickPlay) return;
+  props.item.quickPlay.retrigger = retrigger;
   persist({ retrigger });
 };
 
@@ -461,7 +461,7 @@ const startHotkeyCapture = () => {
 };
 
 const clearHotkey = () => {
-  if (props.item.oneShot) props.item.oneShot.hotkey = null;
+  if (props.item.quickPlay) props.item.quickPlay.hotkey = null;
   capturingHotkey.value = false;
   persist({ hotkey: null });
 };
@@ -487,7 +487,7 @@ const handleDocumentKeydown = (event: KeyboardEvent) => {
   }
   const result = updateBinding(props.position, binding);
   if (result.conflict >= 0) {
-    hotkeyError.value = t('oneShots.shortcutConflict', { name: result.conflict + 1 });
+    hotkeyError.value = t('quickPlays.shortcutConflict', { name: result.conflict + 1 });
     return;
   }
   capturingHotkey.value = false;
@@ -548,8 +548,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.one-shot-tile {
-  --one-shot-color: var(--color-accent);
+.quickplay-tile {
+  --quickplay-color: var(--color-accent);
   position: relative;
   min-width: 0;
   isolation: isolate;
@@ -568,19 +568,19 @@ onUnmounted(() => {
     border-color var(--transition-fast);
 }
 
-.one-shot-tile:active { cursor: grabbing; }
-.one-shot-tile.is-dragging {
+.quickplay-tile:active { cursor: grabbing; }
+.quickplay-tile.is-dragging {
   opacity: 0.58;
   transform: scale(0.985);
 }
 
 /* Show Mode draws a tile exactly as Edit Mode does; it only cannot be dragged. */
-.one-shot-tile.show-mode {
+.quickplay-tile.show-mode {
   cursor: default;
 }
 
 /* On air: a bright edge, a glow and a tinted tile, found without reading. */
-.one-shot-tile.is-playing {
+.quickplay-tile.is-playing {
   border-color: var(--state-playing-edge);
   box-shadow:
     inset 0 0 0 3px var(--state-playing-edge),
@@ -588,14 +588,14 @@ onUnmounted(() => {
   z-index: 1;
 }
 
-.one-shot-tile.is-playing.is-paused {
+.quickplay-tile.is-playing.is-paused {
   border-color: var(--color-text-tertiary);
   background-color: var(--color-surface);
   box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--color-text-tertiary) 70%, transparent);
 }
 
-.one-shot-waveform,
-.one-shot-progress {
+.quickplay-waveform,
+.quickplay-progress {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -604,33 +604,33 @@ onUnmounted(() => {
   pointer-events: none;
 }
 
-.one-shot-waveform { z-index: -1; opacity: 0.42; }
-.one-shot-progress {
+.quickplay-waveform { z-index: -1; opacity: 0.42; }
+.quickplay-progress {
   right: auto;
   z-index: -1;
   background: color-mix(in srgb, var(--state-playing) 17%, transparent);
 }
 
-.one-shot-tile.is-paused .one-shot-progress {
+.quickplay-tile.is-paused .quickplay-progress {
   background: color-mix(in srgb, var(--color-text-tertiary) 17%, transparent);
 }
 
-.one-shot-color-rail {
+.quickplay-color-rail {
   position: absolute;
   inset-block: 0;
   inset-inline-start: 0;
   inline-size: 3px;
-  background: var(--one-shot-color);
+  background: var(--quickplay-color);
 }
 
-.one-shot-topline {
+.quickplay-topline {
   min-width: 0;
   min-height: 22px;
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
   color: var(--color-text-secondary);
-  font-size: clamp(9px, calc(11px * var(--one-shot-font-scale, 1)), 12px);
+  font-size: clamp(9px, calc(11px * var(--quickplay-font-scale, 1)), 12px);
   font-weight: 700;
   letter-spacing: .04em;
   line-height: 1;
@@ -639,14 +639,14 @@ onUnmounted(() => {
 
 /* The number is a chip in the tile's own colour, so a QuickPlay is found by
    colour and number together. */
-.one-shot-index {
+.quickplay-index {
   flex: none;
   min-width: 2.4ch;
   padding: 2px 4px;
   overflow: hidden;
   border-radius: 4px;
-  background: var(--one-shot-color);
-  color: var(--one-shot-ink, #ffffff);
+  background: var(--quickplay-color);
+  color: var(--quickplay-ink, #ffffff);
   text-align: center;
   font: inherit;
   font-variant-numeric: tabular-nums;
@@ -655,7 +655,7 @@ onUnmounted(() => {
 }
 
 /* The control row: level, then the two buttons, 28px high. */
-.one-shot-bottomline {
+.quickplay-bottomline {
   min-width: 0;
   display: flex;
   align-items: center;
@@ -664,23 +664,23 @@ onUnmounted(() => {
 }
 
 /* The level control, trimmed to fit beside the buttons. */
-.one-shot-bottomline :deep(.item-level) {
+.quickplay-bottomline :deep(.item-level) {
   flex: none;
   height: 28px;
   padding-left: 0;
 }
 /* The number sits in the middle of its box, not against the arrows. */
-.one-shot-bottomline :deep(.item-level__value) {
+.quickplay-bottomline :deep(.item-level__value) {
   width: 5ch;
   text-align: center;
 }
 /* No room for the unit here; the number with its arrows is the level. */
-.one-shot-bottomline :deep(.item-level__unit) { display: none; }
+.quickplay-bottomline :deep(.item-level__unit) { display: none; }
 
 /* Settings and Remove, at the end of the top line. Their place is kept in
    Show Mode, where the buttons are taken out, so the number, key and time
    beside it have the same room in both modes. */
-.one-shot-edit {
+.quickplay-edit {
   display: flex;
   flex: none;
   gap: 2px;
@@ -688,7 +688,7 @@ onUnmounted(() => {
   height: 20px;
   margin-inline-start: auto;
 }
-.one-shot-edit .one-shot-control {
+.quickplay-edit .quickplay-control {
   width: 20px;
   height: 20px;
   border: 0;
@@ -696,9 +696,9 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
   cursor: pointer;
 }
-.one-shot-edit .material-symbols-rounded { font-size: 16px; }
+.quickplay-edit .material-symbols-rounded { font-size: 16px; }
 
-.one-shot-runtime-state {
+.quickplay-runtime-state {
   min-width: 0;
   overflow: hidden;
   align-self: start;
@@ -708,25 +708,25 @@ onUnmounted(() => {
   border-radius: var(--pill-radius);
   /* A solid red badge with dark words, like the one on a playlist row. */
   background: var(--state-playing);
-  font: 600 calc(11px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono);
+  font: 600 calc(11px * var(--quickplay-font-scale, 1)) / 1.2 var(--font-mono);
   color: var(--state-playing-on);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.one-shot-runtime-state.is-paused {
+.quickplay-runtime-state.is-paused {
   background: var(--color-control);
   box-shadow: inset 0 0 0 1px var(--color-text-tertiary);
   color: var(--color-text-primary);
 }
 
-.one-shot-video-issue {
+.quickplay-video-issue {
   flex: none;
   color: var(--color-danger);
-  font: 700 calc(11px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono);
+  font: 700 calc(11px * var(--quickplay-font-scale, 1)) / 1.2 var(--font-mono);
 }
 
-.one-shot-hotkey {
+.quickplay-hotkey {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
@@ -736,15 +736,15 @@ onUnmounted(() => {
   border-radius: var(--control-radius);
   background: color-mix(in srgb, var(--color-surface-raised) 88%, transparent);
   color: var(--color-text-primary);
-  font: 600 calc(10px * var(--one-shot-font-scale, 1)) / 1.2 var(--font-mono, ui-monospace, monospace);
+  font: 600 calc(10px * var(--quickplay-font-scale, 1)) / 1.2 var(--font-mono, ui-monospace, monospace);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 /* The body measures itself, in title lines, to decide what fits (the two
    container rules below); its font size is the title's for that reason. */
-.one-shot-body {
-  container: one-shot-body / size;
+.quickplay-body {
+  container: quickplay-body / size;
   display: flex;
   flex-flow: row wrap;
   align-content: flex-start;
@@ -752,13 +752,13 @@ onUnmounted(() => {
   gap: var(--spacing-xs) 6px;
   min-height: 0;
   overflow: hidden;
-  font-size: calc(15px * var(--one-shot-font-scale, 1));
+  font-size: calc(15px * var(--quickplay-font-scale, 1));
 }
 
 /* Room for one title line only: it gets the whole line and an ellipsis,
    never a sliver of a second line. A video warning shares that line. */
-@container one-shot-body (max-height: 2.29em) {
-  .one-shot-title.one-shot-title {
+@container quickplay-body (max-height: 2.29em) {
+  .quickplay-title.quickplay-title {
     flex: 1 1 0;
     display: block;
     text-overflow: ellipsis;
@@ -769,13 +769,13 @@ onUnmounted(() => {
 /* The Playing badge needs two title lines and a line of its own. Without
    that room it steps aside: the red edge, the striped Stop and the countdown
    already say the tile is live. */
-@container one-shot-body (max-height: 3.79em) {
-  .one-shot-runtime-state {
+@container quickplay-body (max-height: 3.79em) {
+  .quickplay-runtime-state {
     display: none;
   }
 }
 
-.one-shot-title {
+.quickplay-title {
   flex: 1 1 100%;
   min-width: 0;
   min-height: 0;
@@ -783,7 +783,7 @@ onUnmounted(() => {
   display: -webkit-box;
   overflow: hidden;
   color: var(--color-text-primary);
-  font-size: calc(15px * var(--one-shot-font-scale, 1));
+  font-size: calc(15px * var(--quickplay-font-scale, 1));
   font-weight: 700;
   line-height: 1.15;
   text-shadow: 0 1px 2px var(--color-background);
@@ -791,19 +791,19 @@ onUnmounted(() => {
   -webkit-line-clamp: 2;
 }
 
-.one-shot-duration {
+.quickplay-duration {
   flex: none;
   min-width: 0;
   overflow: hidden;
   color: var(--color-text-secondary);
-  font: 600 clamp(10px, calc(13px * var(--one-shot-font-scale, 1)), 12px) / 1.2 var(--font-mono, ui-monospace, monospace);
+  font: 600 clamp(10px, calc(13px * var(--quickplay-font-scale, 1)), 12px) / 1.2 var(--font-mono, ui-monospace, monospace);
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 
-.one-shot-actions {
+.quickplay-actions {
   position: relative;
   z-index: 2;
   flex: 1 1 0;
@@ -818,7 +818,7 @@ onUnmounted(() => {
   box-shadow: inset 0 1px rgb(255 255 255 / 4%);
 }
 
-.one-shot-control,
+.quickplay-control,
 .popover-close,
 .shortcut-clear {
   width: 30px;
@@ -832,7 +832,7 @@ onUnmounted(() => {
   color: var(--color-text-primary);
 }
 
-.one-shot-actions .one-shot-control {
+.quickplay-actions .quickplay-control {
   width: 100%;
   height: 26px;
   border: 0;
@@ -841,47 +841,47 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.one-shot-actions .one-shot-control + .one-shot-control {
+.quickplay-actions .quickplay-control + .quickplay-control {
   border-inline-start: 1px solid var(--color-border);
 }
 
-.one-shot-actions .one-shot-transport {
+.quickplay-actions .quickplay-transport {
   background-color: color-mix(in srgb, var(--state-ready) 9%, var(--color-control));
   color: var(--state-ready);
 }
 
-.one-shot-actions .one-shot-transport:hover {
+.quickplay-actions .quickplay-transport:hover {
   background-color: color-mix(in srgb, var(--state-ready) 17%, var(--color-control));
 }
 
-.one-shot-actions .one-shot-transport.is-stop {
+.quickplay-actions .quickplay-transport.is-stop {
   border: var(--stop-button-border);
   background: var(--stop-button-background);
   color: var(--stop-edge);
 }
 
 /* Lit in the Up Next colour: this QuickPlay hands over to Up Next when it ends. */
-.one-shot-actions .one-shot-follow.is-on {
+.quickplay-actions .quickplay-follow.is-on {
   background-color: color-mix(in srgb, var(--state-up-next) 24%, var(--color-control));
   color: var(--state-up-next);
 }
 
-.one-shot-actions .one-shot-follow:disabled {
+.quickplay-actions .quickplay-follow:disabled {
   cursor: default;
   opacity: 0.45;
 }
 
-.one-shot-actions .material-symbols-rounded {
+.quickplay-actions .material-symbols-rounded {
   font-size: 19px;
   font-variation-settings: 'FILL' 0, 'wght' 520, 'GRAD' 0, 'opsz' 20;
 }
-.one-shot-control:hover,
-.one-shot-control.is-active { background: var(--color-surface-hover); border-color: var(--color-text-tertiary); }
-.one-shot-control:focus-visible {
+.quickplay-control:hover,
+.quickplay-control.is-active { background: var(--color-surface-hover); border-color: var(--color-text-tertiary); }
+.quickplay-control:focus-visible {
   outline: 2px solid var(--color-focus, var(--color-accent));
   outline-offset: -3px;
 }
-.one-shot-remove:hover { background: color-mix(in srgb, var(--color-danger) 14%, transparent); color: var(--color-danger); }
+.quickplay-remove-button:hover { background: color-mix(in srgb, var(--color-danger) 14%, transparent); color: var(--color-danger); }
 
 .quickplay-settings,
 .quickplay-remove {
@@ -936,7 +936,7 @@ onUnmounted(() => {
 .confirm-actions .confirm-remove:hover { background: var(--color-danger); color: white; }
 
 @media (prefers-reduced-motion: no-preference) {
-  .one-shot-tile,
-  .one-shot-control { transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease; }
+  .quickplay-tile,
+  .quickplay-control { transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease; }
 }
 </style>

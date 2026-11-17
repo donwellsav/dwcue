@@ -33,11 +33,11 @@ for (const [name, source] of [
   ['playlist audio', range(
     projectTypes,
     'export const DEFAULT_AUDIO_ITEM',
-    'export const DEFAULT_CART_AUDIO_ITEM',
+    'export const DEFAULT_QUICK_PLAY_AUDIO_ITEM',
   ).source],
-  ['cart audio', range(
+  ['QuickPlay audio', range(
     projectTypes,
-    'export const DEFAULT_CART_AUDIO_ITEM',
+    'export const DEFAULT_QUICK_PLAY_AUDIO_ITEM',
     'export const DEFAULT_GROUP_ITEM',
   ).source],
 ]) {
@@ -54,11 +54,11 @@ for (const [file, source] of files) {
     const before = source.slice(Math.max(0, match.index - 1000), match.index);
     const spreadAt = Math.max(
       before.lastIndexOf('...DEFAULT_AUDIO_ITEM'),
-      before.lastIndexOf('...DEFAULT_CART_AUDIO_ITEM'),
+      before.lastIndexOf('...DEFAULT_QUICK_PLAY_AUDIO_ITEM'),
     );
     assert.match(
       before,
-      /\.\.\.DEFAULT_(?:CART_)?AUDIO_ITEM/,
+      /\.\.\.DEFAULT_(?:QUICK_PLAY_)?AUDIO_ITEM/,
       `${file}: imported audio must inherit a unity-gain default`,
     );
     const after = source.slice(match.index);
@@ -74,7 +74,7 @@ for (const [file, source] of files) {
 }
 for (const [file, pathName] of [
   ['client/app/components/PlaylistView.vue', 'playlist/Spotify/YouTube'],
-  ['client/app/components/OneShotPanel.vue', 'one-shot cart'],
+  ['client/app/components/QuickPlayPanel.vue', 'QuickPlay'],
 ]) {
   assert.ok(
     audioConstructorFiles.has(file),

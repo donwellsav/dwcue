@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "Schriftgröße der Oberfläche",
-    "oneShotFontSize": "Textgröße der QuickPlays",
+    "quickPlayFontSize": "Textgröße der QuickPlays",
     "cycleTrackColors": "Titelfarben durchwechseln",
-    "cartLayout": "Layout",
+    "quickPlayLayout": "Layout",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "Spalten",
@@ -519,7 +519,7 @@
       "error": "Import fehlgeschlagen"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlays (Standard)",
     "detachedNoPrimary": "Das Hauptprojektfenster ist nicht verfügbar.",
     "detachedWaitingForShow": "Stellen Sie die Show im Hauptfenster wieder her oder öffnen Sie sie, um QuickPlays wieder zu aktivieren.",
@@ -904,8 +904,8 @@
     "title": "Steuerung konfigurieren",
     "shortcutBtn": "Tastenkürzel",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlays",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlays",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "Pause / Fortsetzen",
     "toggleLoop": "Schleife umschalten",
     "cueToContinue": "Cue to Continue",
@@ -924,7 +924,7 @@
     "masterVolume": "Globale Master-Lautstärke",
     "midiDevice": "MIDI-Gerät",
     "allDevices": "Alle Geräte",
-    "conflictOneShot": "Bereits QuickPlay {n} zugewiesen",
+    "conflictQuickPlay": "Bereits QuickPlay {n} zugewiesen",
     "conflictAction": "Bereits {action} zugewiesen",
     "pressAnyKey": "Beliebige Taste drücken...",
     "reserved": "Diese Tastenkombination ist reserviert",

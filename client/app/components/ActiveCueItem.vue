@@ -43,7 +43,7 @@
           </button>
           <!-- A QuickPlay's Cue to Continue is the toggle on its own tile. -->
           <button
-            v-if="isLooping && !isQuickPlay"
+            v-if="isLooping && !isQuickPlayCue"
             type="button"
             class="action-btn continue-btn"
             @click="handleContinue"
@@ -168,7 +168,7 @@ const audioItem = computed<AudioItem | null>(() => {
 });
 
 const isLooping = computed(() => audioItem.value?.endBehavior?.action === 'loop');
-const isQuickPlay = computed(() => !!audioItem.value?.oneShot);
+const isQuickPlayCue = computed(() => !!audioItem.value?.quickPlay);
 
 // Start Next marker (absolute file time) from the project item, if armed.
 const startNextTime = computed<number | null>(() => {

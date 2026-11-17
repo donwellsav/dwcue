@@ -36,7 +36,7 @@
             <ServerFilePickerModal docked :open="open" :filter="MEDIA_FILE_ACCEPT" :filter-options="[]"
               :fallback-start-path="projectStartPath" location-context="quickplay-import"
               :confirm-label="t('importAudio.importSelected')" @pick="onServerPick([$event])" @close="close" />
-            <p v-if="!server.isLocalServer" class="hint">{{ t('oneShots.hint') }}</p>
+            <p v-if="!server.isLocalServer" class="hint">{{ t('quickPlays.hint') }}</p>
           </template>
           <template v-else-if="server.isLocalServer && hasElectron">
             <ServerFileBrowser v-if="localPicker === 'files'" staging

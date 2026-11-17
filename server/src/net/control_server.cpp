@@ -2295,16 +2295,16 @@ void ControlServer::install_routes() {
             } catch (const std::exception& e) { return json_err(400, e.what()); }
         });
 
-    // Trigger the item bound to a cart slot.
-    CROW_ROUTE(app, "/api/transport/cart/<int>/play")
+    // Trigger the item bound to a QuickPlay slot.
+    CROW_ROUTE(app, "/api/transport/quickplay/<int>/play")
         .methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req, int slot){
-            Logger::api_request("Client ({}) -> Server ({}) : {} /api/transport/cart/{}/play",
+            Logger::api_request("Client ({}) -> Server ({}) : {} /api/transport/quickplay/{}/play",
                                 req.remote_ip_address, impl_->server_addr,
                                 crow::method_name(req.method), slot);
-            const std::string uuid = state_.cart_slot_item_uuid(slot);
-            if (uuid.empty()) return json_err(404, "cart slot is empty");
-            Logger::playback("CART {}: {}", slot, item_playback_info(uuid, state_));
+            const std::string uuid = state_.quick_play_slot_item_uuid(slot);
+            if (uuid.empty()) return json_err(404, "QuickPlay slot is empty");
+            Logger::playback("QUICKPLAY {}: {}", slot, item_playback_info(uuid, state_));
             if (!state_.trigger_item(uuid))
                 return json_err(404, "item not loaded into engine");
             return json_ok(json({{"ok", true}, {"slot", slot}, {"uuid", uuid}}));
@@ -3486,13 +3486,13 @@ void ControlServer::install_routes() {
         });
 
     // ---- Project I/O ----
-    // Returns the *full* client-shaped project document (items, groups, cart,
+    // Returns the *full* client-shaped project document (items, groups, QuickPlays,
     // theme, settings) plus a server-side decoration of engine cue ids. This
     // is the single GET a remote client needs to render the whole project.
     CROW_ROUTE(app, "/api/project").methods(crow::HTTPMethod::Get)
         ([this] { return json_ok(state_.full_document()); });
 
-    // Lightweight header — theme, settings, cart, project name, item count.
+    // Lightweight header — theme, settings, QuickPlays, project name, item count.
     // Clients hit this first so they can paint the workspace shell before
     // the (potentially large) items array has even started downloading.
     // Pair with /api/project/items?offset=&limit= to stream the playlist.
@@ -4168,12 +4168,12 @@ void ControlServer::install_routes() {
                 const std::string item_uuid  = j["item"].value("uuid", std::string{});
                 const std::string item_name  = j["item"].value("displayName", std::string{});
                 const std::string parent_uuid = j.value("parentUuid", std::string{});
-                const bool cart_only = j.value("cartOnly", false);
+                const bool quick_play_only = j.value("quickPlayOnly", false);
                 Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/items uuid='{}' name='{}'{}{}",
                                     req.remote_ip_address, impl_->server_addr, item_uuid,
                                     item_name, parent_uuid.empty() ? "" : " parent='" + parent_uuid + "'",
-                                    cart_only ? " [cartOnly]" : "");
-                const auto cue_id = state_.add_item(j["item"], parent_uuid, cart_only);
+                                    quick_play_only ? " [quickPlayOnly]" : "");
+                const auto cue_id = state_.add_item(j["item"], parent_uuid, quick_play_only);
                 Logger::api_response("Client ({}) <- Server ({}) : POST /api/project/items OK — uuid='{}' cueId='{}'",
                                      req.remote_ip_address, impl_->server_addr,
                                      item_uuid, cue_id.value);
@@ -4181,7 +4181,7 @@ void ControlServer::install_routes() {
                     {"type", "doc_patch"}, {"op", "item_added"},
                     {"uuid", item_uuid},
                     {"parentUuid", parent_uuid},
-                    {"cartOnly", cart_only},
+                    {"quickPlayOnly", quick_play_only},
                     {"item", j["item"]},
                     {"cueId", cue_id.value},
                 });
@@ -4438,8 +4438,8 @@ void ControlServer::install_routes() {
             }
         });
 
-    // ---- Cart slot bindings ----
-    CROW_ROUTE(app, "/api/project/cart").methods(crow::HTTPMethod::Post)
+    // ---- QuickPlay slot bindings ----
+    CROW_ROUTE(app, "/api/project/quickplay").methods(crow::HTTPMethod::Post)
         ([this](const crow::request& req){
             auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
             if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
@@ -4448,42 +4448,42 @@ void ControlServer::install_routes() {
                 const int slot = j.value("slot", -1);
                 const std::string uuid = j.value("itemUuid", std::string{});
                 if (slot < 0 || uuid.empty()) {
-                    Logger::warn("POST /api/project/cart — slot and itemUuid required");
+                    Logger::warn("POST /api/project/quickplay — slot and itemUuid required");
                     return json_err(400, "slot and itemUuid required");
                 }
-                Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/cart slot={} itemUuid='{}'",
+                Logger::api_request("Client ({}) -> Server ({}) : POST /api/project/quickplay slot={} itemUuid='{}'",
                                     req.remote_ip_address, impl_->server_addr, slot, uuid);
-                if (!state_.set_cart_slot(slot, uuid)) {
-                    Logger::warn("POST /api/project/cart — slot {} is outside 0..63", slot);
+                if (!state_.set_quick_play_slot(slot, uuid)) {
+                    Logger::warn("POST /api/project/quickplay — slot {} is outside 0..63", slot);
                     return json_err(400, "slot must be between 0 and 63");
                 }
-                Logger::api_response("Client ({}) <- Server ({}) : POST /api/project/cart OK — slot={} uuid='{}'",
+                Logger::api_response("Client ({}) <- Server ({}) : POST /api/project/quickplay OK — slot={} uuid='{}'",
                                      req.remote_ip_address, impl_->server_addr, slot, uuid);
                 broadcast_doc_patch(json{
-                    {"type", "doc_patch"}, {"op", "cart_slot_set"},
+                    {"type", "doc_patch"}, {"op", "quickplay_slot_set"},
                     {"slot", slot}, {"itemUuid", uuid},
                 });
                 return json_ok(json({{"ok", true}, {"slot", slot}, {"itemUuid", uuid}}));
             } catch (const std::exception& e) {
-                Logger::error("POST /api/project/cart threw: {}", e.what());
+                Logger::error("POST /api/project/quickplay threw: {}", e.what());
                 return json_err(400, e.what());
             }
         });
-    CROW_ROUTE(app, "/api/project/cart/<int>").methods(crow::HTTPMethod::Delete)
+    CROW_ROUTE(app, "/api/project/quickplay/<int>").methods(crow::HTTPMethod::Delete)
         ([this](const crow::request& req, int slot){
             auto project_lock = state_.lock_project_session(req.get_header_value("X-DWCUE-Project-Session"));
             if (!project_lock.owns_lock()) return json_err(409, "project session changed; reload before editing");
-            Logger::api_request("Client ({}) -> Server ({}) : DELETE /api/project/cart/{}",
+            Logger::api_request("Client ({}) -> Server ({}) : DELETE /api/project/quickplay/{}",
                                 req.remote_ip_address, impl_->server_addr, slot);
-            // clear_cart_slot() returns false when the slot held no binding.
-            if (!state_.clear_cart_slot(slot)) {
-                Logger::warn("DELETE /api/project/cart/{} — no binding at slot", slot);
+            // clear_quick_play_slot() returns false when the slot held no binding.
+            if (!state_.clear_quick_play_slot(slot)) {
+                Logger::warn("DELETE /api/project/quickplay/{} — no binding at slot", slot);
                 return json_err(404, "no binding at slot");
             }
-            Logger::api_response("Client ({}) <- Server ({}) : DELETE /api/project/cart/{} OK",
+            Logger::api_response("Client ({}) <- Server ({}) : DELETE /api/project/quickplay/{} OK",
                                  req.remote_ip_address, impl_->server_addr, slot);
             broadcast_doc_patch(json{
-                {"type", "doc_patch"}, {"op", "cart_slot_cleared"}, {"slot", slot},
+                {"type", "doc_patch"}, {"op", "quickplay_slot_cleared"}, {"slot", slot},
             });
             return json_ok(json({{"ok", true}, {"slot", slot}}));
         });

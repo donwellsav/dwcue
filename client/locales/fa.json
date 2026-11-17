@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "اندازه فونت رابط کاربری",
-    "oneShotFontSize": "اندازه متن وان‌شات‌ها",
+    "quickPlayFontSize": "اندازه متن وان‌شات‌ها",
     "cycleTrackColors": "چرخش رنگ ردیف‌های جدید",
-    "cartLayout": "چیدمان",
+    "quickPlayLayout": "چیدمان",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "ستون‌ها",
@@ -519,7 +519,7 @@
       "error": "وارد کردن ناموفق بود"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlays (پیش‌فرض‌ها)",
     "detachedNoPrimary": "پنجرهٔ اصلی پروژه در دسترس نیست.",
     "detachedWaitingForShow": "برای فعال شدن دوباره QuickPlays، اجرا را در پنجره اصلی بازیابی یا باز کنید.",
@@ -904,8 +904,8 @@
     "title": "پیکربندی کنترل‌ها",
     "shortcutBtn": "میانبرها",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlays",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlays",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "مکث / ادامه",
     "toggleLoop": "تغییر حالت حلقه",
     "cueToContinue": "ادامه سیگنال",
@@ -924,7 +924,7 @@
     "masterVolume": "صدای اصلی سراسری",
     "midiDevice": "دستگاه MIDI",
     "allDevices": "همه دستگاه‌ها",
-    "conflictOneShot": "قبلاً به QuickPlay {n} اختصاص داده شده است",
+    "conflictQuickPlay": "قبلاً به QuickPlay {n} اختصاص داده شده است",
     "conflictAction": "قبلاً به {action} اختصاص داده شده",
     "pressAnyKey": "هر کلیدی را فشار دهید...",
     "reserved": "این ترکیب کلید رزرو شده است",

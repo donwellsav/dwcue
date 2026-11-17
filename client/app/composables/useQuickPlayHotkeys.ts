@@ -1,8 +1,8 @@
-import type { CartSlotKeyBinding, PlaybackKeyAction, AudioItem, Project } from '~/types/project';
+import type { QuickPlaySlotKeyBinding, PlaybackKeyAction, AudioItem, Project } from '~/types/project';
 import { DEFAULT_PLAYBACK_KEYS } from '../types/project';
-import { buildOneShotSlots } from '../utils/oneShots';
+import { buildQuickPlayCells } from '../utils/quickPlays';
 
-const RESERVED_COMBOS: CartSlotKeyBinding[] = [
+const RESERVED_COMBOS: QuickPlaySlotKeyBinding[] = [
   { key: 's', ctrlKey: true,  shiftKey: false, altKey: false },
   { key: 'q', ctrlKey: true,  shiftKey: false, altKey: false },
   { key: 'w', ctrlKey: true,  shiftKey: false, altKey: false },
@@ -18,16 +18,16 @@ const RESERVED_COMBOS: CartSlotKeyBinding[] = [
   { key: 'F1', ctrlKey: false, shiftKey: false, altKey: false },
 ];
 
-export const bindingsMatch = (a: CartSlotKeyBinding, b: CartSlotKeyBinding): boolean =>
+export const bindingsMatch = (a: QuickPlaySlotKeyBinding, b: QuickPlaySlotKeyBinding): boolean =>
   a.key.toLowerCase() === b.key.toLowerCase()
   && a.ctrlKey  === b.ctrlKey
   && a.shiftKey === b.shiftKey
   && a.altKey   === b.altKey;
 
-export const isReservedCombo = (binding: CartSlotKeyBinding): boolean =>
+export const isReservedCombo = (binding: QuickPlaySlotKeyBinding): boolean =>
   RESERVED_COMBOS.some(r => bindingsMatch(r, binding));
 
-export const formatKeyLabel = (binding: CartSlotKeyBinding): string => {
+export const formatKeyLabel = (binding: QuickPlaySlotKeyBinding): string => {
   const parts: string[] = [];
   if (binding.ctrlKey)  parts.push('Ctrl');
   if (binding.shiftKey) parts.push('Shift');
@@ -39,7 +39,7 @@ export const formatKeyLabel = (binding: CartSlotKeyBinding): string => {
   return parts.join('+');
 };
 
-export const eventToBinding = (e: KeyboardEvent): CartSlotKeyBinding => ({
+export const eventToBinding = (e: KeyboardEvent): QuickPlaySlotKeyBinding => ({
   key: e.key,
   ctrlKey: e.ctrlKey || e.metaKey,
   shiftKey: e.shiftKey,
@@ -67,7 +67,7 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'play-selected', labelKey: 'controls.playSelected' },
   { id: 'toggle-settings', labelKey: 'settings.title' },
   { id: 'toggle-properties', labelKey: 'properties.title' },
-  { id: 'toggle-quickplays', labelKey: 'oneShots.title' },
+  { id: 'toggle-quickplays', labelKey: 'quickPlays.title' },
   { id: 'toggle-detached-quickplays', labelKey: 'controls.toggleDetachedQuickPlays' },
 ];
 
@@ -78,10 +78,10 @@ export const resolveKeyboardBindings = (
   slots: readonly (AudioItem | null)[],
   savedPlayback: Project['playbackKeys'] = {},
 ) => {
-  const keyMappings: Record<number, CartSlotKeyBinding> = Object.fromEntries(
-    slots.flatMap((item, index) => item?.oneShot?.hotkey ? [[index, item.oneShot.hotkey]] : []),
+  const keyMappings: Record<number, QuickPlaySlotKeyBinding> = Object.fromEntries(
+    slots.flatMap((item, index) => item?.quickPlay?.hotkey ? [[index, item.quickPlay.hotkey]] : []),
   );
-  const playbackMappings: Partial<Record<PlaybackKeyAction, CartSlotKeyBinding | null>> = {
+  const playbackMappings: Partial<Record<PlaybackKeyAction, QuickPlaySlotKeyBinding | null>> = {
     ...DEFAULT_PLAYBACK_KEYS, ...savedPlayback,
   };
   // A new default must yield to a key the operator already assigned.
@@ -103,8 +103,8 @@ export const resolveKeyboardBindings = (
   const pauseAlternate = playbackMappings['pause-resume'] &&
     !occupied.some(binding => binding && bindingsMatch(binding, shiftSpace)) ? shiftSpace : null;
   for (let index = 0; index < QUICK_PLAY_DEFAULT_SLOTS; ++index) {
-    const oneShot = slots[index]?.oneShot;
-    if (!oneShot || oneShot.hotkey !== undefined) continue;
+    const quickPlay = slots[index]?.quickPlay;
+    if (!quickPlay || quickPlay.hotkey !== undefined) continue;
     const digit = index % QUICK_PLAY_DIGITS.length;
     const binding = { key: QUICK_PLAY_DIGITS[digit], ctrlKey: false,
       shiftKey: index >= QUICK_PLAY_DIGITS.length, altKey: false };
@@ -139,23 +139,23 @@ export const useVideoOutputToggle = () => {
   };
 };
 
-export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-properties' | 'toggle-quickplays', () => void>) => {
+export const useQuickPlayHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-properties' | 'toggle-quickplays', () => void>) => {
   const { currentProject, projectHydrationStatus, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
-  const { cartOnlyItems } = useCartItems();
-  const { oneShotPlaybackReady, playOneShot } = useOneShotPlayback();
+  const { quickPlayItems } = useQuickPlayItems();
+  const { quickPlayPlaybackReady, playQuickPlay } = useQuickPlayPlayback();
   const toggleVideoOutput = useVideoOutputToggle();
-  const { isDetached } = useDetachedOneShotMutation();
+  const { isDetached } = useDetachedQuickPlayMutation();
   const { showHeaderWarning } = useHeaderWarnings();
   const { t } = useLocalization();
   const { captureStill } = useVideoStandbyCapture();
   const { playCue, playNext, setNextItem, pauseCue, resumeCue, stopAllCues, activeCues, queueLoopContinuation, jumpCue } = useAudioEngine();
 
-  const oneShotSlots = computed(() => buildOneShotSlots(
+  const quickPlayCells = computed(() => buildQuickPlayCells(
     currentProject.value?.items ?? [],
-    Array.from(cartOnlyItems.value.values()),
+    Array.from(quickPlayItems.value.values()),
   ));
   const bindings = computed(() => resolveKeyboardBindings(
-    oneShotSlots.value, currentProject.value?.playbackKeys ?? {},
+    quickPlayCells.value, currentProject.value?.playbackKeys ?? {},
   ));
   const keyMappings = computed(() => bindings.value.keyMappings);
   const playbackMappings = computed(() => bindings.value.playbackMappings);
@@ -185,9 +185,9 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
         const { findItemByUuid } = useProject();
         const item = findItemByUuid(firstUuid);
         if (item && item.type === 'audio') return item as AudioItem;
-        const { getCartOnlyItem } = useCartItems();
-        const cartItem = getCartOnlyItem(firstUuid);
-        if (cartItem) return cartItem;
+        const { getQuickPlayItem } = useQuickPlayItems();
+        const quickPlayItem = getQuickPlayItem(firstUuid);
+        if (quickPlayItem) return quickPlayItem;
       }
     }
     if (selectedItem.value && selectedItem.value.type === 'audio') {
@@ -197,8 +197,8 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
   };
 
   const triggerSlot = async (slotIndex: number) => {
-    const item = oneShotSlots.value[slotIndex];
-    if (item) return playOneShot(item);
+    const item = quickPlayCells.value[slotIndex];
+    if (item) return playQuickPlay(item);
   };
 
   const findSlotForEvent = (e: KeyboardEvent): number => {
@@ -212,7 +212,7 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
       const digit = e.code[5];
       const index = QUICK_PLAY_DIGITS.indexOf(digit) + QUICK_PLAY_DIGITS.length;
       const binding = mappings[index];
-      if (binding && oneShotSlots.value[index]?.oneShot?.hotkey === undefined &&
+      if (binding && quickPlayCells.value[index]?.quickPlay?.hotkey === undefined &&
           bindingsMatch(binding, { ...pressed, key: digit })) return index;
     }
     return -1;
@@ -221,7 +221,7 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
   const findPlaybackActionForEvent = (e: KeyboardEvent): PlaybackKeyAction | null => {
     const mappings = playbackMappings.value;
     const pressed = eventToBinding(e);
-    for (const [action, binding] of Object.entries(mappings) as [PlaybackKeyAction, CartSlotKeyBinding | null][]) {
+    for (const [action, binding] of Object.entries(mappings) as [PlaybackKeyAction, QuickPlaySlotKeyBinding | null][]) {
       if (!workspace && isWorkspaceAction(action)) continue;
       if (binding && bindingsMatch(binding, pressed)) return action;
     }
@@ -234,9 +234,9 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
     if (isWorkspaceAction(action)) return workspace?.[action]();
     if (action === 'toggle-detached-quickplays') {
       try {
-        await window.electronAPI?.toggleCartPlayerWindow();
+        await window.electronAPI?.toggleDetachedQuickPlayWindow();
       } catch {
-        showHeaderWarning(t('oneShots.windowToggleFailed'));
+        showHeaderWarning(t('quickPlays.windowToggleFailed'));
       }
       return;
     }
@@ -303,7 +303,7 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
 
     if (action === 'set-up-next') {
       const item = selectedItem.value;
-      if (!item || (item.type === 'audio' && (item as AudioItem).oneShot)) return false;
+      if (!item || (item.type === 'audio' && (item as AudioItem).quickPlay)) return false;
       return setNextItem(item.uuid);
     }
 
@@ -338,8 +338,8 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
       return;
     }
 
-    // Cart slot hotkeys
-    if (!currentProject.value || !oneShotPlaybackReady.value) return;
+    // QuickPlay slot hotkeys
+    if (!currentProject.value || !quickPlayPlaybackReady.value) return;
     const slotIndex = findSlotForEvent(e);
     if (slotIndex >= 0) {
       e.preventDefault();
@@ -348,7 +348,7 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
     }
   };
 
-  const updateBinding = (slotIndex: number, binding: CartSlotKeyBinding): { conflict: number } => {
+  const updateBinding = (slotIndex: number, binding: QuickPlaySlotKeyBinding): { conflict: number } => {
     if (!currentProject.value) return { conflict: -1 };
     const mappings = keyMappings.value;
     for (const [slotStr, existing] of Object.entries(mappings)) {
@@ -357,27 +357,27 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
         return { conflict: existingSlot };
       }
     }
-    const item = oneShotSlots.value[slotIndex];
-    if (!item?.oneShot) return { conflict: -1 };
-    item.oneShot.hotkey = binding;
+    const item = quickPlayCells.value[slotIndex];
+    if (!item?.quickPlay) return { conflict: -1 };
+    item.quickPlay.hotkey = binding;
     return { conflict: -1 };
   };
 
   const updatePlaybackBinding = (
     action: PlaybackKeyAction,
-    binding: CartSlotKeyBinding | null
+    binding: QuickPlaySlotKeyBinding | null
   ): { conflictSlot: number; conflictAction: PlaybackKeyAction | null } => {
     if (!currentProject.value) return { conflictSlot: -1, conflictAction: null };
 
     if (binding !== null) {
-      // Check conflict with One Shots
-      const cartMappings = keyMappings.value;
-      for (const [slotStr, existing] of Object.entries(cartMappings)) {
+      // Check conflict with QuickPlays
+      const quickPlayMappings = keyMappings.value;
+      for (const [slotStr, existing] of Object.entries(quickPlayMappings)) {
         if (bindingsMatch(existing, binding)) return { conflictSlot: parseInt(slotStr, 10), conflictAction: null };
       }
       // Check conflict with other playback actions
       const pbMappings = playbackMappings.value;
-      for (const [existingAction, existingBinding] of Object.entries(pbMappings) as [PlaybackKeyAction, CartSlotKeyBinding | null][]) {
+      for (const [existingAction, existingBinding] of Object.entries(pbMappings) as [PlaybackKeyAction, QuickPlaySlotKeyBinding | null][]) {
         if (existingAction !== action && existingBinding && bindingsMatch(existingBinding, binding)) {
           return { conflictSlot: -1, conflictAction: existingAction };
         }
@@ -391,8 +391,8 @@ export const useCartHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-pr
 
   const resetToDefaults = () => {
     if (!currentProject.value) return;
-    for (const item of oneShotSlots.value) {
-      if (item?.oneShot) delete item.oneShot.hotkey;
+    for (const item of quickPlayCells.value) {
+      if (item?.quickPlay) delete item.quickPlay.hotkey;
     }
   };
 

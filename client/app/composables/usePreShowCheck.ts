@@ -13,7 +13,7 @@
 // =====================================================================
 import type { AudioItem } from '~/types/project';
 import type { ServerAudioReadiness, ServerDeviceInfo } from '~/types/server';
-import { buildOneShotSlots } from '~/utils/oneShots';
+import { buildQuickPlayCells } from '~/utils/quickPlays';
 import { isNativeProjectPath } from '~/utils/projectFileFormats';
 import {
   checkFile, checkMedia, checkOutput, checkVideo, runPreShowCheck,
@@ -71,7 +71,7 @@ export function usePreShowCheck() {
     hasUnsavedChanges, saveFailed, autoSaveEnabled, projectRepair,
     workspaceImportPanel, cancelDelete,
   } = useProject();
-  const { cartOnlyItems } = useCartItems();
+  const { quickPlayItems } = useQuickPlayItems();
   const videoIssues = useVideoPreflightIssues();
   const videoSummary = useVideoPreflightSummary();
   const showProjectSettings = useState('showProjectSettings', () => false);
@@ -84,9 +84,9 @@ export function usePreShowCheck() {
   // Every audio cue the show can fire: the playlist, cues inside groups, and
   // QuickPlays that live outside the playlist.
   const audioCues = computed(() => {
-    const standalone = [...cartOnlyItems.value.values()];
+    const standalone = [...quickPlayItems.value.values()];
     const slotOf = new Map<string, number>();
-    buildOneShotSlots(currentProject.value?.items ?? [], standalone)
+    buildQuickPlayCells(currentProject.value?.items ?? [], standalone)
       .forEach((item, slot) => { if (item) slotOf.set(item.uuid, slot); });
     const cues: CueFact[] = [];
     const seen = new Set<string>();

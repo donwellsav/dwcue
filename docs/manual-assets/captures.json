@@ -277,7 +277,7 @@
       "presentation": "Unaltered crop of the panel or control."
     },
     {
-      "file": "one-shot-settings-current.png",
+      "file": "quickplay-settings-current.png",
       "view": "Compact QuickPlay Settings in the detached window with playback, retrigger, ending, gain, fades, output, shortcut, and its striped Stop All.",
       "version": "2.6.24 development",
       "sourceRevision": "e9b377212209556ae11eea24deaecfc718cd1fd4",
@@ -294,7 +294,7 @@
       "presentation": "Unaltered crop of the panel or control."
     },
     {
-      "file": "one-shot-show-mode.png",
+      "file": "quickplay-show-mode.png",
       "view": "QuickPlay 11 in Show Mode: its number in a chip of its own colour, key and time on the top line, its name, and one row with the centred level, Play and Cue to Continue.",
       "version": "2.6.24 development",
       "sourceRevision": "7179281af07fded0e9d1906e09ffe64f2005f5b7",

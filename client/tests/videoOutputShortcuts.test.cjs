@@ -12,7 +12,7 @@ const {
 } = require('../electron/video-output-shortcuts');
 const { buildVideoOutputContextTemplate } = require('../electron/video-output-context-menu');
 const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('../electron/video-output-framing.mjs');
-const { createOneShotMutationBroker } = require('../electron/one-shot-mutation-broker');
+const { createQuickPlayMutationBroker } = require('../electron/quickplay-mutation-broker');
 const { createAppLifecycleActions, createWillQuitHandler } = require('../electron/terminal-action');
 const mainSource = readFileSync(require.resolve('../electron/main.js'), 'utf8');
 const preloadSource = readFileSync(require.resolve('../electron/preload.js'), 'utf8');
@@ -87,7 +87,7 @@ test('a capture follows the saved frame or selected screen, hands back the pictu
     screen: { getDisplayMatching: () => ({ scaleFactor }) },
     ipcMain: { handle: (name, handler) => handlers.set(name, handler), on() {} },
     mainWindow: { webContents: sender }, requireTrustedIpc() {},
-    ...require('../electron/one-shot-mutation-broker'),
+    ...require('../electron/quickplay-mutation-broker'),
     currentProjectIdentity: identity, currentCaptureSession: 'session',
     currentProjectData: { items: [{ type: 'group', children: [cue] }] },
     videoOutputWindow: output, videoOutputRendererReady: true, videoOutputRendererResponsive: true,
@@ -821,57 +821,57 @@ test('preload exposes only the typed mutation broker and separate project identi
   api.syncProjectData({ name: 'Show' }, mutationIdentity);
   assert.deepEqual(sends[0], ['sync-project-data', { name: 'Show' }, mutationIdentity]);
 
-  const requested = api.requestOneShotMutation(mutationRequest);
-  assert.deepEqual(invokes[0], ['one-shot-mutation:request', mutationRequest]);
+  const requested = api.requestQuickPlayMutation(mutationRequest);
+  assert.deepEqual(invokes[0], ['quickplay-mutation:request', mutationRequest]);
   assert.deepEqual(await requested, { ok: true });
 
   let delivered;
-  const unsubscribe = api.onOneShotMutationRequest(request => { delivered = request; });
-  listeners.get('one-shot-mutation-request')({}, mutationRequest);
+  const unsubscribe = api.onQuickPlayMutationRequest(request => { delivered = request; });
+  listeners.get('quickplay-mutation-request')({}, mutationRequest);
   assert.equal(delivered, mutationRequest);
   unsubscribe();
-  assert.equal(listeners.has('one-shot-mutation-request'), false);
+  assert.equal(listeners.has('quickplay-mutation-request'), false);
 
   const result = { requestId: 'request-1', identity: mutationIdentity, accepted: true, persisted: true };
-  api.completeOneShotMutation(result);
-  assert.deepEqual(sends.at(-1), ['one-shot-mutation:complete', result]);
+  api.completeQuickPlayMutation(result);
+  assert.deepEqual(sends.at(-1), ['quickplay-mutation:complete', result]);
 });
 
 test('detached QuickPlays mutations correlate a primary persisted result', async () => {
-  const cart = mutationContents();
+  const quickPlayContents = mutationContents();
   const primary = mutationContents();
-  const broker = createOneShotMutationBroker({
-    getCartWebContents: () => cart,
+  const broker = createQuickPlayMutationBroker({
+    getQuickPlayWebContents: () => quickPlayContents,
     getPrimaryWebContents: () => primary,
     getCurrentIdentity: () => mutationIdentity,
   });
-  const pending = broker.request(cart, mutationRequest);
-  assert.deepEqual(primary.sent, [{ channel: 'one-shot-mutation-request', payload: mutationRequest }]);
+  const pending = broker.request(quickPlayContents, mutationRequest);
+  assert.deepEqual(primary.sent, [{ channel: 'quickplay-mutation-request', payload: mutationRequest }]);
   const result = { requestId: 'request-1', identity: mutationIdentity, accepted: true, persisted: true };
   assert.equal(broker.complete(primary, result), true);
   assert.deepEqual(await pending, result);
 });
 
 test('mutation broker rejects invalid senders, kinds, stale results, and duplicate correlations', async () => {
-  const cart = mutationContents();
+  const quickPlayContents = mutationContents();
   const primary = mutationContents();
   let fireTimeout;
-  const broker = createOneShotMutationBroker({
-    getCartWebContents: () => cart,
+  const broker = createQuickPlayMutationBroker({
+    getQuickPlayWebContents: () => quickPlayContents,
     getPrimaryWebContents: () => primary,
     getCurrentIdentity: () => mutationIdentity,
     setTimer: callback => { fireTimeout = callback; return 1; },
     clearTimer() {},
   });
   assert.throws(() => broker.request({}, mutationRequest), /not the detached QuickPlays window/);
-  assert.throws(() => broker.request(cart, { ...mutationRequest, kind: 'arbitrary-patch' }), /kind is invalid/);
-  assert.throws(() => broker.request(cart, {
+  assert.throws(() => broker.request(quickPlayContents, { ...mutationRequest, kind: 'arbitrary-patch' }), /kind is invalid/);
+  assert.throws(() => broker.request(quickPlayContents, {
     ...mutationRequest,
     requestId: 'oversized',
     payload: { fields: { displayName: 'x'.repeat(300 * 1024) } },
   }), /too large/);
-  const pending = broker.request(cart, mutationRequest);
-  assert.throws(() => broker.request(cart, mutationRequest), /Duplicate/);
+  const pending = broker.request(quickPlayContents, mutationRequest);
+  assert.throws(() => broker.request(quickPlayContents, mutationRequest), /Duplicate/);
   assert.throws(() => broker.complete({}, {
     requestId: 'request-1', identity: mutationIdentity, accepted: true, persisted: true,
   }), /not the primary project owner/);
@@ -886,25 +886,25 @@ test('mutation broker rejects invalid senders, kinds, stale results, and duplica
 });
 
 test('mutation broker fails closed when the owner is absent, reloads, or times out', async () => {
-  const cart = mutationContents();
+  const quickPlayContents = mutationContents();
   const primary = mutationContents();
   let owner = null;
   let fireTimeout;
-  const broker = createOneShotMutationBroker({
-    getCartWebContents: () => cart,
+  const broker = createQuickPlayMutationBroker({
+    getQuickPlayWebContents: () => quickPlayContents,
     getPrimaryWebContents: () => owner,
     getCurrentIdentity: () => mutationIdentity,
     setTimer: callback => { fireTimeout = callback; return 1; },
     clearTimer() {},
   });
-  assert.match((await broker.request(cart, mutationRequest)).error, /unavailable/);
+  assert.match((await broker.request(quickPlayContents, mutationRequest)).error, /unavailable/);
 
   owner = primary;
-  const reloading = broker.request(cart, { ...mutationRequest, requestId: 'request-2' });
+  const reloading = broker.request(quickPlayContents, { ...mutationRequest, requestId: 'request-2' });
   primary.emit('did-start-navigation');
   assert.match((await reloading).error, /became unavailable/);
 
-  const timedOut = broker.request(cart, { ...mutationRequest, requestId: 'request-3' });
+  const timedOut = broker.request(quickPlayContents, { ...mutationRequest, requestId: 'request-3' });
   fireTimeout();
   assert.match((await timedOut).error, /did not respond/);
 });

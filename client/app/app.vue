@@ -1,38 +1,38 @@
 <template>
-  <div id="app" :data-theme="theme" :class="{ 'operator-window': !isVideoOutputWindow && !isCartWindow }"
+  <div id="app" :data-theme="theme" :class="{ 'operator-window': !isVideoOutputWindow && !isQuickPlayWindow }"
     :style="isVideoOutputWindow ? undefined : { zoom: uiFontScale / 100 }">
     <!-- Video Output window: passive render surface — no app chrome, no modals. -->
     <template v-if="isVideoOutputWindow">
       <VideoOutputView />
     </template>
 
-    <!-- Detached One Shots window (legacy query name retained for IPC compatibility). -->
-    <template v-else-if="isCartWindow">
-      <div class="cart-window-root">
-        <header class="cart-window-brand">
+    <!-- Detached QuickPlays window. -->
+    <template v-else-if="isQuickPlayWindow">
+      <div class="quickplay-window-root">
+        <header class="quickplay-window-brand">
           <img
             :src="theme === 'dark' ? './assets/icons/SVG/app_icon_darkmode@web.svg' : './assets/icons/SVG/app_icon_lightmode@web.svg'"
             alt=""
-            class="cart-brand-logo"
+            class="quickplay-brand-logo"
           />
-          <span class="cart-brand-wordmark">DONWELLS CUE</span>
-          <div id="cart-header-warnings" class="cart-header-warnings"></div>
-          <Btn v-if="detachedRecoveryOpen" class="cart-recovery-stop stop-all-btn" data-recovery-panel type="button"
+          <span class="quickplay-brand-wordmark">DONWELLS CUE</span>
+          <div id="quickplay-header-warnings" class="quickplay-header-warnings"></div>
+          <Btn v-if="detachedRecoveryOpen" class="quickplay-recovery-stop stop-all-btn" data-recovery-panel type="button"
             icon="stop_circle" :text="t('controls.stopAll')" @click="stopAllCues()" @keydown.enter.space.stop />
-          <span v-else class="cart-brand-url">dwcue.com</span>
+          <span v-else class="quickplay-brand-url">dwcue.com</span>
         </header>
         <template v-if="currentProject && detachedProjectIdentity">
-          <p v-if="detachedProjectError" class="cart-window-error" role="alert">{{ detachedProjectError }}</p>
-          <OneShotPanel :is-detached-window="true" :inert="detachedRecoveryOpen" />
+          <p v-if="detachedProjectError" class="quickplay-window-error" role="alert">{{ detachedProjectError }}</p>
+          <QuickPlayPanel :is-detached-window="true" :inert="detachedRecoveryOpen" />
           <DeleteSelectionPanel v-if="!detachedRecoveryOpen" />
         </template>
-        <div v-else class="cart-window-loading">
-          <CueSymbol name="one-shots" />
+        <div v-else class="quickplay-window-loading">
+          <CueSymbol name="quickplays" />
           <p v-if="detachedProjectError">{{ detachedProjectError }}</p>
         </div>
-        <div v-if="detachedRecoveryOpen" class="cart-recovery-panel" data-recovery-panel>
+        <div v-if="detachedRecoveryOpen" class="quickplay-recovery-panel" data-recovery-panel>
           <ConnectionLostModal v-if="reconnectPanelOpen" docked :show-stop-all="false" />
-          <p v-else class="cart-recovery-wait" role="status">{{ t('oneShots.detachedWaitingForShow') }}</p>
+          <p v-else class="quickplay-recovery-wait" role="status">{{ t('quickPlays.detachedWaitingForShow') }}</p>
         </div>
       </div>
     </template>
@@ -204,22 +204,22 @@
     <!-- <LocalServerStatus /> -->
 
     </template>
-    <ServerAlert v-if="!isVideoOutputWindow" :target="isCartWindow ? '#cart-header-warnings'
+    <ServerAlert v-if="!isVideoOutputWindow" :target="isQuickPlayWindow ? '#quickplay-header-warnings'
       : currentProject && projectHydrationStatus !== 'failed' ? '#project-header-warnings'
         : '#startup-header-warnings'" />
   </div>
 </template>
 
 <script setup lang="ts">
-import OneShotPanel from './components/OneShotPanel.vue';
+import QuickPlayPanel from './components/QuickPlayPanel.vue';
 import WelcomeScreen from './components/WelcomeScreen.vue';
 import type { ProjectFileKind } from '~/utils/projectFileFormats';
 import { PROJECT_FILE_EXTENSIONS, projectFileAction } from '~/utils/projectFileFormats';
-import type { OneShotMutationIdentity, OneShotMutationRequest, OneShotMutationResult, OneShotProjectEnvelope } from '~/types/oneShotMutation';
-import { isNewerOneShotProject, sameOneShotMutationIdentity } from '~/types/oneShotMutation';
+import type { QuickPlayMutationIdentity, QuickPlayMutationRequest, QuickPlayMutationResult, QuickPlayProjectEnvelope } from '~/types/quickPlayMutation';
+import { isNewerQuickPlayProject, sameQuickPlayMutationIdentity } from '~/types/quickPlayMutation';
 import { createProjectOpenGuard } from '~/utils/projectOpenGuard';
 import { runExclusivePendingAction } from '~/utils/acknowledgedAction';
-import { applyOneShotMutation } from '~/utils/oneShotMutation';
+import { applyQuickPlayMutation } from '~/utils/quickPlayMutation';
 import { suppressTooltips } from '~/utils/tooltips';
 
 const {
@@ -230,7 +230,7 @@ const {
   unsavedDialogVisible, unsavedDialogReason, unsavedDialogBlocked, unsavedSave, unsavedDiscard, unsavedCancel,
 } = useProject();
 const { stopAllCues } = useAudioEngine();
-const { cartOnlyItems, clearCartOnlyItems, addCartOnlyItem } = useCartItems();
+const { quickPlayItems, clearQuickPlayItems, addQuickPlayItem } = useQuickPlayItems();
 import ServerFilePickerModal from './components/ServerFilePickerModal.vue';
 const { currentLocale, setLocale, getDirection, t } = useLocalization();
 const server = useLiveplayServer();
@@ -241,7 +241,7 @@ const { exportCueSheet } = useCueSheetExport();
 const { openMediaCleanup } = useMediaCleanup();
 let stopHeaderWarnings: (() => void) | undefined;
 onMounted(() => {
-  if (isCartWindow || isVideoOutputWindow) return;
+  if (isQuickPlayWindow || isVideoOutputWindow) return;
   stopHeaderWarnings = window.electronAPI?.onHeaderWarning?.((message) => showHeaderWarning(message, 'urgent'));
 });
 onBeforeUnmount(() => stopHeaderWarnings?.());
@@ -398,21 +398,21 @@ watch(theme, (value) => {
   if (import.meta.client) document.documentElement.dataset.theme = value;
 }, { immediate: true });
 
-// Detect if this window is the detached cart player window
-const isCartWindow = import.meta.client
-  ? new URLSearchParams(window.location.search).get('cartWindow') === '1'
+// Detect if this window is the detached QuickPlay window
+const isQuickPlayWindow = import.meta.client
+  ? new URLSearchParams(window.location.search).get('quickPlayWindow') === '1'
   : false;
 // Detect if this window is the video output window (?videoOutput=1)
 const isVideoOutputWindow = import.meta.client
   ? new URLSearchParams(window.location.search).get('videoOutput') === '1'
   : false;
 // The operator window alone reports for the show (see useKeepAwake).
-if (!isCartWindow && !isVideoOutputWindow) useKeepAwake();
+if (!isQuickPlayWindow && !isVideoOutputWindow) useKeepAwake();
 watch(() => isVideoOutputWindow || !showTooltips.value, (suppressed, _previous, onCleanup) => {
   if (import.meta.client && suppressed) onCleanup(suppressTooltips(document.body));
 }, { immediate: true, flush: 'post' });
-const { mount: mountFailedHydrationHotkeys, unmount: unmountFailedHydrationHotkeys } = useCartHotkeys();
-watch(() => !isCartWindow && !isVideoOutputWindow && projectHydrationStatus.value === 'failed', (failed) => {
+const { mount: mountFailedHydrationHotkeys, unmount: unmountFailedHydrationHotkeys } = useQuickPlayHotkeys();
+watch(() => !isQuickPlayWindow && !isVideoOutputWindow && projectHydrationStatus.value === 'failed', (failed) => {
   if (!import.meta.client) return;
   if (failed) mountFailedHydrationHotkeys();
   else unmountFailedHydrationHotkeys();
@@ -450,14 +450,14 @@ function openAbout() {
   }
 }
 
-const detachedProjectIdentity = useState<OneShotMutationIdentity | null>(
-  'oneShots.detachedProjectIdentity', () => null,
+const detachedProjectIdentity = useState<QuickPlayMutationIdentity | null>(
+  'quickPlays.detachedProjectIdentity', () => null,
 );
-const detachedProjectError = useState<string>('oneShots.detachedMutationError', () => '');
-let rejectedDetachedIdentity: OneShotMutationIdentity | null = null;
+const detachedProjectError = useState<string>('quickPlays.detachedMutationError', () => '');
+let rejectedDetachedIdentity: QuickPlayMutationIdentity | null = null;
 
-function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null, liveUpdate = false) {
-  if (!isCartWindow) return;
+function applyQuickPlayWindowProjectData(envelope: QuickPlayProjectEnvelope | null, liveUpdate = false) {
+  if (!isQuickPlayWindow) return;
   const projectData = envelope?.project ?? null;
   const identity = envelope?.identity ?? null;
   const projectSessionId = envelope?.projectSessionId;
@@ -465,18 +465,18 @@ function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null, liv
     rejectedDetachedIdentity = detachedProjectIdentity.value ?? rejectedDetachedIdentity;
     detachedProjectIdentity.value = null;
     currentProject.value = null;
-    clearCartOnlyItems();
-    detachedProjectError.value = t('oneShots.detachedNoPrimary');
+    clearQuickPlayItems();
+    detachedProjectError.value = t('quickPlays.detachedNoPrimary');
     return;
   }
   const currentIdentity = detachedProjectIdentity.value;
-  const fresh = isNewerOneShotProject(identity, currentIdentity ?? rejectedDetachedIdentity);
-  if (!fresh && !sameOneShotMutationIdentity(identity, currentIdentity)) return;
+  const fresh = isNewerQuickPlayProject(identity, currentIdentity ?? rejectedDetachedIdentity);
+  if (!fresh && !sameQuickPlayMutationIdentity(identity, currentIdentity)) return;
   detachedProjectIdentity.value = identity;
   detachedProjectError.value = '';
-  clearCartOnlyItems();
-  if (Array.isArray(projectData.cartOnlyItems)) {
-    for (const item of projectData.cartOnlyItems) addCartOnlyItem(item);
+  clearQuickPlayItems();
+  if (Array.isArray(projectData.quickPlayItems)) {
+    for (const item of projectData.quickPlayItems) addQuickPlayItem(item);
   }
   currentProject.value = projectData;
   server.projectSessionId = projectSessionId;
@@ -486,32 +486,32 @@ function applyCartWindowProjectData(envelope: OneShotProjectEnvelope | null, liv
   }
 }
 
-let oneShotMutationTail = Promise.resolve();
-const handleOneShotMutationRequest = (request: OneShotMutationRequest): void => {
+let quickPlayMutationTail = Promise.resolve();
+const handleQuickPlayMutationRequest = (request: QuickPlayMutationRequest): void => {
   const api = window.electronAPI;
   const run = async () => {
     const identity = projectSyncIdentity.value;
-    let result: OneShotMutationResult = {
+    let result: QuickPlayMutationResult = {
       requestId: request.requestId,
       identity: request.identity,
       accepted: false,
       persisted: false,
-      error: t('oneShots.detachedStale'),
+      error: t('quickPlays.detachedStale'),
     };
-    if (!identity || !sameOneShotMutationIdentity(identity, request.identity) || !currentProject.value) {
-      api.completeOneShotMutation(result);
+    if (!identity || !sameQuickPlayMutationIdentity(identity, request.identity) || !currentProject.value) {
+      api.completeQuickPlayMutation(result);
       return;
     }
-    const applied = applyOneShotMutation({ project: currentProject.value, cartOnlyItems: cartOnlyItems.value }, request);
+    const applied = applyQuickPlayMutation({ project: currentProject.value, quickPlayItems: quickPlayItems.value }, request);
     if (!applied.accepted) {
-      result = { ...result, error: applied.error ?? t('oneShots.detachedRejected') };
-      api.completeOneShotMutation(result);
+      result = { ...result, error: applied.error ?? t('quickPlays.detachedRejected') };
+      api.completeQuickPlayMutation(result);
       return;
     }
     const shouldPersist = autoSaveEnabled.value;
     const saved = await saveProject();
-    if (!sameOneShotMutationIdentity(projectSyncIdentity.value, identity)) {
-      api.completeOneShotMutation(result);
+    if (!sameQuickPlayMutationIdentity(projectSyncIdentity.value, identity)) {
+      api.completeQuickPlayMutation(result);
       return;
     }
     result = {
@@ -519,11 +519,11 @@ const handleOneShotMutationRequest = (request: OneShotMutationRequest): void => 
       identity,
       accepted: true,
       persisted: shouldPersist && saved,
-      ...shouldPersist && !saved ? { error: t('oneShots.detachedSaveFailed') } : {},
+      ...shouldPersist && !saved ? { error: t('quickPlays.detachedSaveFailed') } : {},
     };
-    api.completeOneShotMutation(result);
+    api.completeQuickPlayMutation(result);
   };
-  oneShotMutationTail = oneShotMutationTail.then(run, run);
+  quickPlayMutationTail = quickPlayMutationTail.then(run, run);
 };
 
 // Listen to menu events
@@ -544,19 +544,19 @@ onMounted(() => {
     }, true);
 
     // A delayed cached snapshot must not replace an update from the owner.
-    if (isCartWindow) {
+    if (isQuickPlayWindow) {
       let receivedUpdate = false;
-      window.electronAPI.onCartWindowProjectUpdate((projectData) => {
+      window.electronAPI.onQuickPlayWindowProjectUpdate((projectData) => {
         receivedUpdate = true;
-        applyCartWindowProjectData(projectData, true);
+        applyQuickPlayWindowProjectData(projectData, true);
       });
-      window.electronAPI.getCartWindowProjectData().then((projectData) => {
-        if (!receivedUpdate) applyCartWindowProjectData(projectData);
+      window.electronAPI.getQuickPlayWindowProjectData().then((projectData) => {
+        if (!receivedUpdate) applyQuickPlayWindowProjectData(projectData);
       });
       // Apply locale from localStorage (already handled by useLocalization)
       return; // skip main-window-only event listeners below
     }
-    window.electronAPI.onOneShotMutationRequest?.(handleOneShotMutationRequest);
+    window.electronAPI.onQuickPlayMutationRequest?.(handleQuickPlayMutationRequest);
 
     // When the frameless Video Output owns keyboard focus (most visibly on
     // Windows), main forwards app shortcuts here. Re-dispatching one marked
@@ -705,7 +705,7 @@ const projectDecision = computed(() => {
 const projectPanelOpen = useState('projectPanelOpen', () => false);
 const reconnectPanelOpen = computed(() => server.connectionLost || !!server.showVerification);
 const detachedRecoveryOpen = computed(() => reconnectPanelOpen.value || sessionLost.value);
-const recoveryPanelOpen = computed(() => !isCartWindow && !isVideoOutputWindow &&
+const recoveryPanelOpen = computed(() => !isQuickPlayWindow && !isVideoOutputWindow &&
   (reconnectPanelOpen.value || (sessionLost.value && !!currentProject.value)));
 watch(() => recoveryPanelOpen.value || !!projectDecision.value || projectFileDialogOpen.value,
   (open) => { projectPanelOpen.value = open; }, { immediate: true });
@@ -1209,7 +1209,7 @@ onMounted(() => {
   z-index: var(--z-dropdown);
 }
 
-.cart-header-warnings {
+.quickplay-header-warnings {
   min-width: 0;
 }
 
@@ -1237,20 +1237,20 @@ onMounted(() => {
   background: var(--color-surface);
   color: var(--color-text-primary);
 }
-.cart-window-root {
+.quickplay-window-root {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
   background-color: var(--color-background);
 
-  :deep(.one-shot-panel) {
+  :deep(.quickplay-panel) {
     flex: 1;
     min-height: 0;
   }
 }
 
-.cart-window-brand {
+.quickplay-window-brand {
   flex: none;
   display: flex;
   align-items: center;
@@ -1259,45 +1259,45 @@ onMounted(() => {
   border-bottom: 1px solid var(--color-border);
 }
 
-.cart-brand-logo {
+.quickplay-brand-logo {
   width: 20px;
   height: 20px;
   object-fit: contain;
 }
 
-.cart-brand-wordmark {
+.quickplay-brand-wordmark {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.16em;
   color: var(--color-text-secondary);
 }
 
-.cart-brand-url {
+.quickplay-brand-url {
   margin-left: auto;
   font-size: 11px;
   color: var(--color-text-secondary);
   opacity: 0.7;
 }
 
-.cart-recovery-stop {
+.quickplay-recovery-stop {
   flex: none;
   margin-inline-start: auto;
 }
 
-.cart-recovery-panel {
+.quickplay-recovery-panel {
   flex: 0 0 auto;
   max-height: 60%;
   overflow: auto;
 }
 
-.cart-recovery-wait {
+.quickplay-recovery-wait {
   margin: 0;
   padding: var(--spacing-sm) var(--workspace-gutter);
   border-top: 1px solid var(--color-border);
   color: var(--color-text-secondary);
 }
 
-.cart-window-error {
+.quickplay-window-error {
   flex: none;
   margin: 0;
   padding: 6px 12px;
@@ -1307,7 +1307,7 @@ onMounted(() => {
   font-size: 12px;
 }
 
-.cart-window-loading {
+.quickplay-window-loading {
   width: 100%;
   height: 100%;
   display: flex;

@@ -434,9 +434,9 @@
 
     <section class="transition-controls-section">
       <!-- A QuickPlay is outside the playlist, so its transitions hand over to Up Next. -->
-      <h4 :title="isCartItem ? t('oneShots.transitionsHelp') : undefined">
+      <h4 :title="isQuickPlayItem ? t('quickPlays.transitionsHelp') : undefined">
         {{ t('properties.transitions') }}
-        <span v-if="isCartItem" class="transition-target">
+        <span v-if="isQuickPlayItem" class="transition-target">
           <span class="material-symbols-rounded" aria-hidden="true">subdirectory_arrow_right</span>
           {{ t('status.upNext') }}
         </span>
@@ -564,8 +564,8 @@ const projectControlsReady = computed(() => projectHydrationStatus.value === 're
 const previewCueIsCurrent = computed(() => previewItemUuid.value === props.audioItem.uuid && !!previewCueId.value);
 const previewMeter = useCueMeters(() => previewCueIsCurrent.value ? previewCueId.value || null : null);
 
-// Check if this is a cart item
-const isCartItem = computed(() => {
+// Check if this is a QuickPlay item
+const isQuickPlayItem = computed(() => {
   return props.audioItem.index && props.audioItem.index.length > 0 && props.audioItem.index[0] === -1;
 });
 

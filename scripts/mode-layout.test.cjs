@@ -66,7 +66,7 @@ function writeShow(folder) {
     index: [0], isExpanded, startBehavior: { action: 'play-first' }, endBehavior: { action: 'nothing' }, children,
   });
   const quick = (slot, name, seconds, color) => cue(name, seconds, color, {
-    index: [-1, slot], oneShot: { order: slot, retrigger: 'restart' },
+    index: [-1, slot], quickPlay: { order: slot, retrigger: 'restart' },
     duckingBehavior: { mode: 'no-ducking', duckFadeIn: 0.25, duckFadeOut: 1 },
   });
   const items = [
@@ -82,9 +82,9 @@ function writeShow(folder) {
   const show = path.join(folder, 'Mode layout.dwcue');
   fs.writeFileSync(show, JSON.stringify({
     name: 'Mode layout', version: '2.0.0', folderPath: folder, items,
-    cartOnlyItems: [quick(0, 'Applause sting', 8, '#FFCC00'), quick(1, 'Countdown bumper', 14, '#FF00CC'),
+    quickPlayItems: [quick(0, 'Applause sting', 8, '#FFCC00'), quick(1, 'Countdown bumper', 14, '#FF00CC'),
       quick(2, 'Hold music bed', 30, '#9900FF'), quick(10, 'House announcement', 18, '#00CC99')],
-    cartItems: [], settings: { autoSave: true }, theme: { mode: 'dark', accentColor: '#315FCF' },
+    quickPlaySlots: [], settings: { autoSave: true }, theme: { mode: 'dark', accentColor: '#315FCF' },
   }, null, 2));
   return show;
 }
@@ -174,7 +174,7 @@ test('Show Mode differs from Edit Mode only by the controls it removes', { timeo
 
   await until(`[...document.querySelectorAll('button')].some(b => /Mode layout/.test(b.innerText))`, 'the recent show on the welcome screen');
   await evaluate(`[...document.querySelectorAll('button')].find(b => /Mode layout/.test(b.innerText)).click()`);
-  await until(`document.querySelectorAll('.playlist-item').length >= 8 && document.querySelectorAll('.one-shot-tile').length >= 4`, 'the show to open');
+  await until(`document.querySelectorAll('.playlist-item').length >= 8 && document.querySelectorAll('.quickplay-tile').length >= 4`, 'the show to open');
   await evaluate(`(() => { const s = document.createElement('style'); s.textContent = '*,*::before,*::after{transition:none!important;animation:none!important}'; document.head.appendChild(s); })()`);
   const setMode = async (show) => {
     await evaluate(`(() => { const t = document.querySelector('.showmode-toggle'); if ((t.getAttribute('aria-checked') === 'true') !== ${show}) t.click(); })()`);
@@ -203,7 +203,7 @@ test('Show Mode differs from Edit Mode only by the controls it removes', { timeo
     await setMode(false);
 
     if (width === 1400) {
-      const fit = await evaluate(`(() => { const grid = document.querySelector('.one-shot-grid'); const edge = grid.getBoundingClientRect().bottom + 1;
+      const fit = await evaluate(`(() => { const grid = document.querySelector('.quickplay-grid'); const edge = grid.getBoundingClientRect().bottom + 1;
         return [...grid.children].filter(cell => cell.getBoundingClientRect().bottom <= edge).length; })()`);
       assert.ok(fit >= 10, `ten QuickPlays must fit beside the playlist at the default window size, ${fit} do`);
     }

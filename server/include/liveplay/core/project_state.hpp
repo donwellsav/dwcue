@@ -245,7 +245,7 @@ public:
     // Serialise the engine-facing portion (cues/mixers/routing).
     json to_json() const;
 
-    // Return the full client-side project document — items, groups, cart,
+    // Return the full client-side project document — items, groups, QuickPlays,
     // theme, hotkeys, settings — as last seen / mutated. Includes engine
     // state where useful (cue_id linkage). Use this in /api/project so the
     // client can render the whole project from a single GET.
@@ -253,7 +253,7 @@ public:
 
     // Lightweight header for the project: everything *except* the items
     // tree. Lets the client paint the workspace shell (theme, settings,
-    // cart slots, project name) before the (potentially large) items
+    // QuickPlay slots, project name) before the (potentially large) items
     // array has even started downloading. `itemCount` is the number of
     // top-level items the client can expect from /api/project/items.
     json header_document() const;
@@ -307,9 +307,9 @@ public:
     // ---- Item-level operations (mirror the client's Project model) -------
     // Insert/update/remove an item in the document, and keep the engine in
     // sync for audio items. `parent_uuid` empty = top level; non-empty =
-    // child of that group. `cart_only` routes the item into the document's
-    // separate `cartOnlyItems` array (cart slots, not the playlist) so a
-    // cart-bound cue never leaks into the playlist tree. Returns the cue_id
+    // child of that group. `quick_play_only` routes the item into the document's
+    // separate `quickPlayItems` array (QuickPlays, not the playlist) so a
+    // QuickPlay cue never leaks into the playlist tree. Returns the cue_id
     // of the newly engine-loaded audio item, or empty for groups / on failure.
     //
     // The returned CueId is valid immediately, but the audio decode happens on
@@ -319,7 +319,7 @@ public:
     // when the decode finishes. play_item() waits for a still-loading cue's own
     // decode (and only that one), so an immediate play after add still works.
     audio::CueId add_item(const json& item, const std::string& parent_uuid = "",
-                          bool cart_only = false);
+                          bool quick_play_only = false);
     bool         update_item(const std::string& uuid, const json& patch,
                              std::unique_lock<std::recursive_mutex>* project_lock = nullptr);
     bool         remove_item(const std::string& uuid);
@@ -486,7 +486,7 @@ public:
     // Compact machine-readable transport summary: project header facts, every
     // on-air item (name, colour, index path, elapsed/remaining), the effective
     // "Up Next" target, selection + Show Mode, master gain/limiter state and
-    // cart-slot bindings. Built for polling-free control surfaces — fetch once
+    // QuickPlay slot bindings. Built for polling-free control surfaces — fetch once
     // on connect, then keep it fresh from the /ws push messages (cue_state,
     // meters, doc_patch).
     json state_summary() const;
@@ -498,8 +498,8 @@ public:
     // derivable / loaded.
     std::string go(std::optional<std::uint64_t> expected_stop_revision = std::nullopt);
 
-    // Item uuid bound to a cart slot, or empty if the slot is unbound.
-    std::string cart_slot_item_uuid(int slot) const;
+    // Item uuid bound to a QuickPlay slot, or empty if the slot is unbound.
+    std::string quick_play_slot_item_uuid(int slot) const;
 
     // ---- Per-device routing ---------------------------------------------
     // Resolve a unique catalog name or current opened-device id. Opens the
@@ -554,9 +554,9 @@ public:
     // start_preview() picks up the updated previewDevice setting.
     void apply_preview_device_change(std::unique_lock<std::recursive_mutex>& lifecycle_lock);
 
-    // Cart slot binding (slot → item uuid). Slot < 0 clears.
-    bool set_cart_slot(int slot, const std::string& item_uuid);
-    bool clear_cart_slot(int slot);
+    // QuickPlay slot binding (slot → item uuid). Slot < 0 clears.
+    bool set_quick_play_slot(int slot, const std::string& item_uuid);
+    bool clear_quick_play_slot(int slot);
 
     // Theme + project settings patches. Each accepts a JSON object that's
     // shallow-merged into the corresponding section.
@@ -618,7 +618,7 @@ private:
     std::string           project_name_ = "Untitled";
     std::filesystem::path project_file_path_;
 
-    // The full client-side project document (items, cart, theme, etc.). The
+    // The full client-side project document (items, QuickPlays, theme, etc.). The
     // server treats most of this as opaque user data — only audio items have
     // engine-facing meaning, and they are mirrored into `cues_`. We keep the
     // whole document here so a remote client can fetch it back via GET.
@@ -785,9 +785,9 @@ private:
         double                   follow_saved_crossfade_sec       = 0.0;
         double                   follow_saved_start_next_time     = 0.0;
         double                   follow_saved_start_next_fade_sec = 0.0;
-        // QuickPlay (cart-only) pass. Its follow always starts at the natural
+        // QuickPlay pass. Its follow always starts at the natural
         // end on the control thread, like an armed Cue to Continue.
-        bool                     one_shot             = false;
+        bool                     quick_play           = false;
         // The operator cancelled this pass's authored follow. Runtime-only.
         bool                     follow_suppressed    = false;
         std::vector<DuckedEntry> ducked;
@@ -862,7 +862,7 @@ private:
     // the playlist's sibling order: Play Next means the cue GO would start, and
     // Go to Item/Index means that authored target, whatever is armed Up Next.
     // nullopt when source_uuid is not a QuickPlay. Takes its own locks.
-    std::optional<std::string> one_shot_advance_target(const std::string& source_uuid);
+    std::optional<std::string> quick_play_advance_target(const std::string& source_uuid);
     void broadcast_cue_follow(const std::string& uuid, const char* follow);
     std::string music_backup_for(const std::string& source_uuid);
     bool start_music_backup(std::unique_lock<std::recursive_mutex>& lifecycle_lock,

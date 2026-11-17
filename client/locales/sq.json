@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "Madhësia e shkrimit të ndërfaqes",
-    "oneShotFontSize": "Madhësia e tekstit të one-shot-eve",
+    "quickPlayFontSize": "Madhësia e tekstit të QuickPlays",
     "cycleTrackColors": "Rrotullo ngjyrat e pistave të reja",
-    "cartLayout": "Faqosja",
+    "quickPlayLayout": "Faqosja",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "Kolonat",
@@ -519,7 +519,7 @@
       "error": "Importi dështoi"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlays (parazgjedhje)",
     "detachedNoPrimary": "Dritarja kryesore e projektit nuk është e disponueshme.",
     "detachedWaitingForShow": "Rikthe ose hap shfaqjen në dritaren kryesore për të riaktivizuar QuickPlays.",
@@ -904,8 +904,8 @@
     "title": "Konfiguro kontrollet",
     "shortcutBtn": "Shkurtore",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlays",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlays",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "Pauzë / Vazhdo",
     "toggleLoop": "Ndërro buklën",
     "cueToContinue": "Cue për vazhdim",
@@ -924,7 +924,7 @@
     "masterVolume": "Volumi i masterit global",
     "midiDevice": "Pajisja MIDI",
     "allDevices": "Të gjitha pajisjet",
-    "conflictOneShot": "Tashmë i caktuar për QuickPlay {n}",
+    "conflictQuickPlay": "Tashmë i caktuar për QuickPlay {n}",
     "conflictAction": "Tashmë e caktuar për {action}",
     "pressAnyKey": "Shtypni çdo çelës...",
     "reserved": "Ky kombinim çelësash është i rezervuar",

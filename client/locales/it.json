@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "Dimensione del carattere dell'interfaccia",
-    "oneShotFontSize": "Dimensione del testo dei one-shot",
+    "quickPlayFontSize": "Dimensione del testo dei QuickPlay",
     "cycleTrackColors": "Alterna colori nuove tracce",
-    "cartLayout": "Layout",
+    "quickPlayLayout": "Layout",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "Colonne",
@@ -519,7 +519,7 @@
       "error": "Importazione non riuscita"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlay (predefiniti)",
     "detachedNoPrimary": "La finestra principale del progetto non è disponibile.",
     "detachedWaitingForShow": "Ripristina o apri lo spettacolo nella finestra principale per riattivare i QuickPlay.",
@@ -904,8 +904,8 @@
     "title": "Configura controlli",
     "shortcutBtn": "Scorciatoie",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlay",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlay",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "Pausa / Riprendi",
     "toggleLoop": "Attiva ciclo",
     "cueToContinue": "Continua",
@@ -924,7 +924,7 @@
     "masterVolume": "Volume master globale",
     "midiDevice": "Dispositivo MIDI",
     "allDevices": "Tutti i dispositivi",
-    "conflictOneShot": "Già assegnato a QuickPlay {n}",
+    "conflictQuickPlay": "Già assegnato a QuickPlay {n}",
     "conflictAction": "Già assegnato a {action}",
     "pressAnyKey": "Premi un tasto...",
     "reserved": "Questa combinazione di tasti è riservata",

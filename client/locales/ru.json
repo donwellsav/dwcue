@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "Размер шрифта интерфейса",
-    "oneShotFontSize": "Размер текста one-shot",
+    "quickPlayFontSize": "Размер текста QuickPlay",
     "cycleTrackColors": "Чередовать цвета новых треков",
-    "cartLayout": "Макет",
+    "quickPlayLayout": "Макет",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "Столбцы",
@@ -519,7 +519,7 @@
       "error": "Не удалось выполнить импорт"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlay (по умолчанию)",
     "detachedNoPrimary": "Главное окно проекта недоступно.",
     "detachedWaitingForShow": "Восстановите или откройте шоу в главном окне, чтобы снова включить QuickPlay.",
@@ -904,8 +904,8 @@
     "title": "Настройка управления",
     "shortcutBtn": "Ярлыки",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlay",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlay",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "Пауза / Продолжить",
     "toggleLoop": "Переключить цикл",
     "cueToContinue": "Продолжить",
@@ -924,7 +924,7 @@
     "masterVolume": "Громкость глобального мастера",
     "midiDevice": "MIDI-устройство",
     "allDevices": "Все устройства",
-    "conflictOneShot": "Уже назначено на QuickPlay {n}",
+    "conflictQuickPlay": "Уже назначено на QuickPlay {n}",
     "conflictAction": "Уже назначено {action}",
     "pressAnyKey": "Нажмите любую клавишу...",
     "reserved": "Эта комбинация клавиш зарезервирована",

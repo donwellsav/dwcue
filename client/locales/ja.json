@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "インターフェースのフォントサイズ",
-    "oneShotFontSize": "ワンショットのテキストサイズ",
+    "quickPlayFontSize": "ワンショットのテキストサイズ",
     "cycleTrackColors": "新規トラックの色を順番に割り当て",
-    "cartLayout": "レイアウト",
+    "quickPlayLayout": "レイアウト",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "列数",
@@ -519,7 +519,7 @@
       "error": "インポートに失敗しました"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlays（デフォルト）",
     "detachedNoPrimary": "メインのプロジェクトウィンドウを利用できません。",
     "detachedWaitingForShow": "QuickPlaysを再び有効にするには、メインウィンドウで公演を復元するか開いてください。",
@@ -904,8 +904,8 @@
     "title": "コントロール設定",
     "shortcutBtn": "ショートカット",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlays",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlays",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "一時停止 / 再開",
     "toggleLoop": "ループ切替",
     "cueToContinue": "Cue to Continue",
@@ -924,7 +924,7 @@
     "masterVolume": "グローバルマスターボリューム",
     "midiDevice": "MIDIデバイス",
     "allDevices": "すべてのデバイス",
-    "conflictOneShot": "QuickPlay {n} に割り当て済み",
+    "conflictQuickPlay": "QuickPlay {n} に割り当て済み",
     "conflictAction": "{action} に割り当て済み",
     "pressAnyKey": "任意のキーを押してください...",
     "reserved": "このキーの組み合わせは予約済みです",

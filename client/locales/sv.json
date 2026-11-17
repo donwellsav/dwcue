@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "Gränssnittets teckenstorlek",
-    "oneShotFontSize": "Textstorlek för one-shots",
+    "quickPlayFontSize": "Textstorlek för QuickPlay",
     "cycleTrackColors": "Rotera färger för nya spår",
-    "cartLayout": "Layout",
+    "quickPlayLayout": "Layout",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "Kolumner",
@@ -519,7 +519,7 @@
       "error": "Importen misslyckades"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlay (standard)",
     "detachedNoPrimary": "Huvudprojektfönstret är inte tillgängligt.",
     "detachedWaitingForShow": "Återställ eller öppna föreställningen i huvudfönstret för att aktivera QuickPlay igen.",
@@ -904,8 +904,8 @@
     "title": "Konfigurera kontroller",
     "shortcutBtn": "Genvägar",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlay",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlay",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "Pausa / Fortsätt",
     "toggleLoop": "Växla loop",
     "cueToContinue": "Cue to Continue",
@@ -924,7 +924,7 @@
     "masterVolume": "Global mastervolym",
     "midiDevice": "MIDI-enhet",
     "allDevices": "Alla enheter",
-    "conflictOneShot": "Redan tilldelad QuickPlay {n}",
+    "conflictQuickPlay": "Redan tilldelad QuickPlay {n}",
     "conflictAction": "Redan tilldelat {action}",
     "pressAnyKey": "Tryck på valfri tangent...",
     "reserved": "Denna tangentkombination är reserverad",

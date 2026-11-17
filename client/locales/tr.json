@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "Arayüz yazı tipi boyutu",
-    "oneShotFontSize": "One-shot metin boyutu",
+    "quickPlayFontSize": "QuickPlay metin boyutu",
     "cycleTrackColors": "Yeni parça renklerini döngüyle ata",
-    "cartLayout": "Düzen",
+    "quickPlayLayout": "Düzen",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "Sütunlar",
@@ -519,7 +519,7 @@
       "error": "İçe aktarma başarısız oldu"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlay (varsayılanlar)",
     "detachedNoPrimary": "Ana proje penceresi kullanılamıyor.",
     "detachedWaitingForShow": "QuickPlay'i yeniden etkinleştirmek için gösteriyi ana pencerede geri yükleyin veya açın.",
@@ -904,8 +904,8 @@
     "title": "Kontrolleri yapılandır",
     "shortcutBtn": "Kısayollar",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlay",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlay",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "Duraklat / Devam et",
     "toggleLoop": "Döngüyü aç/kapat",
     "cueToContinue": "Cue ile Devam",
@@ -924,7 +924,7 @@
     "masterVolume": "Global master ses düzeyi",
     "midiDevice": "MIDI Cihazı",
     "allDevices": "Tüm cihazlar",
-    "conflictOneShot": "QuickPlay {n} için zaten atanmış",
+    "conflictQuickPlay": "QuickPlay {n} için zaten atanmış",
     "conflictAction": "Zaten {action} için atanmış",
     "pressAnyKey": "Herhangi bir tuşa basın...",
     "reserved": "Bu tuş kombinasyonu ayrılmış",

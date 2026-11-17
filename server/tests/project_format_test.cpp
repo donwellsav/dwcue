@@ -10,7 +10,9 @@
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
+#include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -59,10 +61,10 @@ json client_document(std::string name, const fs::path& folder) {
         {"version", "2.0.0"},
         {"folderPath", liveplay::util::path_to_utf8(folder)},
         {"items", json::array()},
-        {"cartItems", json::array()},
-        {"cartSlotKeys", json::object()},
+        {"quickPlaySlots", json::array()},
+        {"quickPlaySlotKeys", json::object()},
         {"playbackKeys", json::object()},
-        {"cartOnlyItems", json::array()},
+        {"quickPlayItems", json::array()},
         {"theme", json{{"mode", "dark"}, {"accentColor", "#315FCF"}}},
         {"settings", json::object()},
         {"createdAt", "2026-01-01T00:00:00.000Z"},
@@ -303,6 +305,141 @@ void test_archive_traversal_rejected(const fs::path& base) {
     assert(read_text(archive) == source_bytes);
 }
 
+// The field names a show uses. Shows saved before the QuickPlay rename use
+// kOldNames; everything prepared, served and saved uses kNewNames.
+struct QuickPlayNames {
+    const char* quick_play_items;
+    const char* slots;
+    const char* slot_keys;
+    const char* slot_count;
+    const char* item_settings;
+};
+constexpr QuickPlayNames kOldNames{"cartOnlyItems", "cartItems", "cartSlotKeys",
+                                   "cartSlotCount", "oneShot"};
+constexpr QuickPlayNames kNewNames{"quickPlayItems", "quickPlaySlots", "quickPlaySlotKeys",
+                                   "quickPlaySlotCount", "quickPlay"};
+
+// True when any object key, at any depth, still says "cart" or "oneShot".
+bool has_old_name(const json& value) {
+    if (value.is_object()) {
+        for (const auto& [key, child] : value.items()) {
+            std::string lower = key;
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                           [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+            if (lower.find("cart") != std::string::npos ||
+                lower.find("oneshot") != std::string::npos) {
+                return true;
+            }
+            if (has_old_name(child)) return true;
+        }
+    } else if (value.is_array()) {
+        for (const auto& child : value)
+            if (has_old_name(child)) return true;
+    }
+    return false;
+}
+
+json audio_item(std::string uuid) {
+    return json{{"uuid", std::move(uuid)}, {"type", "audio"},
+                {"displayName", "Cue"}, {"mediaPath", "media/cue.wav"}};
+}
+
+// One show using every renamed field: a QuickPlay item, a slot assignment
+// with its key, the settings slot count, and a playlist cue inside a group
+// that carries QuickPlay settings.
+json show_with_quick_plays(const QuickPlayNames& names, const fs::path& folder) {
+    auto pad = audio_item("pad");
+    pad[names.item_settings] = json{{"order", 0}, {"retrigger", "restart"}};
+    auto linked = audio_item("linked");
+    linked[names.item_settings] = json{{"order", 2}, {"retrigger", "ignore"}};
+
+    json document = client_document("Quick plays", folder);
+    for (const char* current : {"quickPlaySlots", "quickPlaySlotKeys", "quickPlayItems"})
+        document.erase(current);
+    document["items"] = json::array({
+        json{{"uuid", "set"}, {"type", "group"}, {"displayName", "Set"},
+             {"children", json::array({audio_item("plain"), std::move(linked)})}},
+    });
+    document[names.quick_play_items] = json::array({std::move(pad)});
+    document[names.slots] = json::array({
+        json{{"slot", 1}, {"itemUuid", "plain"}, {"index", json::array({-1, 1})}},
+    });
+    document[names.slot_keys] = json{
+        {"1", json{{"key", "F2"}, {"ctrlKey", false}, {"shiftKey", false}, {"altKey", false}}},
+    };
+    document["settings"] = json{{names.slot_count, 24}};
+    return document;
+}
+
+const json* quick_play_item(const json& document, std::string_view uuid) {
+    for (const auto& item : document["quickPlayItems"])
+        if (item.value("uuid", std::string{}) == uuid) return &item;
+    return nullptr;
+}
+
+void test_legacy_quick_play_names(const fs::path& base) {
+    // A document is still recognised as a show when an old name is the only
+    // thing that identifies it, and equally under the current names.
+    for (const char* name : {"cartItems", "cartOnlyItems", "quickPlaySlots", "quickPlayItems"})
+        assert(project_file::is_client_document(json{{name, json::array()}}));
+    for (const char* name : {"cartSlotKeys", "quickPlaySlotKeys"})
+        assert(project_file::is_client_document(json{{name, json::object()}}));
+    assert(!project_file::is_client_document(json{{"schema_version", 2}}));
+
+    const fs::path folder = base / "legacy-names";
+    fs::create_directories(folder);
+    const json old_show = show_with_quick_plays(kOldNames, folder);
+    assert(has_old_name(old_show));
+    assert(!has_old_name(show_with_quick_plays(kNewNames, folder)));
+
+    project_file::PreparedDocument prepared;
+    std::string error;
+    assert(project_file::prepare_client_document(old_show, folder, prepared, error));
+    assert(!has_old_name(prepared.document));
+    assert(prepared.quick_play_migrated);
+
+    // Nothing is lost: the QuickPlay item, the slot assignment with its key,
+    // the slot count and the group cue's settings are all still there.
+    const json& document = prepared.document;
+    assert(document["settings"]["quickPlaySlotCount"] == 24);
+    assert(document["quickPlayItems"].size() == 3);
+    const auto* pad = quick_play_item(document, "pad");
+    assert(pad && (*pad)["quickPlay"] == (json{{"order", 0}, {"retrigger", "restart"}}));
+    const auto* slot = quick_play_item(document, "plain-one-shot");
+    assert(slot && (*slot)["quickPlay"]["order"] == 1);
+    assert((*slot)["quickPlay"]["sourceUuid"] == "plain");
+    assert((*slot)["quickPlay"]["hotkey"]["key"] == "F2");
+    const auto* linked = quick_play_item(document, "linked-one-shot");
+    assert(linked && (*linked)["quickPlay"]["order"] == 2);
+    assert((*linked)["quickPlay"]["retrigger"] == "ignore");
+    assert((*linked)["quickPlay"]["sourceUuid"] == "linked");
+    assert(document["quickPlaySlots"].empty());
+    assert(document["quickPlaySlotKeys"].empty());
+    assert(document["items"][0]["children"].size() == 2);
+    assert(!document["items"][0]["children"][1].contains("quickPlay"));
+
+    // The same show written with the current names prepares to the same document.
+    project_file::PreparedDocument current;
+    assert(project_file::prepare_client_document(
+        show_with_quick_plays(kNewNames, folder), folder, current, error));
+    assert(current.document == prepared.document);
+
+    // What is written to disk has only the current names.
+    const fs::path path = folder / "Converted.dwcue";
+    std::error_code write_error;
+    assert(project_file::write_new_canonical_project(path, prepared.document, write_error));
+    const json saved = json::parse(read_text(path));
+    assert(saved == prepared.document);
+    assert(!has_old_name(saved));
+
+    // An archive made by an older version still imports.
+    const fs::path archive = base / "LegacyNames.dwcuepack";
+    create_zip(archive, {{"LegacyNames.dwcue", json{{"cartOnlyItems", json::array()}}.dump()}});
+    const auto imported = project_archive::import_project(
+        archive, archive.filename(), base / "legacy-names-import");
+    assert(imported.ok);
+}
+
 } // namespace
 
 int main() {
@@ -318,4 +455,5 @@ int main() {
     test_native_archive_round_trip(temporary.path);
     test_archive_format_boundaries(temporary.path);
     test_archive_traversal_rejected(temporary.path);
+    test_legacy_quick_play_names(temporary.path);
 }

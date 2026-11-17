@@ -102,7 +102,7 @@ function readDoc(value: unknown): DocMirror | null {
     }
   };
   walk(record.items);
-  walk(record.cartOnlyItems);
+  walk(record.quickPlayItems);
   const settings = record.settings;
   return {
     folderPath: readString(record.folderPath),

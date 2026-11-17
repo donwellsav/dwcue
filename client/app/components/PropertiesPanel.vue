@@ -179,38 +179,38 @@
             </div>
           </div>
           <div v-if="hasSelectedAudioItems" class="property-field">
-            <label class="one-shot-designation__toggle">
+            <label class="quickplay-designation__toggle">
               <input
                 type="checkbox"
-                :checked="oneShotEnabled"
-                @change="handleOneShotDesignationChange"
+                :checked="quickPlayEnabled"
+                @change="handleQuickPlayDesignationChange"
               />
-              <span>{{ t('oneShots.designation') }}</span>
+              <span>{{ t('quickPlays.designation') }}</span>
             </label>
           </div>
-          <p v-if="hasSelectedAudioItems" class="property-help">{{ t('oneShots.designationHelp') }}</p>
+          <p v-if="hasSelectedAudioItems" class="property-help">{{ t('quickPlays.designationHelp') }}</p>
         </section>
         <!-- Settings only a QuickPlay has. Everything else on these tabs is the
              same panel a playlist cue gets. -->
         <section v-if="quickPlay" class="property-column quickplay-properties">
-          <h4>{{ t('controls.oneShot', { n: quickPlaySlot + 1 }) }}</h4>
+          <h4>{{ t('controls.quickPlay', { n: quickPlaySlot + 1 }) }}</h4>
           <div class="property-field">
-            <span class="property-label">{{ t('oneShots.retrigger') }}</span>
-            <InlineChoicePicker id="cue-quickplay-retrigger" :label="t('oneShots.retrigger')"
+            <span class="property-label">{{ t('quickPlays.retrigger') }}</span>
+            <InlineChoicePicker id="cue-quickplay-retrigger" :label="t('quickPlays.retrigger')"
               :value="quickPlay.retrigger ?? 'restart'" :options="quickPlayRetriggerOptions"
               @change="quickPlay.retrigger = $event; handleSave()" />
           </div>
           <div class="property-field">
-            <span class="property-label">{{ t('oneShots.shortcut') }}</span>
+            <span class="property-label">{{ t('quickPlays.shortcut') }}</span>
             <div class="input-with-btn">
               <button type="button" class="quickplay-shortcut-capture"
                 :class="{ 'is-capturing': capturingQuickPlayHotkey }"
                 :disabled="quickPlaySlot < 0"
                 @click="startQuickPlayHotkeyCapture">
-                {{ capturingQuickPlayHotkey ? t('oneShots.pressShortcut') : (quickPlayHotkeyLabel || t('oneShots.assignShortcut')) }}
+                {{ capturingQuickPlayHotkey ? t('quickPlays.pressShortcut') : (quickPlayHotkeyLabel || t('quickPlays.assignShortcut')) }}
               </button>
               <button v-if="quickPlayHotkeyLabel" type="button" class="icon-btn"
-                :title="t('oneShots.clearShortcut')" :aria-label="t('oneShots.clearShortcut')"
+                :title="t('quickPlays.clearShortcut')" :aria-label="t('quickPlays.clearShortcut')"
                 @click="clearQuickPlayHotkey">
                 <span class="material-symbols-rounded" aria-hidden="true">backspace</span>
               </button>
@@ -219,19 +219,19 @@
           </div>
           <template v-if="duckingMode === 'duck-others'">
             <div class="property-field">
-              <label for="cue-quickplay-duckFadeIn">{{ t('oneShots.duckAttack') }}</label>
+              <label for="cue-quickplay-duckFadeIn">{{ t('quickPlays.duckAttack') }}</label>
               <input id="cue-quickplay-duckFadeIn" type="number" min="0" max="10" step="0.1"
                 :value="audioItem.duckingBehavior?.duckFadeIn ?? 0.25"
                 @change="onQuickPlayDuckFadeChange('duckFadeIn', $event)" />
             </div>
             <div class="property-field">
-              <label for="cue-quickplay-duckFadeOut">{{ t('oneShots.duckRelease') }}</label>
+              <label for="cue-quickplay-duckFadeOut">{{ t('quickPlays.duckRelease') }}</label>
               <input id="cue-quickplay-duckFadeOut" type="number" min="0" max="10" step="0.1"
                 :value="audioItem.duckingBehavior?.duckFadeOut ?? 1"
                 @change="onQuickPlayDuckFadeChange('duckFadeOut', $event)" />
             </div>
           </template>
-          <p class="property-help">{{ t('oneShots.propertiesHelp') }}</p>
+          <p class="property-help">{{ t('quickPlays.propertiesHelp') }}</p>
         </section>
       </div>
 
@@ -453,13 +453,13 @@ import {
   type MeasuredLoudness,
 } from '~/utils/audio';
 import {
-  buildOneShotSlots,
-  cloneAsIndependentOneShot,
-  isOneShot,
-  nextAvailableOneShotOrder,
-  removeOneShotDesignation,
-} from '~/utils/oneShots';
-import { bindingsMatch, eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/useCartHotkeys';
+  buildQuickPlayCells,
+  cloneAsIndependentQuickPlay,
+  isQuickPlay,
+  nextAvailableQuickPlayOrder,
+  removeQuickPlayDesignation,
+} from '~/utils/quickPlays';
+import { bindingsMatch, eventToBinding, formatKeyLabel, isReservedCombo } from '~/composables/useQuickPlayHotkeys';
 
 const {
   selectedItem,
@@ -485,7 +485,7 @@ const { t } = useLocalization();
 const { showHeaderWarning } = useHeaderWarnings();
 const warnShuffle = (status: string) => showHeaderWarning(t(`shuffle.${status}`));
 const { uiMode } = useUiMode();
-const { cartOnlyItems, addCartOnlyItem, removeCartOnlyItem } = useCartItems();
+const { quickPlayItems, addQuickPlayItem, removeQuickPlayItem } = useQuickPlayItems();
 const propertySaveFailed = ref(false);
 const propertySavePending = ref(false);
 let propertySaveAttempt = 0;
@@ -537,44 +537,44 @@ const selectedAudioItems = computed(() => getSelectedItems().filter(
   (item): item is AudioItem => item.type === 'audio',
 ));
 const hasSelectedAudioItems = computed(() => selectedAudioItems.value.length > 0);
-const hasIndependentOneShot = (item: AudioItem): boolean =>
-  (cartOnlyItems.value.has(item.uuid) && isOneShot(item))
-  || Array.from(cartOnlyItems.value.values()).some(
-    oneShot => oneShot.oneShot?.sourceUuid === item.uuid,
+const hasIndependentQuickPlay = (item: AudioItem): boolean =>
+  (quickPlayItems.value.has(item.uuid) && isQuickPlay(item))
+  || Array.from(quickPlayItems.value.values()).some(
+    independentCopy => independentCopy.quickPlay?.sourceUuid === item.uuid,
   );
-const oneShotEnabled = computed(() => selectedAudioItems.value.length > 0
-  && selectedAudioItems.value.every(item => isOneShot(item) || hasIndependentOneShot(item)));
+const quickPlayEnabled = computed(() => selectedAudioItems.value.length > 0
+  && selectedAudioItems.value.every(item => isQuickPlay(item) || hasIndependentQuickPlay(item)));
 
-const handleOneShotDesignationChange = (event: Event) => {
+const handleQuickPlayDesignationChange = (event: Event) => {
   if (!currentProject.value) return;
   const enabled = (event.target as HTMLInputElement).checked;
-  let removedSelectedOneShot = false;
+  let removedSelectedQuickPlay = false;
   selectedAudioItems.value.forEach((item) => {
-    if (enabled && !hasIndependentOneShot(item)) {
-      const order = nextAvailableOneShotOrder(
+    if (enabled && !hasIndependentQuickPlay(item)) {
+      const order = nextAvailableQuickPlayOrder(
         currentProject.value!.items,
-        Array.from(cartOnlyItems.value.values()),
+        Array.from(quickPlayItems.value.values()),
       );
       if (order >= 0) {
-        addCartOnlyItem(cloneAsIndependentOneShot(item, crypto.randomUUID(), order));
+        addQuickPlayItem(cloneAsIndependentQuickPlay(item, crypto.randomUUID(), order));
         // A cue designated by an earlier build is decoupled as soon as the
-        // Properties action is used; the new copy owns all One Shot behavior.
-        if (isOneShot(item)) removeOneShotDesignation(item);
+        // Properties action is used; the new copy owns all QuickPlay behavior.
+        if (isQuickPlay(item)) removeQuickPlayDesignation(item);
       }
     }
     if (!enabled) {
-      if (cartOnlyItems.value.has(item.uuid)) {
-        removeCartOnlyItem(item.uuid);
+      if (quickPlayItems.value.has(item.uuid)) {
+        removeQuickPlayItem(item.uuid);
         selectedItems.value.delete(item.uuid);
-        removedSelectedOneShot ||= selectedItem.value?.uuid === item.uuid;
+        removedSelectedQuickPlay ||= selectedItem.value?.uuid === item.uuid;
       }
-      for (const oneShot of Array.from(cartOnlyItems.value.values())) {
-        if (oneShot.oneShot?.sourceUuid === item.uuid) removeCartOnlyItem(oneShot.uuid);
+      for (const independentCopy of Array.from(quickPlayItems.value.values())) {
+        if (independentCopy.quickPlay?.sourceUuid === item.uuid) removeQuickPlayItem(independentCopy.uuid);
       }
-      if (isOneShot(item)) removeOneShotDesignation(item);
+      if (isQuickPlay(item)) removeQuickPlayDesignation(item);
     }
   });
-  if (removedSelectedOneShot) {
+  if (removedSelectedQuickPlay) {
     selectedItem.value = null;
     propertiesPanelOpen.value = false;
   }
@@ -582,21 +582,21 @@ const handleOneShotDesignationChange = (event: Event) => {
 };
 
 // ---- QuickPlay-only settings -------------------------------------------
-// A QuickPlay is an audio cue with a `oneShot` block, so it uses every tab of
+// A QuickPlay is an audio cue with a `quickPlay` block, so it uses every tab of
 // this panel unchanged. These are the few settings a playlist cue has no use
 // for: what a second press does, its own key, and how fast it ducks Program.
-const { keyMappings, playbackMappings, updateBinding } = useCartHotkeys();
+const { keyMappings, playbackMappings, updateBinding } = useQuickPlayHotkeys();
 const quickPlay = computed(() => selectedItem.value?.type === 'audio'
-  && selectedItems.value.size <= 1 && isOneShot(audioItem.value)
-  ? audioItem.value.oneShot!
+  && selectedItems.value.size <= 1 && isQuickPlay(audioItem.value)
+  ? audioItem.value.quickPlay!
   : null);
 const quickPlaySlot = computed(() => quickPlay.value && currentProject.value
-  ? buildOneShotSlots(currentProject.value.items, Array.from(cartOnlyItems.value.values()))
+  ? buildQuickPlayCells(currentProject.value.items, Array.from(quickPlayItems.value.values()))
     .findIndex(item => item?.uuid === selectedItem.value?.uuid)
   : -1);
 const quickPlayRetriggerOptions = computed(() => [
-  { value: 'restart', label: t('oneShots.restart') },
-  { value: 'ignore', label: t('oneShots.ignore') },
+  { value: 'restart', label: t('quickPlays.restart') },
+  { value: 'ignore', label: t('quickPlays.ignore') },
 ] as const);
 const quickPlayHotkeyLabel = computed(() => {
   const binding = quickPlaySlot.value >= 0 ? keyMappings.value[quickPlaySlot.value] : undefined;
@@ -641,7 +641,7 @@ const handleQuickPlayHotkeyKeydown = (event: KeyboardEvent) => {
   }
   const result = updateBinding(quickPlaySlot.value, binding);
   if (result.conflict >= 0) {
-    quickPlayHotkeyError.value = t('oneShots.shortcutConflict', { name: result.conflict + 1 });
+    quickPlayHotkeyError.value = t('quickPlays.shortcutConflict', { name: result.conflict + 1 });
     return;
   }
   stopQuickPlayHotkeyCapture();
@@ -780,8 +780,8 @@ const changeGroupBackup = (value: string) => {
     status => showHeaderWarning(t(`musicContinuity.${status}`)));
 };
 
-// Check if selected item is a cart item
-const isCartItem = computed(() => {
+// Check if selected item is a QuickPlay item
+const isQuickPlayItem = computed(() => {
   if (selectedItem.value && selectedItem.value.type === 'audio') {
     const item = selectedItem.value as AudioItem;
     return item.index && item.index.length > 0 && item.index[0] === -1;
@@ -1719,7 +1719,7 @@ const formatTime = (seconds: number): string => {
 
 .property-field > .property-help,
 .property-field > .group-shuffle,
-.property-field > .one-shot-designation__toggle,
+.property-field > .quickplay-designation__toggle,
 .property-field > .ltc-checkbox-label {
   grid-column: 1 / -1;
 }
@@ -1767,14 +1767,14 @@ const formatTime = (seconds: number): string => {
   font-weight: 600;
 }
 
-.one-shot-designation__toggle {
+.quickplay-designation__toggle {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
   cursor: pointer;
 }
 
-.one-shot-designation__toggle input[type="checkbox"] {
+.quickplay-designation__toggle input[type="checkbox"] {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;

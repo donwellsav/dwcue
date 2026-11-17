@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "界面字体大小",
-    "oneShotFontSize": "单次触发文本大小",
+    "quickPlayFontSize": "单次触发文本大小",
     "cycleTrackColors": "循环使用新曲目颜色",
-    "cartLayout": "布局",
+    "quickPlayLayout": "布局",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "列数",
@@ -519,7 +519,7 @@
       "error": "导入失败"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlay（默认）",
     "detachedNoPrimary": "项目主窗口不可用。",
     "detachedWaitingForShow": "请在主窗口中恢复或打开演出，以重新启用 QuickPlay。",
@@ -904,8 +904,8 @@
     "title": "配置控制",
     "shortcutBtn": "快捷键",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlay",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlay",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "暂停 / 恢复",
     "toggleLoop": "切换循环",
     "cueToContinue": "继续信号",
@@ -924,7 +924,7 @@
     "masterVolume": "全局主控音量",
     "midiDevice": "MIDI设备",
     "allDevices": "所有设备",
-    "conflictOneShot": "已分配给 QuickPlay {n}",
+    "conflictQuickPlay": "已分配给 QuickPlay {n}",
     "conflictAction": "已分配给 {action}",
     "pressAnyKey": "按任意键...",
     "reserved": "此键组合已被保留",

@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "인터페이스 글꼴 크기",
-    "oneShotFontSize": "원샷 텍스트 크기",
+    "quickPlayFontSize": "원샷 텍스트 크기",
     "cycleTrackColors": "새 트랙 색상 순환",
-    "cartLayout": "레이아웃",
+    "quickPlayLayout": "레이아웃",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "열",
@@ -519,7 +519,7 @@
       "error": "가져오기 실패"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlays (기본값)",
     "detachedNoPrimary": "메인 프로젝트 창을 사용할 수 없습니다.",
     "detachedWaitingForShow": "QuickPlays를 다시 사용하려면 메인 창에서 공연을 복원하거나 여세요.",
@@ -904,8 +904,8 @@
     "title": "컨트롤 설정",
     "shortcutBtn": "단축키",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlays",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlays",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "일시정지 / 재개",
     "toggleLoop": "루프 전환",
     "cueToContinue": "큐 이어가기",
@@ -924,7 +924,7 @@
     "masterVolume": "전체 마스터 볼륨",
     "midiDevice": "MIDI 장치",
     "allDevices": "모든 장치",
-    "conflictOneShot": "QuickPlay {n}에 이미 할당됨",
+    "conflictQuickPlay": "QuickPlay {n}에 이미 할당됨",
     "conflictAction": "{action}에 이미 할당됨",
     "pressAnyKey": "아무 키나 누르세요...",
     "reserved": "이 키 조합은 예약되어 있습니다",

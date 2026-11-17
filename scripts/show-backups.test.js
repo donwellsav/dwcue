@@ -38,7 +38,7 @@ test('the engine keeps automatic backups of the show file and can restore them',
   const show = name => ({ name, version: '2.0.0', folderPath: showFolder,
     items: [{ uuid: 'bed', type: 'audio', displayName: 'Bed', mediaServerPath: media,
       duration: 10, endBehavior: { action: 'loop' } }],
-    cartOnlyItems: [], cartItems: [], settings: {}, theme: { accentColor: '#123456' },
+    quickPlayItems: [], quickPlaySlots: [], settings: {}, theme: { accentColor: '#123456' },
   });
   const post = (pathname, body, headers) => request(baseUrl, pathname, { method: 'POST', body: JSON.stringify(body), headers });
   const ok = async response => {

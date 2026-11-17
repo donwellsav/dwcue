@@ -62,7 +62,7 @@ function fixture(platform = 'darwin', { script = [], taskkillWorks = false, vers
     ipcMain: { handle(name, handler) { handlers.set(name, handler); } }, requireTrustedIpc() {},
     LIVEPLAY_DEFAULT_PORT: 4480, path, crypto: require('node:crypto'),
     app: { isPackaged: true, getVersion: () => APP_VERSION },
-    mainWindow: null, cartPlayerWindow: null, videoOutputWindow: null,
+    mainWindow: null, detachedQuickPlayWindow: null, videoOutputWindow: null,
     fetchEngineSummary: async (port) => {
       if (!lock || lock.port !== port || !answering.has(lock.pid)) return null;
       return { server: { version: engineVersions.get(lock.pid) },

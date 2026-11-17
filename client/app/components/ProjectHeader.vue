@@ -121,7 +121,7 @@
 <script setup lang="ts">
 import Btn from './Btn.vue';
 import VideoConfidenceChip from './VideoConfidenceChip.vue';
-import { useVideoOutputToggle } from '~/composables/useCartHotkeys';
+import { useVideoOutputToggle } from '~/composables/useQuickPlayHotkeys';
 import { countdownColorForSeconds, countdownInk, type AudioItem } from '~/types/project';
 import { formatClockSeconds, playlistRemainingSeconds } from '~/utils/playlistRemaining';
 

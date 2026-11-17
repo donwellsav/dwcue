@@ -631,59 +631,59 @@ assert.match(
   'the docked stereo fader must link both channels and make its −∞ detent truly silent',
 );
 const workspaceOrder = [
-  mainWorkspace.indexOf('<OneShotPanel>'),
+  mainWorkspace.indexOf('<QuickPlayPanel>'),
   mainWorkspace.indexOf('<PlaylistView '),
   mainWorkspace.indexOf('class="output-console"'),
 ];
 assert.ok(
   workspaceOrder.every(position => position >= 0) &&
     workspaceOrder[0] < workspaceOrder[1] && workspaceOrder[1] < workspaceOrder[2],
-  'the workspace must order One Shots, playlist, then output console',
+  'the workspace must order QuickPlays, playlist, then output console',
 );
 assert.match(
   mainWorkspace,
-  /const newWidth = fromStart \/ zoom;[\s\S]*newWidth < snapThreshold[\s\S]*cartClosed\.value = true[\s\S]*newWidth > container\.offsetWidth - snapThreshold[\s\S]*cartFullscreen\.value = true/,
+  /const newWidth = fromStart \/ zoom;[\s\S]*newWidth < snapThreshold[\s\S]*quickPlayClosed\.value = true[\s\S]*newWidth > container\.offsetWidth - snapThreshold[\s\S]*quickPlayFullscreen\.value = true/,
   'the QuickPlays splitter must snap closed at the start and expanded at the end',
 );
 assert.match(
   mainWorkspace,
-  /'collapsed-left': cartClosed,\s*'collapsed-right': cartFullscreen/,
-  'collapsed cart handles must remain reachable on their new edges',
+  /'collapsed-left': quickPlayClosed,\s*'collapsed-right': quickPlayFullscreen/,
+  'collapsed QuickPlay handles must remain reachable on their new edges',
 );
 assert.match(
   mainWorkspace,
   /&\.collapsed-left\s*\{[\s\S]*inset-inline-start:\s*0;[\s\S]*top:\s*var\(--panel-header-height\);/,
-  'the closed-cart resize edge must start below the fixed header toggle',
+  'the closed-quickplay resize edge must start below the fixed header toggle',
 );
 assert.match(
   mainWorkspace,
-  /class="workspace-panels"[\s\S]*id="cart-player-panel"[\s\S]*<OneShotPanel>[\s\S]*#header-leading[\s\S]*class="cart-toggle cart-toggle--open"[\s\S]*t\('oneShots\.hide'\)[\s\S]*@click="toggleCart"[\s\S]*<PlaylistView\b[^>]*>[\s\S]*#header-leading[\s\S]*v-if="cartClosed && !cartDetached"[\s\S]*class="cart-toggle(?: [^"]*)?"[\s\S]*t\('oneShots\.show'\)[\s\S]*@click="toggleCart"[\s\S]*function toggleCart\(\)[\s\S]*cartClosed\.value = !cartClosed\.value[\s\S]*cartFullscreen\.value = false/,
-  'the One Shots toggle must stay in the active panel header and leave resizing to the splitter',
+  /class="workspace-panels"[\s\S]*id="quickplay-workspace-panel"[\s\S]*<QuickPlayPanel>[\s\S]*#header-leading[\s\S]*class="quickplay-toggle quickplay-toggle--open"[\s\S]*t\('quickPlays\.hide'\)[\s\S]*@click="toggleQuickPlays"[\s\S]*<PlaylistView\b[^>]*>[\s\S]*#header-leading[\s\S]*v-if="quickPlayClosed && !quickPlayDetached"[\s\S]*class="quickplay-toggle(?: [^"]*)?"[\s\S]*t\('quickPlays\.show'\)[\s\S]*@click="toggleQuickPlays"[\s\S]*function toggleQuickPlays\(\)[\s\S]*quickPlayClosed\.value = !quickPlayClosed\.value[\s\S]*quickPlayFullscreen\.value = false/,
+  'the QuickPlays toggle must stay in the active panel header and leave resizing to the splitter',
 );
 assert.match(
   mainWorkspace,
-  /\.cart-toggle\s*\{[\s\S]*flex:\s*0 0 var\(--panel-control-height\);[\s\S]*width:\s*var\(--panel-control-height\);[\s\S]*height:\s*var\(--panel-control-height\);[\s\S]*:focus-visible/,
-  'the in-flow cart toggle must share the panel control rail and keyboard focus treatment',
+  /\.quickplay-toggle\s*\{[\s\S]*flex:\s*0 0 var\(--panel-control-height\);[\s\S]*width:\s*var\(--panel-control-height\);[\s\S]*height:\s*var\(--panel-control-height\);[\s\S]*:focus-visible/,
+  'the in-flow QuickPlay toggle must share the panel control rail and keyboard focus treatment',
 );
 assert.doesNotMatch(
   mainWorkspace,
-  /cart-toggle-visible|cart-is-closed|\.cart-toggle\s*\{[^}]*position:\s*absolute/,
-  'the cart toggle must not use absolute positioning or compensating header classes',
+  /quickplay-toggle-visible|quickplay-is-closed|\.quickplay-toggle\s*\{[^}]*position:\s*absolute/,
+  'the QuickPlay toggle must not use absolute positioning or compensating header classes',
 );
 assert.match(
-  read('client/app/components/OneShotPanel.vue') + playlistView,
-  /one-shot-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"[\s\S]*playlist-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"/,
-  'One Shots and playlist headers must expose the same in-flow leading-control lane',
+  read('client/app/components/QuickPlayPanel.vue') + playlistView,
+  /quickplay-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"[\s\S]*playlist-header workspace-panel-header[\s\S]*workspace-panel-header__leading[\s\S]*slot name="header-leading"/,
+  'QuickPlays and playlist headers must expose the same in-flow leading-control lane',
 );
 assert.doesNotMatch(
   mainWorkspace,
-  /cartClosed \? 'chevron_right' : 'chevron_left'/,
-  'the cart toggle icon must not flip direction and appear to dance',
+  /quickPlayClosed \? 'chevron_right' : 'chevron_left'/,
+  'the QuickPlay toggle icon must not flip direction and appear to dance',
 );
 assert.match(
   mainWorkspace,
-  /v-show="recoveryOpen \|\| !cartFullscreen \|\| cartDetached" class="playlist-section"/,
-  'detaching a fullscreen cart must reveal the playlist',
+  /v-show="recoveryOpen \|\| !quickPlayFullscreen \|\| quickPlayDetached" class="playlist-section"/,
+  'detaching a fullscreen QuickPlay must reveal the playlist',
 );
 assert.match(
   mainWorkspace,
@@ -1028,18 +1028,18 @@ const transpiledProject = ts.transpileModule(
 const projectRuntime = { exports: {} };
 Function('exports', 'module', transpiledProject)(projectRuntime.exports, projectRuntime);
 const {
-  CART_SLOT_COUNT_LIMITS,
+  QUICK_PLAY_SLOT_COUNT_LIMITS,
   DEFAULT_COUNTDOWN_COLOR_BANDS,
   DEFAULT_PROJECT_SETTINGS,
   PRESET_COLORS,
   colorForNewAudioItem,
-  normalizeCartSlotCount,
+  normalizeQuickPlaySlotCount,
   normalizeCountdownColorBands,
   countdownColorForSeconds,
   countdownInk,
 } = projectRuntime.exports;
-assert.deepEqual(CART_SLOT_COUNT_LIMITS, { min: 1, max: 64, default: 16 });
-assert.equal(DEFAULT_PROJECT_SETTINGS.cartSlotCount, 16);
+assert.deepEqual(QUICK_PLAY_SLOT_COUNT_LIMITS, { min: 1, max: 64, default: 16 });
+assert.equal(DEFAULT_PROJECT_SETTINGS.quickPlaySlotCount, 16);
 assert.equal(DEFAULT_PROJECT_SETTINGS.cycleTrackColors, true);
 assert.equal(PRESET_COLORS.includes('#FF0000'), false);
 assert.equal(PRESET_COLORS.includes('#CC0000'), false);
@@ -1047,11 +1047,11 @@ assert.equal(colorForNewAudioItem(undefined, 0), PRESET_COLORS[0]);
 assert.equal(colorForNewAudioItem(undefined, 1), PRESET_COLORS[1]);
 assert.equal(colorForNewAudioItem(undefined, PRESET_COLORS.length), PRESET_COLORS[0]);
 assert.equal(colorForNewAudioItem({ cycleTrackColors: false }, 5), PRESET_COLORS[0]);
-assert.equal(normalizeCartSlotCount(undefined), 16);
-assert.equal(normalizeCartSlotCount(999), 64);
-assert.equal(normalizeCartSlotCount(4, [{ slot: 31 }]), 32);
-assert.equal(normalizeCartSlotCount(4, [], { 31: {} }), 32);
-assert.equal(normalizeCartSlotCount(4, [{ slot: -1 }, { slot: 1.5 }, { slot: 63 }]), 64);
+assert.equal(normalizeQuickPlaySlotCount(undefined), 16);
+assert.equal(normalizeQuickPlaySlotCount(999), 64);
+assert.equal(normalizeQuickPlaySlotCount(4, [{ slot: 31 }]), 32);
+assert.equal(normalizeQuickPlaySlotCount(4, [], { 31: {} }), 32);
+assert.equal(normalizeQuickPlaySlotCount(4, [{ slot: -1 }, { slot: 1.5 }, { slot: 63 }]), 64);
 assert.deepEqual(DEFAULT_COUNTDOWN_COLOR_BANDS, [
   { startSeconds: 11, color: '#35A96B' },
   { startSeconds: 6, color: '#D8AD35' },
@@ -1268,7 +1268,7 @@ assert.match(
 assert.match(
   downloadRoute,
   /if \(req\.method == crow::HTTPMethod::Delete\)[\s\S]*complete_download_token\(token\)/,
-  'DELETE /api/file/download should mark one-shot token complete',
+  'DELETE /api/file/download should mark the single-use token complete',
 );
 assert.match(
   downloadRoute,
@@ -1834,8 +1834,8 @@ assert.match(
   /const projectFolderPath = props\.projectFolderPath[\s\S]*const projectEpoch = props\.projectEpoch[\s\S]*props\.projectFolderPath !== projectFolderPath[\s\S]*currentEpoch\.value !== projectEpoch/,
   'a Spotify job must stay bound to the project generation that started it',
 );
-const oneShotPanel = read('client/app/components/OneShotPanel.vue');
-const oneShotTile = read('client/app/components/OneShotTile.vue');
+const quickPlayPanel = read('client/app/components/QuickPlayPanel.vue');
+const quickPlayTile = read('client/app/components/QuickPlayTile.vue');
 const youtubeImport = read('client/app/components/YouTubeImportModal.vue');
 const controlConfig = read('client/app/components/ControlConfigModal.vue');
 const midiController = read('client/app/composables/useMidiController.ts');
@@ -1865,37 +1865,37 @@ assert.match(
 assert.match(
   mainWorkspace,
   /\.output-console__strips\s*\{[\s\S]{0,220}gap:\s*var\(--spacing-sm\);[\s\S]{0,160}padding:\s*var\(--spacing-sm\);[\s\S]*&\.collapsed-left\s*\{[\s\S]{0,180}top:\s*var\(--panel-header-height\);/,
-  'workspace panel gutters, dividers, and the cart toggle must land on shared header edges',
+  'workspace panel gutters, dividers, and the QuickPlay toggle must land on shared header edges',
 );
 assert.match(
   mainWorkspace,
   /class="playlist-section">[\s\S]*\.playlist-section\s*\{[\s\S]{0,100}flex:\s*1 1 0;[\s\S]{0,80}width:\s*auto;[\s\S]*\.output-console\s*\{[\s\S]{0,180}flex:\s*0 0 var\(--output-console-width\);[\s\S]{0,80}width:\s*var\(--output-console-width\);/,
-  'the cart splitter, playlist, and output rail must share one deterministic width equation',
+  'the QuickPlay splitter, playlist, and output rail must share one deterministic width equation',
 );
 assert.match(
   mainWorkspace,
-  /\.cart-section\s*\{[^}]*flex:\s*0 0 auto;[^}]*max-width:\s*var\(--cart-max-width\);/,
+  /\.quickplay-section\s*\{[^}]*flex:\s*0 0 auto;[^}]*max-width:\s*var\(--quickplay-max-width\);/,
   'the splitter width must respect the workspace bound',
 );
 assert.match(
   mainWorkspace,
-  /const zoom = rect\.width \/ container\.offsetWidth \|\| 1;[\s\S]{0,260}const newWidth = fromStart \/ zoom;[\s\S]*cartWidth\.value = Math\.round\(newWidth\);/,
+  /const zoom = rect\.width \/ container\.offsetWidth \|\| 1;[\s\S]{0,260}const newWidth = fromStart \/ zoom;[\s\S]*quickPlayWidth\.value = Math\.round\(newWidth\);/,
   'the splitter must track the pointer at the current interface scale',
 );
 assert.match(
   mainWorkspace,
-  /\.playlist-section\s*\{[\s\S]{0,140}min-width:\s*var\(--playlist-split-min-width\);[\s\S]*\.cart-section\s*\{[^}]*--cart-max-width:\s*calc\(100% - var\(--playlist-split-min-width\) - var\(--resize-handle-width\)\);[^}]*&\.cart-section--fullscreen\s*\{[^}]*max-width:\s*none;/,
-  'the split view must stay usable while fullscreen cart remains unconstrained',
+  /\.playlist-section\s*\{[\s\S]{0,140}min-width:\s*var\(--playlist-split-min-width\);[\s\S]*\.quickplay-section\s*\{[^}]*--quickplay-max-width:\s*calc\(100% - var\(--playlist-split-min-width\) - var\(--resize-handle-width\)\);[^}]*&\.quickplay-section--fullscreen\s*\{[^}]*max-width:\s*none;/,
+  'the split view must stay usable while fullscreen QuickPlay remains unconstrained',
 );
 assert.match(
   mainWorkspace,
-  /@container \(max-width: 940px\)\s*\{\s*\.playlist-section\s*\{\s*min-width:\s*0;\s*\}\s*\.cart-section:not\(\.cart-section--fullscreen\)\s*\{\s*--cart-max-width:\s*min\(32%, 280px\);/,
+  /@container \(max-width: 940px\)\s*\{\s*\.playlist-section\s*\{\s*min-width:\s*0;\s*\}\s*\.quickplay-section:not\(\.quickplay-section--fullscreen\)\s*\{\s*--quickplay-max-width:\s*min\(32%, 280px\);/,
   'the narrow QuickPlays bank must share workspace width with the playlist',
 );
 assert.match(
   mainWorkspace,
   /&\.collapsed-left\s*\{[\s\S]{0,180}top:\s*var\(--panel-header-height\);[\s\S]*&\.collapsed-right\s*\{[\s\S]{0,180}top:\s*var\(--panel-header-height\);/,
-  'collapsed cart dividers must begin below the shared panel header',
+  'collapsed QuickPlay dividers must begin below the shared panel header',
 );
 assert.match(
   mainWorkspace,
@@ -1948,17 +1948,17 @@ assert.doesNotMatch(
   'meter wells must not regain decorative rack shadows',
 );
 assert.match(
-  oneShotPanel,
+  quickPlayPanel,
   /v-else-if="slotErrors\[index\]"[\s\S]{0,220}role="alert"[\s\S]{0,700}clearSlotError\(index\)/,
-  'One Shot import warnings must stay visible until the operator explicitly clears them',
+  'QuickPlay import warnings must stay visible until the operator explicitly clears them',
 );
 assert.match(
-  oneShotTile,
-  /v-if="!showMode"[\s\S]*class="one-shot-control one-shot-remove"[\s\S]*<Teleport defer :to="[^"]*#workspace-import-host[^"]*">[\s\S]*v-if="menuOpen"\s*class="quickplay-settings"[\s\S]*v-if="removeOpen"\s*class="quickplay-remove"[\s\S]*@click="confirmRemove"/,
+  quickPlayTile,
+  /v-if="!showMode"[\s\S]*class="quickplay-control quickplay-remove-button"[\s\S]*<Teleport defer :to="[^"]*#workspace-import-host[^"]*">[\s\S]*v-if="menuOpen"\s*class="quickplay-settings"[\s\S]*v-if="removeOpen"\s*class="quickplay-remove"[\s\S]*@click="confirmRemove"/,
   'QuickPlay settings and the edit-mode removal confirmation must share the nonmodal dock',
 );
 assert.match(
-  oneShotPanel,
+  quickPlayPanel,
   /defer :to="isDetachedWindow \? '#detached-quickplay-dock' : '#workspace-import-host'"[\s\S]*?<AudioImportModal :key="importSlot" docked single-file/,
   'QuickPlay import must use the single-file dock in either window',
 );
@@ -2126,9 +2126,9 @@ assert.match(
   'YouTube results must block live downloads and retain saved-file information',
 );
 assert.match(
-  oneShotPanel,
+  quickPlayPanel,
   /importFromServerPath[\s\S]*color: colorForNewAudioItem\(project\.settings, slot\)/,
-  'new One Shot imports must receive their slot-ordered palette color',
+  'new QuickPlay imports must receive their slot-ordered palette color',
 );
 assert.match(
   propertiesPanel,
@@ -2186,9 +2186,9 @@ assert.match(
   'workspace column headers must share one fixed geometry and title style',
 );
 assert.match(
-  playlistView + oneShotPanel + mainWorkspace,
-  /playlist-header workspace-panel-header[\s\S]*one-shot-header workspace-panel-header[\s\S]*output-console__header workspace-panel-header/,
-  'Playlist, One Shots, and Output must all use the shared header system',
+  playlistView + quickPlayPanel + mainWorkspace,
+  /playlist-header workspace-panel-header[\s\S]*quickplay-header workspace-panel-header[\s\S]*output-console__header workspace-panel-header/,
+  'Playlist, QuickPlays, and Output must all use the shared header system',
 );
 assert.match(
   playlistView,
@@ -2388,7 +2388,7 @@ const workspace = read('client/app/components/MainWorkspace.vue');
 assert.match(workspace, /uiMode\.value === 'playback'[\s\S]*e\.key === 'Delete'[\s\S]*key === 'd'[\s\S]*key === 'v'/, 'Show Mode must block destructive workspace shortcuts');
 assert.doesNotMatch(
   workspace,
-  /onTriggerItem|onStopItem|onTriggerCartSlot|onStopAllCues|onApiUpdateItem|onApiUpdateCartItem|sendApiResponse/,
+  /onTriggerItem|onStopItem|onTriggerQuickPlaySlot|onStopAllCues|onApiUpdateItem|onApiUpdateQuickPlayItem|sendApiResponse/,
   'workspace startup must not call retired preload APIs',
 );
 assert.match(appVue, /downloadArchiveToFile\(result\.downloadToken, opts\.downloadTo\.folder,/,
@@ -2459,7 +2459,7 @@ assert.match(read('client/electron/keep-awake.js'),
   /system: showOpen \|\| playing,\s*display: \(showOpen && showMode\) \|\| playing,/,
   'an open show must hold off system sleep, and Show Mode or playback must keep the screen on');
 assert.match(read('client/app/app.vue'),
-  /if \(!isCartWindow && !isVideoOutputWindow\) useKeepAwake\(\);/,
+  /if \(!isQuickPlayWindow && !isVideoOutputWindow\) useKeepAwake\(\);/,
   'the operator window must report the show state for keep-awake');
 
 // Cue sheet export: a read-only PDF of the open show.
@@ -2488,7 +2488,7 @@ const itemLevel = read('client/app/components/ItemLevel.vue');
 assert.match(playlistItem,
   /<div class="item-state">[\s\S]*<ItemLevel :item="item" :read-only="showMode" :disabled="!projectControlsReady" \/>\s*<\/div>\s*<span v-if="item\.type === 'audio'" class="item-duration"/,
   'every row must show its level at the right of the state lane');
-assert.match(read('client/app/components/OneShotTile.vue'),
+assert.match(read('client/app/components/QuickPlayTile.vue'),
   /<ItemLevel :item="item" :read-only="showMode" :max-db="12"\s*:persist="\(\) => persist\(\{ volume: item\.volume \}\)" \/>/,
   'a QuickPlay tile must use the same level control, saved the way the tile saves its other settings');
 assert.match(itemLevel,
@@ -2552,7 +2552,7 @@ assert.match(
 for (const file of [
   'client/app/app.vue', 'client/app/components/SessionRecoveryModal.vue',
   'client/app/components/ConnectionLostModal.vue', 'client/app/components/ServerFilePickerModal.vue',
-  'client/app/components/AudioImportModal.vue', 'client/app/components/OneShotPanel.vue',
+  'client/app/components/AudioImportModal.vue', 'client/app/components/QuickPlayPanel.vue',
 ]) {
   const source = read(file);
   assert.equal(
@@ -2567,8 +2567,8 @@ assert.match(
   'the small Stop All buttons keep their hazard stripes, also under the pointer',
 );
 assert.doesNotMatch(
-  read('client/app/app.vue') + read('client/app/components/OneShotPanel.vue'),
-  /(?:cart-recovery-stop|detached-quickplay-stop)[^}]*color: var\(--color-danger\)/,
+  read('client/app/app.vue') + read('client/app/components/QuickPlayPanel.vue'),
+  /(?:quickplay-recovery-stop|detached-quickplay-stop)[^}]*color: var\(--color-danger\)/,
   'Stop is never red',
 );
 // Level Check and Pre-show check open from Settings, not from the top bar.
@@ -2722,23 +2722,23 @@ assert.match(
 
 assert.match(
   uiMode,
-  /CART_GRID_LIMITS[\s\S]*rows:\s*\{ min: 1, max: 16 \}[\s\S]*columns:\s*\{ min: 1, max: 16 \}[\s\S]*attachedRegular[\s\S]*detachedRegular[\s\S]*normalizeCartGridLayouts[\s\S]*CART_GRID_LAYOUTS_KEY[\s\S]*setCartGridLayout/,
-  'cart layouts must keep two bounded per-device profiles, attached and detached, shared by both modes',
+  /QUICK_PLAY_GRID_LIMITS[\s\S]*rows:\s*\{ min: 1, max: 16 \}[\s\S]*columns:\s*\{ min: 1, max: 16 \}[\s\S]*attachedRegular[\s\S]*detachedRegular[\s\S]*normalizeQuickPlayGridLayouts[\s\S]*QUICK_PLAY_GRID_LAYOUTS_KEY[\s\S]*setQuickPlayGridLayout/,
+  'QuickPlay layouts must keep two bounded per-device profiles, attached and detached, shared by both modes',
 );
 assert.match(
-  oneShotPanel,
-  /props\.isDetachedWindow \? 'detachedRegular' : 'attachedRegular'[\s\S]*const rows = layout\.rows;[\s\S]*const contentMinHeight = Math\.ceil\(68 \+ 17\.25 \* oneShotFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,260}--one-shot-columns[\s\S]*--one-shot-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--one-shot-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--one-shot-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
-  'One Shots must preserve exact profile columns while reserving a measured safe width and a font-scaled row height that fits ten on the default window',
+  quickPlayPanel,
+  /props\.isDetachedWindow \? 'detachedRegular' : 'attachedRegular'[\s\S]*const rows = layout\.rows;[\s\S]*const contentMinHeight = Math\.ceil\(68 \+ 17\.25 \* quickPlayFontScale\.value \/ 100\);[\s\S]{0,100}const minHeight = Math\.max\(layout\.minHeight, contentMinHeight\);[\s\S]{0,260}--quickplay-columns[\s\S]*--quickplay-row-height[\s\S]*grid-template-columns:\s*repeat\(var\(--quickplay-columns, 2\), minmax\(128px, 1fr\)\)[\s\S]{0,160}grid-auto-rows:\s*var\(--quickplay-row-height, 106px\)[\s\S]{0,240}overflow-x:\s*auto;[\s\S]{0,80}overflow-y:\s*auto;/,
+  'QuickPlays must preserve exact profile columns while reserving a measured safe width and a font-scaled row height that fits ten on the default window',
 );
 assert.doesNotMatch(
-  oneShotPanel,
-  /grid-template-columns:\s*repeat\(\s*auto-fit|--one-shot-min-card-width|--one-shot-target-card-width/,
-  'automatic fitting must not override the operator-selected One Shot columns',
+  quickPlayPanel,
+  /grid-template-columns:\s*repeat\(\s*auto-fit|--quickplay-min-card-width|--quickplay-target-card-width/,
+  'automatic fitting must not override the operator-selected QuickPlay columns',
 );
 assert.match(
-  oneShotPanel,
-  /\.one-shot-grid\s*\{[\s\S]{0,500}scrollbar-gutter:\s*stable;/,
-  'the One Shot grid must reserve a stable scrollbar gutter',
+  quickPlayPanel,
+  /\.quickplay-grid\s*\{[\s\S]{0,500}scrollbar-gutter:\s*stable;/,
+  'the QuickPlay grid must reserve a stable scrollbar gutter',
 );
 assert.match(
   playlistView,
@@ -2746,35 +2746,35 @@ assert.match(
   'the playlist header and track list must reserve the same scrollbar gutter',
 );
 assert.doesNotMatch(
-  uiMode + oneShotPanel + projectSettingsModal,
+  uiMode + quickPlayPanel + projectSettingsModal,
   /attachedShow|detachedShow|showPlaylistRowHeight|SHOW_MODE_MAX_ROW_HEIGHT/,
   'Show Mode has no row height or QuickPlays layout of its own',
 );
 assert.match(
-  oneShotPanel,
-  /buildOneShotSlots\([\s\S]*layout\.rows \* layout\.columns[\s\S]*roundedLength[\s\S]*slots\.push\(null\)/,
-  'One Shot cells must remain a permanent grid sized by the active layout rather than playlist contents',
+  quickPlayPanel,
+  /buildQuickPlayCells\([\s\S]*layout\.rows \* layout\.columns[\s\S]*roundedLength[\s\S]*slots\.push\(null\)/,
+  'QuickPlay cells must remain a permanent grid sized by the active layout rather than playlist contents',
 );
 assert.match(
-  oneShotPanel,
+  quickPlayPanel,
   /if \(showMode\.value\) \{\s*let lastUsed = slots\.length - 1;\s*while \(lastUsed >= 0 && !slots\[lastUsed\]\) lastUsed -= 1;\s*slots\.length = Math\.ceil\(\(lastUsed \+ 1\) \/ layout\.columns\) \* layout\.columns;/,
   'Show Mode must drop only the empty rows after the last QuickPlay, so every QuickPlay keeps its place and size',
 );
-assert.doesNotMatch(oneShotPanel, /v-for="slot in 16"/, 'One Shots must not return to a fixed 16-cell grid');
+assert.doesNotMatch(quickPlayPanel, /v-for="slot in 16"/, 'QuickPlays must not return to a fixed 16-cell grid');
 assert.match(
-  oneShotPanel,
-  /moveOneShotToSlot[\s\S]*source\.oneShot\.order = targetSlot[\s\S]*if \(target\?\.oneShot\) target\.oneShot\.order = sourceSlot/,
-  'One Shot reordering must swap its permanent cell assignments instead of rebuilding the list',
+  quickPlayPanel,
+  /moveQuickPlayToSlot[\s\S]*source\.quickPlay\.order = targetSlot[\s\S]*if \(target\?\.quickPlay\) target\.quickPlay\.order = sourceSlot/,
+  'QuickPlay reordering must swap its permanent cell assignments instead of rebuilding the list',
 );
 assert.match(
   projectSettingsModal,
-  /cart-layout-grid[\s\S]*minimumCardHeight[\s\S]*visibleRows[\s\S]*columns[\s\S]*cartGridProfileOptions[\s\S]*attachedRegular[\s\S]*detachedRegular[\s\S]*onCartGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*setCartGridLayout/,
+  /quickplay-layout-grid[\s\S]*minimumCardHeight[\s\S]*visibleRows[\s\S]*columns[\s\S]*quickPlayGridProfileOptions[\s\S]*attachedRegular[\s\S]*detachedRegular[\s\S]*onQuickPlayGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*setQuickPlayGridLayout/,
   'settings must expose height, visible rows, and columns for the attached and the detached QuickPlays layout',
 );
 assert.match(
   controlConfig,
-  /v-for="entry in configuredOneShots"[\s\S]*entry\.slotIndex[\s\S]*buildOneShotSlots[\s\S]*const configuredOneShots/,
-  'keyboard and MIDI configuration must follow the configured One Shot cells',
+  /v-for="entry in configuredQuickPlays"[\s\S]*entry\.slotIndex[\s\S]*buildQuickPlayCells[\s\S]*const configuredQuickPlays/,
+  'keyboard and MIDI configuration must follow the configured QuickPlay cells',
 );
 assert.match(
   appVue + mainWorkspace,
@@ -2791,28 +2791,28 @@ assert.doesNotMatch(appVue, /<LoadingOverlay\b/,
   'show loads must leave the playlist and transport visible');
 assert.match(
   midiController,
-  /`trigger-slot-\$\{number\}`[\s\S]*length:\s*CART_SLOT_COUNT_LIMITS\.max/,
-  'MIDI cart actions must cover every supported card',
+  /`trigger-slot-\$\{number\}`[\s\S]*length:\s*QUICK_PLAY_SLOT_COUNT_LIMITS\.max/,
+  'MIDI QuickPlay actions must cover every supported card',
 );
 assert.match(
   projectState,
-  /patch\.find\("cartSlotCount"\)[\s\S]*is_number_integer\(\)[\s\S]*slots < 1 \|\| slots > 64/,
+  /patch\.find\("quickPlaySlotCount"\)[\s\S]*is_number_integer\(\)[\s\S]*slots < 1 \|\| slots > 64/,
   'the project settings trust boundary must reject invalid card counts',
 );
 assert.match(
   controlServer,
-  /if \(!state_\.set_cart_slot\(slot, uuid\)\)[\s\S]*slot must be between 0 and 63/,
-  'the cart API must not report success for a slot the project rejected',
+  /if \(!state_\.set_quick_play_slot\(slot, uuid\)\)[\s\S]*slot must be between 0 and 63/,
+  'the QuickPlay API must not report success for a slot the project rejected',
 );
 assert.match(
   electronMain,
-  /cart-grid-layouts-changed[\s\S]*requireIpcString\(layouts, 'layouts', 4096\)[\s\S]*cart-grid-layouts-set/,
-  'cart layout IPC must validate and forward the bounded serialized preference',
+  /quickplay-grid-layouts-changed[\s\S]*requireIpcString\(layouts, 'layouts', 4096\)[\s\S]*quickplay-grid-layouts-set/,
+  'QuickPlay layout IPC must validate and forward the bounded serialized preference',
 );
 assert.match(
   electronPreload,
-  /broadcastCartGridLayouts[\s\S]*cart-grid-layouts-changed[\s\S]*onCartGridLayoutsSet[\s\S]*cart-grid-layouts-set/,
-  'the preload bridge must sync cart layout changes to an open detached window',
+  /broadcastQuickPlayGridLayouts[\s\S]*quickplay-grid-layouts-changed[\s\S]*onQuickPlayGridLayoutsSet[\s\S]*quickplay-grid-layouts-set/,
+  'the preload bridge must sync QuickPlay layout changes to an open detached window',
 );
 
 const transpiledUiMode = ts.transpileModule(
@@ -2828,7 +2828,7 @@ Function('exports', 'module', 'require', transpiledUiMode)(uiModeRuntime.exports
   assert.equal(specifier, '../utils/headerWarnings');
   return headerWarningsRuntime;
 });
-assert.deepEqual(uiModeRuntime.exports.normalizeCartGridLayouts({
+assert.deepEqual(uiModeRuntime.exports.normalizeQuickPlayGridLayouts({
   attachedRegular: { rows: 0, columns: 17, minHeight: 1 },
   attachedShow: { minHeight: 1 },
   detachedRegular: { minHeight: 999 },
@@ -2841,77 +2841,77 @@ assert.deepEqual(uiModeRuntime.exports.normalizeCartGridLayouts({
 });
 // Beside the playlist ten QuickPlays show by default, two across and five
 // down; the detached window shows twenty, five across and four down.
-assert.deepEqual(uiModeRuntime.exports.normalizeCartGridLayouts(null), {
+assert.deepEqual(uiModeRuntime.exports.normalizeQuickPlayGridLayouts(null), {
   attachedRegular: { rows: 5, columns: 2, minHeight: 112 },
   detachedRegular: { rows: 4, columns: 5, minHeight: 112 },
 });
 assert.match(
-  oneShotTile,
-  /\.one-shot-body \{\s*container: one-shot-body \/ size;[\s\S]*@container one-shot-body \(max-height: 2\.29em\) \{\s*\.one-shot-title\.one-shot-title \{[^}]*white-space: nowrap;[\s\S]*@container one-shot-body \(max-height: 3\.79em\) \{\s*\.one-shot-runtime-state \{\s*display: none;/,
+  quickPlayTile,
+  /\.quickplay-body \{\s*container: quickplay-body \/ size;[\s\S]*@container quickplay-body \(max-height: 2\.29em\) \{\s*\.quickplay-title\.quickplay-title \{[^}]*white-space: nowrap;[\s\S]*@container quickplay-body \(max-height: 3\.79em\) \{\s*\.quickplay-runtime-state \{\s*display: none;/,
   'a short QuickPlay tile must show one whole title line and drop the Playing badge, never a sliver of either',
 );
 assert.match(
   projectSettingsModal,
-  /onCartGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*input\.value = String\(current\)[\s\S]*setCartGridLayout/,
-  'an empty cart layout field must restore the current value instead of snapping to its minimum',
+  /onQuickPlayGridLayoutChange[\s\S]*input\.value\.trim\(\)[\s\S]*input\.value = String\(current\)[\s\S]*setQuickPlayGridLayout/,
+  'an empty QuickPlay layout field must restore the current value instead of snapping to its minimum',
 );
 assert.match(
-  oneShotTile,
-  /class="one-shot-bottomline">\s*<ItemLevel :item="item" :read-only="showMode" :max-db="12"[\s\S]{0,120}<div class="one-shot-actions">\s*<button\s+type="button"\s+class="one-shot-control one-shot-transport"[\s\S]{0,280}@click\.stop="handleTransport"/,
+  quickPlayTile,
+  /class="quickplay-bottomline">\s*<ItemLevel :item="item" :read-only="showMode" :max-db="12"[\s\S]{0,120}<div class="quickplay-actions">\s*<button\s+type="button"\s+class="quickplay-control quickplay-transport"[\s\S]{0,280}@click\.stop="handleTransport"/,
   'a QuickPlay must keep its level, Play/Stop and Cue to Continue in one control row, the same in both modes',
 );
 // One number on a tile: the key shows only when it is not the slot's own number.
 assert.match(
-  oneShotTile,
-  /<b class="one-shot-index">\{\{ position \+ 1 \}\}<\/b>\s*<kbd v-if="hotkeyLabel && hotkeyLabel !== String\(position \+ 1\)" class="one-shot-hotkey"[\s\S]{0,200}class="one-shot-duration"[\s\S]{0,80}<span class="one-shot-edit">/,
+  quickPlayTile,
+  /<b class="quickplay-index">\{\{ position \+ 1 \}\}<\/b>\s*<kbd v-if="hotkeyLabel && hotkeyLabel !== String\(position \+ 1\)" class="quickplay-hotkey"[\s\S]{0,200}class="quickplay-duration"[\s\S]{0,80}<span class="quickplay-edit">/,
   'a QuickPlay must show its number, then its time, without repeating the number as its key',
 );
 assert.match(
-  oneShotTile,
-  /v-if="!showMode"[\s\S]*class="one-shot-control one-shot-remove"[\s\S]*v-if="removeOpen"/,
-  'Show Mode must block One Shot removal while regular mode retains the confirmation control',
+  quickPlayTile,
+  /v-if="!showMode"[\s\S]*class="quickplay-control quickplay-remove-button"[\s\S]*v-if="removeOpen"/,
+  'Show Mode must block QuickPlay removal while regular mode retains the confirmation control',
 );
 assert.match(
-  oneShotPanel,
-  /one-shot-header workspace-panel-header" :title="showMode \? undefined : t\('oneShots\.hint'\)"/,
+  quickPlayPanel,
+  /quickplay-header workspace-panel-header" :title="showMode \? undefined : t\('quickPlays\.hint'\)"/,
   'QuickPlays import guidance must remain available in Edit Mode',
 );
 assert.match(
-  oneShotPanel,
-  /<button[\s\S]{0,160}v-else-if="!showMode"[\s\S]{0,240}class="one-shot-empty-cell"[\s\S]{0,240}:aria-label[\s\S]{0,180}@click="openImport\(index\)"/,
-  'editable empty One Shot cells must be named keyboard buttons',
+  quickPlayPanel,
+  /<button[\s\S]{0,160}v-else-if="!showMode"[\s\S]{0,240}class="quickplay-empty-cell"[\s\S]{0,240}:aria-label[\s\S]{0,180}@click="openImport\(index\)"/,
+  'editable empty QuickPlay cells must be named keyboard buttons',
 );
 assert.match(
-  oneShotPanel,
-  /<div v-else class="one-shot-empty-cell show-mode" aria-hidden="true">/,
-  'empty One Shot cells must stay inert in Show Mode',
+  quickPlayPanel,
+  /<div v-else class="quickplay-empty-cell show-mode" aria-hidden="true">/,
+  'empty QuickPlay cells must stay inert in Show Mode',
 );
 assert.doesNotMatch(
-  oneShotTile,
+  quickPlayTile,
   /:aria-pressed="showMode \? isPlaying/,
-  'the Show Mode One Shot action must not mix a changing Play/Stop name with toggle semantics',
+  'the Show Mode QuickPlay action must not mix a changing Play/Stop name with toggle semantics',
 );
 assert.match(
-  oneShotTile,
+  quickPlayTile,
   /const handleDragStart[\s\S]{0,260}if \(showMode\.value \|\| !event\.dataTransfer\)[\s\S]{0,160}event\.preventDefault\(\)/,
-  'One Shot drag behavior must follow the current Show Mode state',
+  'QuickPlay drag behavior must follow the current Show Mode state',
 );
 assert.match(
-  oneShotPanel,
+  quickPlayPanel,
   /const canMutate = computed\(\(\) => isDetached \? !!detachedIdentity\.value : projectHydrationStatus\.value === 'ready'\)/,
-  'attached One Shot edits must wait for project hydration while detached edits require identity',
+  'attached QuickPlay edits must wait for project hydration while detached edits require identity',
 );
-const oneShotDragOverStart = oneShotPanel.indexOf('const handleDragOver');
-const oneShotDragOverEnd = oneShotPanel.indexOf(
-  '\n};\n\nconst handleDragLeave', oneShotDragOverStart,
+const quickPlayDragOverStart = quickPlayPanel.indexOf('const handleDragOver');
+const quickPlayDragOverEnd = quickPlayPanel.indexOf(
+  '\n};\n\nconst handleDragLeave', quickPlayDragOverStart,
 );
-assert.ok(oneShotDragOverStart >= 0 && oneShotDragOverEnd > oneShotDragOverStart,
-  'One Shots must define drag-over behavior');
-const oneShotDragOver = oneShotPanel.slice(oneShotDragOverStart, oneShotDragOverEnd);
+assert.ok(quickPlayDragOverStart >= 0 && quickPlayDragOverEnd > quickPlayDragOverStart,
+  'QuickPlays must define drag-over behavior');
+const quickPlayDragOver = quickPlayPanel.slice(quickPlayDragOverStart, quickPlayDragOverEnd);
 assert.match(
-  oneShotDragOver,
-  /if \(!canMutate\.value \|\| showMode\.value \|\| !currentProject\.value \|\| busySlot\.value !== null\) return;[\s\S]*dropEffect = event\.dataTransfer\.types\.includes\('one-shot-uuid'\) \? 'move' : 'copy'/,
-  'One Shot drag feedback must be hydration-guarded and clearly distinguish move from copy',
+  quickPlayDragOver,
+  /if \(!canMutate\.value \|\| showMode\.value \|\| !currentProject\.value \|\| busySlot\.value !== null\) return;[\s\S]*dropEffect = event\.dataTransfer\.types\.includes\('quickplay-uuid'\) \? 'move' : 'copy'/,
+  'QuickPlay drag feedback must be hydration-guarded and clearly distinguish move from copy',
 );
 assert.match(
   playlistItem,
@@ -2929,9 +2929,9 @@ assert.doesNotMatch(
   'the silence warning must stay in the header layout with a steady appearance',
 );
 assert.doesNotMatch(
-  oneShotPanel,
+  quickPlayPanel,
   /class="slot-hint"/,
-  'empty One Shot cells must not repeat obsolete cart loading copy',
+  'empty QuickPlay cells must not repeat obsolete loading copy',
 );
 
 assert.match(

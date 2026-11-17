@@ -1,39 +1,39 @@
 <template>
-  <section class="one-shot-panel" :class="{ 'show-mode': showMode }" :style="{ '--one-shot-font-scale': String(oneShotFontScale / 100) }" aria-labelledby="one-shot-title">
-    <header class="one-shot-header workspace-panel-header" :title="showMode ? undefined : t('oneShots.hint')">
+  <section class="quickplay-panel" :class="{ 'show-mode': showMode }" :style="{ '--quickplay-font-scale': String(quickPlayFontScale / 100) }" aria-labelledby="quickplay-title">
+    <header class="quickplay-header workspace-panel-header" :title="showMode ? undefined : t('quickPlays.hint')">
       <div class="workspace-panel-header__leading">
         <slot name="header-leading" />
-        <CueSymbol name="one-shots" class="one-shot-header__symbol" aria-hidden="true" />
-        <h2 id="one-shot-title" class="workspace-panel-header__title">{{ t('oneShots.title') }}</h2>
+        <CueSymbol name="quickplays" class="quickplay-header__symbol" aria-hidden="true" />
+        <h2 id="quickplay-title" class="workspace-panel-header__title">{{ t('quickPlays.title') }}</h2>
       </div>
-      <div class="one-shot-header__actions">
+      <div class="quickplay-header__actions">
         <Btn
           v-if="!isDetachedWindow"
-          class="one-shot-header__window-control"
+          class="quickplay-header__window-control"
           icon="open_in_new"
-          :text="t('oneShots.detach')"
-          :title="t('oneShots.detach')"
-          :aria-label="t('oneShots.detach')"
+          :text="t('quickPlays.detach')"
+          :title="t('quickPlays.detach')"
+          :aria-label="t('quickPlays.detach')"
           :disabled="!currentProject"
           @click="handleDetach"
         />
         <Btn
           v-else
-          class="one-shot-header__window-control"
+          class="quickplay-header__window-control"
           icon="picture_in_picture_alt"
-          :text="t('oneShots.attach')"
-          :title="t('oneShots.attach')"
-          :aria-label="t('oneShots.attach')"
+          :text="t('quickPlays.attach')"
+          :title="t('quickPlays.attach')"
+          :aria-label="t('quickPlays.attach')"
           @click="handleAttach"
         />
       </div>
     </header>
 
-    <div class="one-shot-grid" :style="oneShotGridStyle">
+    <div class="quickplay-grid" :style="quickPlayGridStyle">
       <div
-        v-for="(item, index) in oneShotSlots"
+        v-for="(item, index) in quickPlayCells"
         :key="item?.uuid ?? `empty-${index}`"
-        class="one-shot-slot"
+        class="quickplay-slot"
         :class="{
           'is-empty': !item,
           'is-drag-over': dragOverSlot === index,
@@ -43,40 +43,40 @@
         @dragleave="handleDragLeave($event, index)"
         @drop="handleDrop($event, index)"
       >
-        <OneShotTile
+        <QuickPlayTile
           v-if="item"
           :item="item"
           :position="index"
           :hotkey="keyMappings[index]"
           @request-import="openImport(index)"
-          @remove="removeOneShot(item, index)"
+          @remove="removeQuickPlay(item, index)"
         />
         <button
           v-else-if="!showMode"
           type="button"
-          class="one-shot-empty-cell"
+          class="quickplay-empty-cell"
           :disabled="!currentProject || busySlot !== null"
-          :aria-label="t('oneShots.importInto', { number: index + 1 })"
+          :aria-label="t('quickPlays.importInto', { number: index + 1 })"
           @click="openImport(index)"
         >
-          <span class="one-shot-empty-cell__number">{{ index + 1 }}</span>
-          <span class="material-symbols-rounded one-shot-empty-cell__icon" aria-hidden="true">add</span>
+          <span class="quickplay-empty-cell__number">{{ index + 1 }}</span>
+          <span class="material-symbols-rounded quickplay-empty-cell__icon" aria-hidden="true">add</span>
         </button>
-        <div v-else class="one-shot-empty-cell show-mode" aria-hidden="true">
-          <span class="one-shot-empty-cell__number">{{ index + 1 }}</span>
+        <div v-else class="quickplay-empty-cell show-mode" aria-hidden="true">
+          <span class="quickplay-empty-cell__number">{{ index + 1 }}</span>
         </div>
 
-        <div v-if="busySlot === index" class="one-shot-slot__busy" role="status">
+        <div v-if="busySlot === index" class="quickplay-slot__busy" role="status">
           <span class="material-symbols-rounded is-spinning" aria-hidden="true">progress_activity</span>
-          <span>{{ t('oneShots.importing') }}</span>
+          <span>{{ t('quickPlays.importing') }}</span>
         </div>
-        <div v-else-if="slotErrors[index]" class="one-shot-slot__error" role="alert">
-          <span class="one-shot-slot__error-message">{{ slotErrors[index] }}</span>
+        <div v-else-if="slotErrors[index]" class="quickplay-slot__error" role="alert">
+          <span class="quickplay-slot__error-message">{{ slotErrors[index] }}</span>
           <button
             type="button"
-            class="one-shot-slot__error-clear"
-            :aria-label="t('oneShots.clearWarning')"
-            :title="t('oneShots.clearWarning')"
+            class="quickplay-slot__error-clear"
+            :aria-label="t('quickPlays.clearWarning')"
+            :title="t('quickPlays.clearWarning')"
             @click.stop="clearSlotError(index)"
           >
             <span class="material-symbols-rounded" aria-hidden="true">close</span>
@@ -88,7 +88,7 @@
     <section v-if="isDetachedWindow" v-show="quickPlayEditor || importSlot !== null" class="detached-quickplay-panel">
       <header class="workspace-panel-header">
         <h3 class="workspace-panel-header__title">{{ t(quickPlayEditor?.remove
-          ? 'oneShots.removeConfirmTitle' : quickPlayEditor ? 'oneShots.settings' : 'oneShots.importInto', { number: (importSlot ?? 0) + 1 }) }}</h3>
+          ? 'quickPlays.removeConfirmTitle' : quickPlayEditor ? 'quickPlays.settings' : 'quickPlays.importInto', { number: (importSlot ?? 0) + 1 }) }}</h3>
         <div class="detached-quickplay-actions">
           <Btn v-if="quickPlayEditor && !quickPlayEditor.remove" class="detached-quickplay-stop stop-all-btn"
             type="button" icon="stop_circle" :text="t('controls.stopAll')" @click="server.stopAll()" />
@@ -99,7 +99,7 @@
     </section>
     <Teleport v-if="importSlot !== null && !quickPlayEditor && (isDetachedWindow || workspaceImportPanel === 'quickplay')"
       defer :to="isDetachedWindow ? '#detached-quickplay-dock' : '#workspace-import-host'">
-      <p v-if="busySlot === importSlot" class="quickplay-import-feedback" role="status">{{ t('oneShots.importing') }}</p>
+      <p v-if="busySlot === importSlot" class="quickplay-import-feedback" role="status">{{ t('quickPlays.importing') }}</p>
       <p v-else-if="slotErrors[importSlot]" class="quickplay-import-feedback" role="alert">{{ slotErrors[importSlot] }}</p>
       <AudioImportModal :key="importSlot" docked single-file
         :open="true" :visible="busySlot === null"
@@ -112,20 +112,20 @@
 </template>
 
 <script setup lang="ts">
-import { useDetachedOneShotMutation } from '~/composables/useDetachedOneShotMutation';
-import type { CartGridProfile } from '~/composables/useUiMode';
+import { useDetachedQuickPlayMutation } from '~/composables/useDetachedQuickPlayMutation';
+import type { QuickPlayGridProfile } from '~/composables/useUiMode';
 import type { AudioItem } from '~/types/project';
-import { sameOneShotMutationIdentity } from '~/types/oneShotMutation';
-import { DEFAULT_CART_AUDIO_ITEM, colorForNewAudioItem } from '~/types/project';
+import { sameQuickPlayMutationIdentity } from '~/types/quickPlayMutation';
+import { DEFAULT_QUICK_PLAY_AUDIO_ITEM, colorForNewAudioItem } from '~/types/project';
 import { buildWaveformFromChannels } from '~/utils/audio';
 import {
-  buildOneShotSlots,
-  cloneAsIndependentOneShot,
-  MAX_ONE_SHOT_SLOTS,
-  markAsOneShot,
-  removeOneShotDesignation,
-} from '~/utils/oneShots';
-import { QUICK_PLAY_DEFAULT_SLOTS } from '~/composables/useCartHotkeys';
+  buildQuickPlayCells,
+  cloneAsIndependentQuickPlay,
+  MAX_QUICK_PLAY_SLOTS,
+  markAsQuickPlay,
+  removeQuickPlayDesignation,
+} from '~/utils/quickPlays';
+import { QUICK_PLAY_DEFAULT_SLOTS } from '~/composables/useQuickPlayHotkeys';
 import AudioImportModal from './AudioImportModal.vue';
 import Btn from './Btn.vue';
 
@@ -143,13 +143,13 @@ const {
   selectedItems,
   triggerWaveformUpdate,
 } = useProject();
-const { cartOnlyItems, addCartOnlyItem, removeCartOnlyItem } = useCartItems();
-const { uiMode, cartGridLayouts, oneShotFontScale } = useUiMode();
+const { quickPlayItems, addQuickPlayItem, removeQuickPlayItem } = useQuickPlayItems();
+const { uiMode, quickPlayGridLayouts, quickPlayFontScale } = useUiMode();
 const { t } = useLocalization();
-const { keyMappings, mount: mountHotkeys, unmount: unmountHotkeys } = useCartHotkeys();
+const { keyMappings, mount: mountHotkeys, unmount: unmountHotkeys } = useQuickPlayHotkeys();
 const { mount: mountMidi, unmount: unmountMidi } = useMidiController();
 const server = useLiveplayServer();
-const { isDetached, identity: detachedIdentity, mutate } = useDetachedOneShotMutation();
+const { isDetached, identity: detachedIdentity, mutate } = useDetachedQuickPlayMutation();
 const canMutate = computed(() => isDetached ? !!detachedIdentity.value : projectHydrationStatus.value === 'ready');
 
 const showMode = computed(() => uiMode.value === 'playback');
@@ -157,18 +157,18 @@ const GRID_GAP_PX = 8;
 // One layout for the attached panel and one for the detached window. Show
 // Mode uses the same one as Edit Mode: it strips the editing, not the size.
 // The saved names keep their old spelling so nobody's layout is lost.
-const gridProfile = computed<CartGridProfile>(() => props.isDetachedWindow ? 'detachedRegular' : 'attachedRegular');
-const gridLayout = computed(() => cartGridLayouts.value[gridProfile.value]);
-const standaloneItems = computed(() => Array.from(cartOnlyItems.value.values()));
-const oneShotSlots = computed(() => {
+const gridProfile = computed<QuickPlayGridProfile>(() => props.isDetachedWindow ? 'detachedRegular' : 'attachedRegular');
+const gridLayout = computed(() => quickPlayGridLayouts.value[gridProfile.value]);
+const standaloneItems = computed(() => Array.from(quickPlayItems.value.values()));
+const quickPlayCells = computed(() => {
   const layout = gridLayout.value;
-  const slots = buildOneShotSlots(
+  const slots = buildQuickPlayCells(
     currentProject.value?.items ?? [],
     standaloneItems.value,
     Math.max(QUICK_PLAY_DEFAULT_SLOTS, layout.rows * layout.columns),
   );
   const roundedLength = Math.min(
-    MAX_ONE_SHOT_SLOTS,
+    MAX_QUICK_PLAY_SLOTS,
     Math.ceil(slots.length / layout.columns) * layout.columns,
   );
   while (slots.length < roundedLength) slots.push(null);
@@ -182,7 +182,7 @@ const oneShotSlots = computed(() => {
   }
   return slots;
 });
-const oneShotGridStyle = computed(() => {
+const quickPlayGridStyle = computed(() => {
   const layout = gridLayout.value;
   // The layout's rows share the height in both modes, so a tile is the same
   // size whether or not Show Mode has left the empty rows out.
@@ -191,12 +191,12 @@ const oneShotGridStyle = computed(() => {
   const rowGapOffset = GRID_GAP_PX * (rows - 1) / rows;
   // The least a tile needs: the number-and-time line, one title line and
   // the control row. A taller tile shows a second title line and the
-  // Playing badge (see OneShotTile).
-  const contentMinHeight = Math.ceil(68 + 17.25 * oneShotFontScale.value / 100);
+  // Playing badge (see QuickPlayTile).
+  const contentMinHeight = Math.ceil(68 + 17.25 * quickPlayFontScale.value / 100);
   const minHeight = Math.max(layout.minHeight, contentMinHeight);
   return {
-    '--one-shot-columns': String(layout.columns),
-    '--one-shot-row-height': `max(${minHeight}px, calc(${rowPercent}% - ${rowGapOffset}px))`,
+    '--quickplay-columns': String(layout.columns),
+    '--quickplay-row-height': `max(${minHeight}px, calc(${rowPercent}% - ${rowGapOffset}px))`,
   };
 });
 
@@ -246,11 +246,11 @@ watch(showMode, active => {
 });
 watch(projectEpoch, closeImport);
 watch(detachedIdentity, (identity, previous) => {
-  if (isDetached && !sameOneShotMutationIdentity(identity, previous)) closeImport();
+  if (isDetached && !sameQuickPlayMutationIdentity(identity, previous)) closeImport();
 });
 
-const errorMessage = (error: unknown): string => t('oneShots.importFailed', {
-  reason: error instanceof Error && error.message ? error.message : t('oneShots.unknownImportError'),
+const errorMessage = (error: unknown): string => t('quickPlays.importFailed', {
+  reason: error instanceof Error && error.message ? error.message : t('quickPlays.unknownImportError'),
 });
 
 const captureProjectMutation = () => {
@@ -259,7 +259,7 @@ const captureProjectMutation = () => {
   const hydration = projectHydrationStatus.value;
   const identity = detachedIdentity.value ? { ...detachedIdentity.value } : null;
   const ownsProject = () => !!currentProject.value && (isDetached
-    ? sameOneShotMutationIdentity(identity, detachedIdentity.value)
+    ? sameQuickPlayMutationIdentity(identity, detachedIdentity.value)
     : currentProject.value === project && projectEpoch.value === epoch);
   return {
     project,
@@ -283,24 +283,24 @@ const replaceSlotItem = async (
 ): Promise<boolean> => {
   const { project, ownsProject } = captureProjectMutation();
   if (!project || !isCurrent()) return false;
-  const previous = oneShotSlots.value[slot];
-  const previousWasStandalone = !!previous && cartOnlyItems.value.has(previous.uuid);
-  const previousOneShot = previous?.oneShot;
+  const previous = quickPlayCells.value[slot];
+  const previousWasStandalone = !!previous && quickPlayItems.value.has(previous.uuid);
+  const previousQuickPlay = previous?.quickPlay;
 
   if (isDetached) {
     const result = await mutate({ kind: 'replace-slot', payload: { slot, item: replacement } });
     if (!ownsProject()) return false;
-    if (!result?.accepted) throw new Error(result?.error ?? t('oneShots.saveFailed'));
-    if (previousWasStandalone && previous) removeCartOnlyItem(previous.uuid);
-    else if (previous) removeOneShotDesignation(previous);
-    addCartOnlyItem(replacement);
+    if (!result?.accepted) throw new Error(result?.error ?? t('quickPlays.saveFailed'));
+    if (previousWasStandalone && previous) removeQuickPlayItem(previous.uuid);
+    else if (previous) removeQuickPlayDesignation(previous);
+    addQuickPlayItem(replacement);
     if (previousWasStandalone && previous) rollbackSelectionForRemovedItem(previous.uuid);
     return true;
   }
 
-  if (previousWasStandalone && previous) removeCartOnlyItem(previous.uuid);
-  else if (previous) removeOneShotDesignation(previous);
-  addCartOnlyItem(replacement);
+  if (previousWasStandalone && previous) removeQuickPlayItem(previous.uuid);
+  else if (previous) removeQuickPlayDesignation(previous);
+  addQuickPlayItem(replacement);
   const saved = await saveProject();
   if (!ownsProject()) return false;
   if (saved) {
@@ -308,11 +308,11 @@ const replaceSlotItem = async (
     return true;
   }
 
-  removeCartOnlyItem(replacement.uuid);
-  if (previousWasStandalone && previous) addCartOnlyItem(previous);
-  else if (previous && previousOneShot) previous.oneShot = previousOneShot;
-  project.cartOnlyItems = Array.from(cartOnlyItems.value.values());
-  throw new Error(t('oneShots.saveFailed'));
+  removeQuickPlayItem(replacement.uuid);
+  if (previousWasStandalone && previous) addQuickPlayItem(previous);
+  else if (previous && previousQuickPlay) previous.quickPlay = previousQuickPlay;
+  project.quickPlayItems = Array.from(quickPlayItems.value.values());
+  throw new Error(t('quickPlays.saveFailed'));
 };
 
 const importFromServerPath = async (
@@ -353,7 +353,7 @@ const importFromServerPath = async (
     const title = typeof (metadata as any)?.title === 'string' ? (metadata as any).title.trim() : '';
     const uuid = crypto.randomUUID();
     const item = {
-      ...DEFAULT_CART_AUDIO_ITEM,
+      ...DEFAULT_QUICK_PLAY_AUDIO_ITEM,
       uuid,
       index: [-1, slot],
       type: 'audio',
@@ -370,13 +370,13 @@ const importFromServerPath = async (
       outPoint: duration,
       ...(metadata as any)?.has_video === true ? { hasVideo: true as const } : {},
     } as AudioItem;
-    markAsOneShot(item, slot);
+    markAsQuickPlay(item, slot);
     if (!await replaceSlotItem(slot, item, isCurrent) || !isCurrent()) return false;
     triggerWaveformUpdate();
     return true;
   } catch (error) {
     if (!ownsProject()) return false;
-    console.error('[one-shot import] failed:', error);
+    console.error('[quickplay import] failed:', error);
     slotErrors[slot] = errorMessage(error);
     return false;
   } finally {
@@ -396,7 +396,7 @@ const copyPlaylistItemIntoSlot = async (uuid: string, slot: number) => {
   if (!isCurrent()) return;
   const source = findItemByUuid(uuid);
   if (!source || source.type !== 'audio' || !currentProject.value) return;
-  const clone = cloneAsIndependentOneShot(source, crypto.randomUUID(), slot);
+  const clone = cloneAsIndependentQuickPlay(source, crypto.randomUUID(), slot);
   clearSlotError(slot);
   try {
     await replaceSlotItem(slot, clone, isCurrent);
@@ -405,36 +405,36 @@ const copyPlaylistItemIntoSlot = async (uuid: string, slot: number) => {
   }
 };
 
-const moveOneShotToSlot = async (uuid: string, sourceSlot: number, targetSlot: number) => {
+const moveQuickPlayToSlot = async (uuid: string, sourceSlot: number, targetSlot: number) => {
   if (sourceSlot === targetSlot) return;
   const source = findItemByUuid(uuid);
-  if (!source || source.type !== 'audio' || !source.oneShot) return;
-  const target = oneShotSlots.value[targetSlot];
+  if (!source || source.type !== 'audio' || !source.quickPlay) return;
+  const target = quickPlayCells.value[targetSlot];
   if (isDetached) {
     const result = await mutate({ kind: 'move-slot', itemUuid: uuid, payload: { sourceSlot, targetSlot } });
     if (!result?.accepted) {
-      slotErrors[targetSlot] = result?.error ?? t('oneShots.moveFailed');
+      slotErrors[targetSlot] = result?.error ?? t('quickPlays.moveFailed');
       return;
     }
-    source.oneShot.order = targetSlot;
-    if (target?.oneShot) target.oneShot.order = sourceSlot;
+    source.quickPlay.order = targetSlot;
+    if (target?.quickPlay) target.quickPlay.order = sourceSlot;
     return;
   }
-  const sourceOrder = source.oneShot.order;
-  const targetOrder = target?.oneShot?.order;
-  source.oneShot.order = targetSlot;
-  if (target?.oneShot) target.oneShot.order = sourceSlot;
+  const sourceOrder = source.quickPlay.order;
+  const targetOrder = target?.quickPlay?.order;
+  source.quickPlay.order = targetSlot;
+  if (target?.quickPlay) target.quickPlay.order = sourceSlot;
   if (await saveProject()) return;
-  source.oneShot.order = sourceOrder;
-  if (target?.oneShot && targetOrder !== undefined) target.oneShot.order = targetOrder;
-  slotErrors[targetSlot] = t('oneShots.moveFailed');
+  source.quickPlay.order = sourceOrder;
+  if (target?.quickPlay && targetOrder !== undefined) target.quickPlay.order = targetOrder;
+  slotErrors[targetSlot] = t('quickPlays.moveFailed');
 };
 
 const handleDragOver = (event: DragEvent, slot: number) => {
   if (!canMutate.value || showMode.value || !currentProject.value || busySlot.value !== null) return;
   event.preventDefault();
   if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = event.dataTransfer.types.includes('one-shot-uuid') ? 'move' : 'copy';
+    event.dataTransfer.dropEffect = event.dataTransfer.types.includes('quickplay-uuid') ? 'move' : 'copy';
   }
   dragOverSlot.value = slot;
 };
@@ -451,10 +451,10 @@ const handleDrop = async (event: DragEvent, slot: number) => {
   event.stopPropagation();
   dragOverSlot.value = null;
 
-  const oneShotUuid = event.dataTransfer?.getData('one-shot-uuid');
-  const sourceSlot = Number(event.dataTransfer?.getData('one-shot-slot'));
-  if (oneShotUuid && Number.isInteger(sourceSlot)) {
-    await moveOneShotToSlot(oneShotUuid, sourceSlot, slot);
+  const quickPlayUuid = event.dataTransfer?.getData('quickplay-uuid');
+  const sourceSlot = Number(event.dataTransfer?.getData('quickplay-slot'));
+  if (quickPlayUuid && Number.isInteger(sourceSlot)) {
+    await moveQuickPlayToSlot(quickPlayUuid, sourceSlot, slot);
     return;
   }
 
@@ -467,13 +467,13 @@ const handleDrop = async (event: DragEvent, slot: number) => {
     try {
       path = await server.resolveDroppedFileToMedia(file);
     } catch (error) {
-      console.error('[one-shot drop] failed:', error);
+      console.error('[quickplay drop] failed:', error);
     } finally {
       busySlot.value = null;
     }
     if (!isCurrent()) return;
     if (path) await importFromServerPath(path, slot, { fileMode: 'copy', duplicatePolicy: 'reuse' });
-    else slotErrors[slot] = t('oneShots.dropFailed');
+    else slotErrors[slot] = t('quickPlays.dropFailed');
     return;
   }
 
@@ -482,40 +482,40 @@ const handleDrop = async (event: DragEvent, slot: number) => {
   if (playlistUuid) await copyPlaylistItemIntoSlot(playlistUuid, slot);
 };
 
-const removeOneShot = async (item: AudioItem, slot: number) => {
-  const standalone = cartOnlyItems.value.has(item.uuid);
-  const previousOneShot = item.oneShot ? structuredClone(item.oneShot) : undefined;
+const removeQuickPlay = async (item: AudioItem, slot: number) => {
+  const standalone = quickPlayItems.value.has(item.uuid);
+  const previousQuickPlay = item.quickPlay ? structuredClone(item.quickPlay) : undefined;
   if (isDetached) {
     const result = await mutate({ kind: 'remove-slot', itemUuid: item.uuid, payload: {} });
     if (!result?.accepted) {
-      slotErrors[slot] = result?.error ?? t('oneShots.removeFailed');
+      slotErrors[slot] = result?.error ?? t('quickPlays.removeFailed');
       return;
     }
     if (standalone) {
-      removeCartOnlyItem(item.uuid);
+      removeQuickPlayItem(item.uuid);
       rollbackSelectionForRemovedItem(item.uuid);
-    } else removeOneShotDesignation(item);
+    } else removeQuickPlayDesignation(item);
     return;
   }
-  if (standalone) removeCartOnlyItem(item.uuid);
-  else removeOneShotDesignation(item);
+  if (standalone) removeQuickPlayItem(item.uuid);
+  else removeQuickPlayDesignation(item);
   if (await saveProject()) {
     if (standalone) rollbackSelectionForRemovedItem(item.uuid);
     return;
   }
-  if (standalone) addCartOnlyItem(item);
-  else if (previousOneShot) item.oneShot = previousOneShot;
-  slotErrors[slot] = t('oneShots.removeFailed');
+  if (standalone) addQuickPlayItem(item);
+  else if (previousQuickPlay) item.quickPlay = previousQuickPlay;
+  slotErrors[slot] = t('quickPlays.removeFailed');
 };
 
 const handleDetach = () => {
   if (!currentProject.value || !import.meta.client || !window.electronAPI) return;
-  window.electronAPI.openCartPlayerWindow(currentProject.value.folderPath);
+  window.electronAPI.openDetachedQuickPlayWindow(currentProject.value.folderPath);
 };
 
 const handleAttach = () => {
   if (!import.meta.client || !window.electronAPI) return;
-  window.electronAPI.attachCartPlayerWindow();
+  window.electronAPI.attachDetachedQuickPlayWindow();
 };
 
 onMounted(() => {
@@ -532,7 +532,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.one-shot-panel {
+.quickplay-panel {
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -542,7 +542,7 @@ onUnmounted(() => {
   background: var(--color-background);
 }
 
-.one-shot-header__symbol {
+.quickplay-header__symbol {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
@@ -573,17 +573,17 @@ onUnmounted(() => {
 }
 .quickplay-import-feedback[role='alert'] { color: var(--color-danger); }
 
-.one-shot-header__actions {
+.quickplay-header__actions {
   margin-inline-start: auto;
   flex: 0 0 auto;
 }
 
-.one-shot-grid {
+.quickplay-grid {
   min-height: 0;
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(var(--one-shot-columns, 2), minmax(128px, 1fr));
-  grid-auto-rows: var(--one-shot-row-height, 106px);
+  grid-template-columns: repeat(var(--quickplay-columns, 2), minmax(128px, 1fr));
+  grid-auto-rows: var(--quickplay-row-height, 106px);
   align-content: start;
   gap: var(--spacing-sm);
   padding: var(--spacing-sm);
@@ -595,45 +595,45 @@ onUnmounted(() => {
 }
 
 @container (max-width: 280px) {
-  .one-shot-header__symbol { display: none; }
+  .quickplay-header__symbol { display: none; }
 }
 
 @container (max-width: 270px) {
-  .one-shot-grid { grid-template-columns: minmax(0, 1fr); }
+  .quickplay-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 @container (max-width: 200px) {
-  .one-shot-header__window-control {
+  .quickplay-header__window-control {
     justify-content: center;
     width: var(--panel-control-height);
     padding: 0;
   }
 
-  .one-shot-header__window-control :deep(.btn__text) { display: none; }
+  .quickplay-header__window-control :deep(.btn__text) { display: none; }
 }
 
-.one-shot-slot {
+.quickplay-slot {
   position: relative;
   min-width: 0;
-  min-height: var(--one-shot-row-height, 106px);
+  min-height: var(--quickplay-row-height, 106px);
   isolation: isolate;
   overflow: hidden;
   border-radius: var(--border-radius-sm);
 }
 
-.one-shot-slot > :deep(.one-shot-tile) {
+.quickplay-slot > :deep(.quickplay-tile) {
   width: 100%;
   max-width: 100%;
   height: 100%;
   min-height: 0;
   box-sizing: border-box;
 }
-.one-shot-slot.is-drag-over {
+.quickplay-slot.is-drag-over {
   outline: 2px solid var(--color-focus, var(--color-accent));
   outline-offset: 2px;
 }
 
-.one-shot-empty-cell {
+.quickplay-empty-cell {
   position: relative;
   width: 100%;
   height: 100%;
@@ -650,33 +650,33 @@ onUnmounted(() => {
   text-align: center;
 }
 
-button.one-shot-empty-cell {
+button.quickplay-empty-cell {
   cursor: pointer;
 }
 
-button.one-shot-empty-cell .one-shot-empty-cell__icon { color: var(--color-accent-text); }
+button.quickplay-empty-cell .quickplay-empty-cell__icon { color: var(--color-accent-text); }
 
-button.one-shot-empty-cell:hover,
-button.one-shot-empty-cell:focus-visible {
+button.quickplay-empty-cell:hover,
+button.quickplay-empty-cell:focus-visible {
   border-color: color-mix(in srgb, var(--color-accent) 72%, var(--color-border-strong));
   background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
   color: var(--color-text-primary);
   outline: none;
 }
 
-.one-shot-empty-cell:disabled {
+.quickplay-empty-cell:disabled {
   cursor: default;
   opacity: .55;
 }
 
-.one-shot-empty-cell.show-mode {
+.quickplay-empty-cell.show-mode {
   border-style: solid;
   border-color: color-mix(in srgb, var(--color-border) 72%, transparent);
   background: color-mix(in srgb, var(--color-surface) 42%, transparent);
   opacity: .48;
 }
 
-.one-shot-empty-cell__number {
+.quickplay-empty-cell__number {
   position: absolute;
   top: 8px;
   left: 10px;
@@ -685,7 +685,7 @@ button.one-shot-empty-cell:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.one-shot-empty-cell__icon {
+.quickplay-empty-cell__icon {
   width: 28px;
   height: 28px;
   display: grid;
@@ -698,14 +698,14 @@ button.one-shot-empty-cell:focus-visible {
   font-variation-settings: 'FILL' 0, 'wght' 520, 'GRAD' 0, 'opsz' 20;
 }
 
-button.one-shot-empty-cell:hover .one-shot-empty-cell__icon,
-button.one-shot-empty-cell:focus-visible .one-shot-empty-cell__icon {
+button.quickplay-empty-cell:hover .quickplay-empty-cell__icon,
+button.quickplay-empty-cell:focus-visible .quickplay-empty-cell__icon {
   border-color: color-mix(in srgb, var(--color-accent) 56%, var(--color-border-strong));
   background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface-raised));
 }
 
-.one-shot-slot__busy,
-.one-shot-slot__error {
+.quickplay-slot__busy,
+.quickplay-slot__error {
   position: absolute;
   z-index: 5;
   right: 7px;
@@ -721,14 +721,14 @@ button.one-shot-empty-cell:focus-visible .one-shot-empty-cell__icon {
   line-height: 1.3;
 }
 
-.one-shot-slot__busy {
+.quickplay-slot__busy {
   display: flex;
   align-items: center;
   gap: 6px;
   color: var(--color-text-secondary);
 }
 
-.one-shot-slot__error {
+.quickplay-slot__error {
   min-height: 32px;
   max-height: 4.6em;
   padding-right: 30px;
@@ -738,7 +738,7 @@ button.one-shot-empty-cell:focus-visible .one-shot-empty-cell__icon {
   user-select: text;
 }
 
-.one-shot-slot__error-message {
+.quickplay-slot__error-message {
   display: -webkit-box;
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -746,7 +746,7 @@ button.one-shot-empty-cell:focus-visible .one-shot-empty-cell__icon {
   -webkit-line-clamp: 3;
 }
 
-.one-shot-slot__error-clear {
+.quickplay-slot__error-clear {
   position: absolute;
   top: 3px;
   right: 3px;
@@ -762,22 +762,22 @@ button.one-shot-empty-cell:focus-visible .one-shot-empty-cell__icon {
   cursor: pointer;
 }
 
-.one-shot-slot__error-clear:hover {
+.quickplay-slot__error-clear:hover {
   background: color-mix(in srgb, var(--color-danger) 16%, transparent);
 }
 
-.one-shot-slot__error-clear:focus-visible {
+.quickplay-slot__error-clear:focus-visible {
   outline: 2px solid var(--color-focus, var(--color-accent));
   outline-offset: 1px;
 }
 
-.one-shot-slot__error-clear .material-symbols-rounded {
+.quickplay-slot__error-clear .material-symbols-rounded {
   font-size: 18px;
 }
 
-.is-spinning { animation: one-shot-spin .8s linear infinite; }
+.is-spinning { animation: quickplay-spin .8s linear infinite; }
 
-@keyframes one-shot-spin { to { transform: rotate(360deg); } }
+@keyframes quickplay-spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
   .is-spinning { animation: none; }

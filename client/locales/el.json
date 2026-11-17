@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "Μέγεθος γραμματοσειράς διεπαφής",
-    "oneShotFontSize": "Μέγεθος κειμένου one-shot",
+    "quickPlayFontSize": "Μέγεθος κειμένου QuickPlay",
     "cycleTrackColors": "Εναλλαγή χρωμάτων νέων κομματιών",
-    "cartLayout": "Διάταξη",
+    "quickPlayLayout": "Διάταξη",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "Στήλες",
@@ -519,7 +519,7 @@
       "error": "Η εισαγωγή απέτυχε"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlays (προεπιλογές)",
     "detachedNoPrimary": "Το κύριο παράθυρο του έργου δεν είναι διαθέσιμο.",
     "detachedWaitingForShow": "Επαναφέρετε ή ανοίξτε την εκδήλωση στο κύριο παράθυρο για να ενεργοποιήσετε ξανά τα QuickPlays.",
@@ -904,8 +904,8 @@
     "title": "Ρύθμιση ελέγχων",
     "shortcutBtn": "Συντομεύσεις",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlays",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlays",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "Παύση / Συνέχεια",
     "toggleLoop": "Εναλλαγή βρόχου",
     "cueToContinue": "Cue to Continue",
@@ -924,7 +924,7 @@
     "masterVolume": "Γενική ένταση",
     "midiDevice": "Συσκευή MIDI",
     "allDevices": "Όλες οι συσκευές",
-    "conflictOneShot": "Έχει ήδη αντιστοιχιστεί στο QuickPlay {n}",
+    "conflictQuickPlay": "Έχει ήδη αντιστοιχιστεί στο QuickPlay {n}",
     "conflictAction": "Ήδη αντιστοιχισμένο σε {action}",
     "pressAnyKey": "Πατήστε οποιοδήποτε πλήκτρο...",
     "reserved": "Αυτός ο συνδυασμός πλήκτρων είναι δεσμευμένος",

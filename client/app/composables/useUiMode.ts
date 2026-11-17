@@ -13,13 +13,13 @@ import { normalizeHeaderWarningTiming } from '../utils/headerWarnings';
 
 export type UiMode = 'edit' | 'playback';
 
-export type CartGridLayout = {
+export type QuickPlayGridLayout = {
   rows: number;
   columns: number;
   minHeight: number;
 };
 
-export const CART_GRID_LIMITS = {
+export const QUICK_PLAY_GRID_LIMITS = {
   rows: { min: 1, max: 16 },
   columns: { min: 1, max: 16 },
 } as const;
@@ -27,7 +27,7 @@ export const CART_GRID_LIMITS = {
 // One QuickPlays layout for the attached panel and one for the detached
 // window, used in Edit Mode and Show Mode alike. The names end in "Regular"
 // because saved layouts already use them.
-export const CART_GRID_PROFILES = {
+export const QUICK_PLAY_GRID_PROFILES = {
   // Beside the playlist, ten QuickPlays show by default (the ten with number
   // keys): two across and five down. The detached window shows twenty (the
   // number keys and their Shift row): five across and four down.
@@ -43,10 +43,10 @@ export const CART_GRID_PROFILES = {
   },
 } as const;
 
-export type CartGridProfile = keyof typeof CART_GRID_PROFILES;
-export type CartGridLayouts = Record<CartGridProfile, CartGridLayout>;
+export type QuickPlayGridProfile = keyof typeof QUICK_PLAY_GRID_PROFILES;
+export type QuickPlayGridLayouts = Record<QuickPlayGridProfile, QuickPlayGridLayout>;
 
-const CART_GRID_PROFILE_KEYS = Object.keys(CART_GRID_PROFILES) as CartGridProfile[];
+const QUICK_PLAY_GRID_PROFILE_KEYS = Object.keys(QUICK_PLAY_GRID_PROFILES) as QuickPlayGridProfile[];
 
 const normalizeBoundedInteger = (
   value: unknown,
@@ -76,7 +76,7 @@ export const WAVEFORM_OPACITY = { min: 0, max: 100, default: 10 } as const;
 // A saved preference is kept; the range lets a laptop go denser or a touch
 // screen go larger.
 export const UI_FONT_SCALE = { min: 80, max: 125, default: 100 } as const;
-export const ONE_SHOT_FONT_SCALE = { min: 70, max: 130, default: 85 } as const;
+export const QUICK_PLAY_FONT_SCALE = { min: 70, max: 130, default: 85 } as const;
 
 export type PlaylistRowMode = keyof typeof PLAYLIST_ROW_HEIGHTS;
 
@@ -100,32 +100,32 @@ export const normalizeUiFontScale = (value: unknown): number =>
     UI_FONT_SCALE.default,
   );
 
-export const normalizeOneShotFontScale = (value: unknown): number =>
+export const normalizeQuickPlayFontScale = (value: unknown): number =>
   normalizeBoundedInteger(
     value,
-    ONE_SHOT_FONT_SCALE.min,
-    ONE_SHOT_FONT_SCALE.max,
-    ONE_SHOT_FONT_SCALE.default,
+    QUICK_PLAY_FONT_SCALE.min,
+    QUICK_PLAY_FONT_SCALE.max,
+    QUICK_PLAY_FONT_SCALE.default,
   );
 
-export const normalizeCartGridLayouts = (value: unknown): CartGridLayouts => {
+export const normalizeQuickPlayGridLayouts = (value: unknown): QuickPlayGridLayouts => {
   const source = value && typeof value === 'object'
-    ? value as Partial<Record<CartGridProfile, Partial<CartGridLayout>>>
+    ? value as Partial<Record<QuickPlayGridProfile, Partial<QuickPlayGridLayout>>>
     : {};
-  return Object.fromEntries(CART_GRID_PROFILE_KEYS.map((profile) => {
-    const spec = CART_GRID_PROFILES[profile];
+  return Object.fromEntries(QUICK_PLAY_GRID_PROFILE_KEYS.map((profile) => {
+    const spec = QUICK_PLAY_GRID_PROFILES[profile];
     const raw = source[profile] ?? {};
     return [profile, {
       rows: normalizeBoundedInteger(
         raw.rows,
-        CART_GRID_LIMITS.rows.min,
-        CART_GRID_LIMITS.rows.max,
+        QUICK_PLAY_GRID_LIMITS.rows.min,
+        QUICK_PLAY_GRID_LIMITS.rows.max,
         spec.default.rows,
       ),
       columns: normalizeBoundedInteger(
         raw.columns,
-        CART_GRID_LIMITS.columns.min,
-        CART_GRID_LIMITS.columns.max,
+        QUICK_PLAY_GRID_LIMITS.columns.min,
+        QUICK_PLAY_GRID_LIMITS.columns.max,
         spec.default.columns,
       ),
       minHeight: normalizeBoundedInteger(
@@ -135,7 +135,7 @@ export const normalizeCartGridLayouts = (value: unknown): CartGridLayouts => {
         spec.default.minHeight,
       ),
     }];
-  })) as CartGridLayouts;
+  })) as QuickPlayGridLayouts;
 };
 
 const STORAGE_KEY = 'liveplay-ui-mode';
@@ -143,14 +143,22 @@ const REGULAR_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-regular';
 const FOLDER_ROW_HEIGHT_KEY = 'liveplay-playlist-row-height-folder';
 const WAVEFORM_OPACITY_KEY = 'liveplay-playlist-waveform-opacity';
 const UI_FONT_SCALE_KEY = 'liveplay-ui-font-scale';
-const ONE_SHOT_FONT_SCALE_KEY = 'liveplay-one-shot-font-scale';
-const CART_GRID_LAYOUTS_KEY = 'liveplay-cart-grid-layouts-v1';
+const QUICK_PLAY_FONT_SCALE_KEY = 'liveplay-quickplay-font-scale';
+const QUICK_PLAY_GRID_LAYOUTS_KEY = 'liveplay-quickplay-grid-layouts-v1';
 const HEADER_WARNING_TIMING_KEY = 'dwcue-header-warning-timing';
 const SHOW_TOOLTIPS_KEY = 'dwcue-show-tooltips';
 
-const parseCartGridLayouts = (value: string | null): CartGridLayouts => {
-  if (!value) return normalizeCartGridLayouts(null);
-  try { return normalizeCartGridLayouts(JSON.parse(value)); } catch { return normalizeCartGridLayouts(null); }
+// These two preferences were saved under older keys before the feature was
+// named QuickPlay everywhere. The old key is read only when the current one
+// holds nothing, so an operator's saved text size and grid layout carry over.
+const LEGACY_QUICK_PLAY_FONT_SCALE_KEY = 'liveplay-one-shot-font-scale';
+const LEGACY_QUICK_PLAY_GRID_LAYOUTS_KEY = 'liveplay-cart-grid-layouts-v1';
+const readSavedOrLegacy = (key: string, legacyKey: string): string | null =>
+  localStorage.getItem(key) ?? localStorage.getItem(legacyKey);
+
+const parseQuickPlayGridLayouts = (value: string | null): QuickPlayGridLayouts => {
+  if (!value) return normalizeQuickPlayGridLayouts(null);
+  try { return normalizeQuickPlayGridLayouts(JSON.parse(value)); } catch { return normalizeQuickPlayGridLayouts(null); }
 };
 
 const parseHeaderWarningTiming = (value: string | null) => {
@@ -180,13 +188,13 @@ export const useUiMode = () => {
     'useUiMode.uiFontScale',
     () => UI_FONT_SCALE.default,
   );
-  const oneShotFontScale = useState<number>(
-    'useUiMode.oneShotFontScale',
-    () => ONE_SHOT_FONT_SCALE.default,
+  const quickPlayFontScale = useState<number>(
+    'useUiMode.quickPlayFontScale',
+    () => QUICK_PLAY_FONT_SCALE.default,
   );
-  const cartGridLayouts = useState<CartGridLayouts>(
-    'useUiMode.cartGridLayouts',
-    () => normalizeCartGridLayouts(null),
+  const quickPlayGridLayouts = useState<QuickPlayGridLayouts>(
+    'useUiMode.quickPlayGridLayouts',
+    () => normalizeQuickPlayGridLayouts(null),
   );
   const headerWarningTiming = useState('headerWarningTiming', () => normalizeHeaderWarningTiming(null));
   const showTooltips = useState('useUiMode.showTooltips', () => true);
@@ -210,17 +218,19 @@ export const useUiMode = () => {
       uiFontScale.value = normalizeUiFontScale(
         localStorage.getItem(UI_FONT_SCALE_KEY),
       );
-      oneShotFontScale.value = normalizeOneShotFontScale(
-        localStorage.getItem(ONE_SHOT_FONT_SCALE_KEY),
+      quickPlayFontScale.value = normalizeQuickPlayFontScale(
+        readSavedOrLegacy(QUICK_PLAY_FONT_SCALE_KEY, LEGACY_QUICK_PLAY_FONT_SCALE_KEY),
       );
-      cartGridLayouts.value = parseCartGridLayouts(localStorage.getItem(CART_GRID_LAYOUTS_KEY));
+      quickPlayGridLayouts.value = parseQuickPlayGridLayouts(
+        readSavedOrLegacy(QUICK_PLAY_GRID_LAYOUTS_KEY, LEGACY_QUICK_PLAY_GRID_LAYOUTS_KEY),
+      );
       headerWarningTiming.value = parseHeaderWarningTiming(localStorage.getItem(HEADER_WARNING_TIMING_KEY));
       showTooltips.value = localStorage.getItem(SHOW_TOOLTIPS_KEY) !== 'false';
     } catch {
       // localStorage unavailable (e.g. private browsing) — fall back to 'edit'.
     }
 
-    // Keep separate windows (e.g. the detached cart player) in sync. Each
+    // Keep separate windows (e.g. the detached QuickPlay window) in sync. Each
     // window is its own renderer with its own useState, so a mode change in
     // one window would otherwise not reach the others. The `storage` event
     // fires in every *other* same-origin window when localStorage changes.
@@ -237,10 +247,10 @@ export const useUiMode = () => {
           waveformOpacity.value = normalizeWaveformOpacity(e.newValue);
         } else if (e.key === UI_FONT_SCALE_KEY) {
           uiFontScale.value = normalizeUiFontScale(e.newValue);
-        } else if (e.key === ONE_SHOT_FONT_SCALE_KEY) {
-          oneShotFontScale.value = normalizeOneShotFontScale(e.newValue);
-        } else if (e.key === CART_GRID_LAYOUTS_KEY) {
-          cartGridLayouts.value = parseCartGridLayouts(e.newValue);
+        } else if (e.key === QUICK_PLAY_FONT_SCALE_KEY) {
+          quickPlayFontScale.value = normalizeQuickPlayFontScale(e.newValue);
+        } else if (e.key === QUICK_PLAY_GRID_LAYOUTS_KEY) {
+          quickPlayGridLayouts.value = parseQuickPlayGridLayouts(e.newValue);
         } else if (e.key === HEADER_WARNING_TIMING_KEY) {
           headerWarningTiming.value = parseHeaderWarningTiming(e.newValue);
         } else if (e.key === SHOW_TOOLTIPS_KEY) {
@@ -257,8 +267,8 @@ export const useUiMode = () => {
       window.electronAPI?.onUiModeSet?.((_event, mode) => {
         if (mode === 'edit' || mode === 'playback') uiMode.value = mode;
       });
-      window.electronAPI?.onCartGridLayoutsSet?.((_event, value) => {
-        cartGridLayouts.value = parseCartGridLayouts(value);
+      window.electronAPI?.onQuickPlayGridLayoutsSet?.((_event, value) => {
+        quickPlayGridLayouts.value = parseQuickPlayGridLayouts(value);
       });
     } catch {
       // electronAPI unavailable (browser context) — IPC sync won't happen.
@@ -269,7 +279,7 @@ export const useUiMode = () => {
     uiMode.value = mode;
     if (import.meta.client) {
       try { localStorage.setItem(STORAGE_KEY, mode); } catch {}
-      // Broadcast to other windows (detached cart player) so they follow the
+      // Broadcast to other windows (detached QuickPlay window) so they follow the
       // overall application show-mode state rather than the mode they launched in.
       try { window.electronAPI?.broadcastUiMode?.(mode); } catch {}
     }
@@ -306,11 +316,11 @@ export const useUiMode = () => {
     }
   };
 
-  const setOneShotFontScale = (value: unknown) => {
-    const next = normalizeOneShotFontScale(value);
-    oneShotFontScale.value = next;
+  const setQuickPlayFontScale = (value: unknown) => {
+    const next = normalizeQuickPlayFontScale(value);
+    quickPlayFontScale.value = next;
     if (import.meta.client) {
-      try { localStorage.setItem(ONE_SHOT_FONT_SCALE_KEY, String(next)); } catch {}
+      try { localStorage.setItem(QUICK_PLAY_FONT_SCALE_KEY, String(next)); } catch {}
     }
   };
 
@@ -321,19 +331,19 @@ export const useUiMode = () => {
     }
   };
 
-  const setCartGridLayout = (
-    profile: CartGridProfile,
-    patch: Partial<CartGridLayout>,
+  const setQuickPlayGridLayout = (
+    profile: QuickPlayGridProfile,
+    patch: Partial<QuickPlayGridLayout>,
   ) => {
-    const next = normalizeCartGridLayouts({
-      ...cartGridLayouts.value,
-      [profile]: { ...cartGridLayouts.value[profile], ...patch },
+    const next = normalizeQuickPlayGridLayouts({
+      ...quickPlayGridLayouts.value,
+      [profile]: { ...quickPlayGridLayouts.value[profile], ...patch },
     });
-    cartGridLayouts.value = next;
+    quickPlayGridLayouts.value = next;
     if (import.meta.client) {
       const serialized = JSON.stringify(next);
-      try { localStorage.setItem(CART_GRID_LAYOUTS_KEY, serialized); } catch {}
-      try { window.electronAPI?.broadcastCartGridLayouts?.(serialized); } catch {}
+      try { localStorage.setItem(QUICK_PLAY_GRID_LAYOUTS_KEY, serialized); } catch {}
+      try { window.electronAPI?.broadcastQuickPlayGridLayouts?.(serialized); } catch {}
     }
   };
 
@@ -353,8 +363,8 @@ export const useUiMode = () => {
     folderPlaylistRowHeight,
     waveformOpacity,
     uiFontScale,
-    oneShotFontScale,
-    cartGridLayouts,
+    quickPlayFontScale,
+    quickPlayGridLayouts,
     headerWarningTiming,
     showTooltips,
     setUiMode,
@@ -362,8 +372,8 @@ export const useUiMode = () => {
     setFolderPlaylistRowHeight,
     setWaveformOpacity,
     setUiFontScale,
-    setOneShotFontScale,
-    setCartGridLayout,
+    setQuickPlayFontScale,
+    setQuickPlayGridLayout,
     setHeaderWarningTiming,
     setShowTooltips,
     enterPlaybackMode,

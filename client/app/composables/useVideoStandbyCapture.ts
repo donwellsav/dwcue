@@ -31,7 +31,7 @@ export function useVideoStandbyCapture() {
     saveProject, workspaceImportPanel,
   } = useProject();
   const showProjectSettings = useState('showProjectSettings', () => false);
-  const { cartOnlyItems } = useCartItems();
+  const { quickPlayItems } = useQuickPlayItems();
   const { activeCues } = useAudioEngine();
   const server = useLiveplayServer();
   const { t } = useLocalization();
@@ -41,7 +41,7 @@ export function useVideoStandbyCapture() {
 
   const findCue = (uuid: string | null | undefined): AudioItem | null => {
     if (!uuid) return null;
-    const item = findItemByUuid(uuid) ?? cartOnlyItems.value.get(uuid);
+    const item = findItemByUuid(uuid) ?? quickPlayItems.value.get(uuid);
     return item?.type === 'audio' ? item as AudioItem : null;
   };
 

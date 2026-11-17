@@ -4,12 +4,12 @@ import test from 'node:test';
 import { parse } from '@vue/compiler-sfc';
 import ts from 'typescript';
 import { reactive } from 'vue';
-import { DEFAULT_CART_AUDIO_ITEM, DEFAULT_PROJECT_SETTINGS, colorForNewAudioItem } from '../app/types/project';
+import { DEFAULT_QUICK_PLAY_AUDIO_ITEM, DEFAULT_PROJECT_SETTINGS, colorForNewAudioItem } from '../app/types/project';
 import type { AudioItem, Project } from '../app/types/project';
-import { sameOneShotMutationIdentity } from '../app/types/oneShotMutation';
+import { sameQuickPlayMutationIdentity } from '../app/types/quickPlayMutation';
 import { buildWaveformFromChannels } from '../app/utils/audio';
-import { applyOneShotMutation } from '../app/utils/oneShotMutation';
-import { buildOneShotSlots, cloneAsIndependentOneShot, markAsOneShot, removeOneShotDesignation } from '../app/utils/oneShots';
+import { applyQuickPlayMutation } from '../app/utils/quickPlayMutation';
+import { buildQuickPlayCells, cloneAsIndependentQuickPlay, markAsQuickPlay, removeQuickPlayDesignation } from '../app/utils/quickPlays';
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -22,18 +22,18 @@ const waveform = {
   channels: [{ peak: [0, 0.9, 0.9, 0], rms: [0, 0.4, 0.4, 0] }],
 };
 const makeProject = (name = 'A'): Project => ({
-  name, version: '2', folderPath: `/shows/${name}`, items: [], cartItems: [], cartOnlyItems: [],
+  name, version: '2', folderPath: `/shows/${name}`, items: [], quickPlaySlots: [], quickPlayItems: [],
   settings: { ...DEFAULT_PROJECT_SETTINGS, autoMatchLoudnessOnImport: true, autoReduceTruePeaksOnImport: true, autoTrimSilenceOnImport: true },
   server: { projectFilePath: `/shows/${name}/${name}.dwcue` },
   theme: { mode: 'dark', accentColor: '#315fcf' }, createdAt: '', lastModified: '',
 } as Project);
 const cue = (uuid: string, slot = 0): AudioItem => {
   const item = {
-    ...structuredClone(DEFAULT_CART_AUDIO_ITEM), uuid, index: [-1, slot], type: 'audio',
+    ...structuredClone(DEFAULT_QUICK_PLAY_AUDIO_ITEM), uuid, index: [-1, slot], type: 'audio',
     displayName: uuid, mediaFileName: `${uuid}.wav`, mediaPath: `media/${uuid}.wav`,
     mediaServerPath: `/shows/A/media/${uuid}.wav`, waveformPath: '', duration: 10, outPoint: 10,
   } as AudioItem;
-  markAsOneShot(item, slot);
+  markAsQuickPlay(item, slot);
   return item;
 };
 
@@ -44,13 +44,13 @@ function harness(isDetached = false) {
   const projectHydrationStatus = { value: 'ready' };
   const detachedIdentity = { value: { projectPath: '/shows/A/A.dwcue', projectEpoch: 1, ownerSessionId: 'owner' } };
   const showMode = { value: false };
-  const cartOnlyItems = { value: new Map<string, AudioItem>() };
+  const quickPlayItems = { value: new Map<string, AudioItem>() };
   const slotErrors: Record<number, string> = {};
   const pendingProcessing = new Set<string>();
   const snapshots: Project[] = [];
   const generated: unknown[][] = [];
   let save = async () => {
-    currentProject.value!.cartOnlyItems = Array.from(cartOnlyItems.value.values());
+    currentProject.value!.quickPlayItems = Array.from(quickPlayItems.value.values());
     snapshots.push(structuredClone(currentProject.value!));
     return true;
   };
@@ -62,30 +62,30 @@ function harness(isDetached = false) {
     requestWaveformGeneration: async (...args: unknown[]) => { generated.push(args); },
   };
   const dependencies = {
-    DEFAULT_CART_AUDIO_ITEM, colorForNewAudioItem, buildWaveformFromChannels,
-    cloneAsIndependentOneShot, markAsOneShot, removeOneShotDesignation, sameOneShotMutationIdentity,
+    DEFAULT_QUICK_PLAY_AUDIO_ITEM, colorForNewAudioItem, buildWaveformFromChannels,
+    cloneAsIndependentQuickPlay, markAsQuickPlay, removeQuickPlayDesignation, sameQuickPlayMutationIdentity,
     currentProject, projectEpoch, projectHydrationStatus, detachedIdentity, isDetached, showMode,
     canMutate: { get value() { return isDetached ? !!detachedIdentity.value : projectHydrationStatus.value === 'ready'; } },
     busySlot: { value: null }, importSlot: { value: 0 }, dragOverSlot: { value: null }, slotErrors,
     clearSlotError: (slot: number) => { delete slotErrors[slot]; },
-    cartOnlyItems,
-    oneShotSlots: { get value() { return buildOneShotSlots(currentProject.value?.items ?? [], [...cartOnlyItems.value.values()]); } },
-    addCartOnlyItem: (item: AudioItem) => { cartOnlyItems.value.set(item.uuid, item); },
-    removeCartOnlyItem: (uuid: string) => { cartOnlyItems.value.delete(uuid); },
+    quickPlayItems,
+    quickPlayCells: { get value() { return buildQuickPlayCells(currentProject.value?.items ?? [], [...quickPlayItems.value.values()]); } },
+    addQuickPlayItem: (item: AudioItem) => { quickPlayItems.value.set(item.uuid, item); },
+    removeQuickPlayItem: (uuid: string) => { quickPlayItems.value.delete(uuid); },
     selectedItems: { value: new Set<string>() }, selectedItem: { value: null }, propertiesPanelOpen: { value: false },
-    findItemByUuid: (uuid: string) => cartOnlyItems.value.get(uuid) ?? currentProject.value?.items.find(item => item.uuid === uuid),
+    findItemByUuid: (uuid: string) => quickPlayItems.value.get(uuid) ?? currentProject.value?.items.find(item => item.uuid === uuid),
     saveProject: () => save(),
-    mutate: async (request: Parameters<typeof applyOneShotMutation>[1]) => applyOneShotMutation({ project: currentProject.value!, cartOnlyItems: cartOnlyItems.value }, request),
+    mutate: async (request: Parameters<typeof applyQuickPlayMutation>[1]) => applyQuickPlayMutation({ project: currentProject.value!, quickPlayItems: quickPlayItems.value }, request),
     markPendingImportProcessing: (uuid: string) => { pendingProcessing.add(uuid); },
     triggerWaveformUpdate() {}, server, crypto,
     t: (key: string, values?: { reason?: string }) => values?.reason ?? key,
     console: { error() {}, warn() {} },
   };
-  const filename = new URL('../app/components/OneShotPanel.vue', import.meta.url);
+  const filename = new URL('../app/components/QuickPlayPanel.vue', import.meta.url);
   const script = parse(readFileSync(filename, 'utf8'), { filename: filename.pathname }).descriptor.scriptSetup!.content;
   const start = script.indexOf('const errorMessage =');
   const end = script.indexOf('const handleDetach =', start);
-  assert.ok(start >= 0 && end > start, 'One Shot import and mutation handlers must exist');
+  assert.ok(start >= 0 && end > start, 'QuickPlay import and mutation handlers must exist');
   const compiled = ts.transpileModule(script.slice(start, end), {
     compilerOptions: { module: ts.ModuleKind.None, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -97,8 +97,8 @@ function harness(isDetached = false) {
       currentProject.value = makeProject('B');
       projectEpoch.value++;
       detachedIdentity.value = { ...detachedIdentity.value, projectPath: '/shows/B/B.dwcue', projectEpoch: 2 };
-      cartOnlyItems.value.clear();
-      cartOnlyItems.value.set('B-existing', cue('B-existing'));
+      quickPlayItems.value.clear();
+      quickPlayItems.value.set('B-existing', cue('B-existing'));
     },
   };
 }
@@ -109,7 +109,7 @@ for (const detached of [false, true]) {
   test(`${detached ? 'detached' : 'attached'} import preserves source gain and full timing with legacy flags enabled`, async () => {
     const h = harness(detached);
     assert.equal(await importCue(h), true);
-    const imported = [...h.cartOnlyItems.value.values()][0]!;
+    const imported = [...h.quickPlayItems.value.values()][0]!;
     assert.deepEqual(imported.index, [-1, 0]);
     assert.equal(imported.volume, 1);
     assert.equal(imported.inPoint, 0);
@@ -137,7 +137,7 @@ test('copy and analysis completions cannot import into a replacement project', a
     blocked.resolve(stage === 'copy' ? { destPath: '/shows/A/media/hot.wav', skipped: false } : waveform);
     assert.equal(await pending, false);
     assert.deepEqual(h.currentProject.value, before);
-    assert.deepEqual([...h.cartOnlyItems.value.keys()], ['B-existing']);
+    assert.deepEqual([...h.quickPlayItems.value.keys()], ['B-existing']);
     assert.equal(h.snapshots.length, 0);
     assert.deepEqual(h.slotErrors, {});
   }
@@ -155,7 +155,7 @@ test('epoch, Show Mode, and hydration changes cancel an analyzing import', async
     if (change === 'detached-identity') h.detachedIdentity.value = { ...h.detachedIdentity.value, ownerSessionId: 'replacement-owner' };
     blocked.resolve(waveform);
     assert.equal(await pending, false, change);
-    assert.equal(h.cartOnlyItems.value.size, 0, change);
+    assert.equal(h.quickPlayItems.value.size, 0, change);
     assert.equal(h.snapshots.length, 0, change);
     assert.deepEqual(h.slotErrors, {}, change);
   }
@@ -169,7 +169,7 @@ test('a detached same-project snapshot during analysis keeps the import valid', 
   h.currentProject.value = structuredClone(h.project);
   blocked.resolve(waveform);
   assert.equal(await pending, true);
-  assert.equal(h.cartOnlyItems.value.size, 1);
+  assert.equal(h.quickPlayItems.value.size, 1);
   assert.deepEqual(h.slotErrors, {});
 });
 
@@ -181,7 +181,7 @@ test('a stale dropped-file resolution never starts a new import', async () => {
   h.switchProject();
   blocked.resolve('/shows/A/media/hot.wav');
   await pending;
-  assert.deepEqual([...h.cartOnlyItems.value.keys()], ['B-existing']);
+  assert.deepEqual([...h.quickPlayItems.value.keys()], ['B-existing']);
   assert.equal(h.snapshots.length, 0);
   assert.deepEqual(h.slotErrors, {});
 });
@@ -189,7 +189,7 @@ test('a stale dropped-file resolution never starts a new import', async () => {
 test('a stale failed save cannot roll back old cues into the replacement project', async () => {
   const h = harness();
   const previous = cue('previous');
-  h.cartOnlyItems.value.set(previous.uuid, previous);
+  h.quickPlayItems.value.set(previous.uuid, previous);
   const blocked = deferred<boolean>();
   const started = deferred<void>();
   h.setSave(() => { started.resolve(); return blocked.promise; });
@@ -200,18 +200,18 @@ test('a stale failed save cannot roll back old cues into the replacement project
   blocked.resolve(false);
   assert.equal(await pending, false);
   assert.deepEqual(h.currentProject.value, before);
-  assert.deepEqual([...h.cartOnlyItems.value.keys()], ['B-existing']);
+  assert.deepEqual([...h.quickPlayItems.value.keys()], ['B-existing']);
   assert.deepEqual(h.slotErrors, {});
 });
 
 test('a current failed save restores the previous standalone cue and reports failure', async () => {
   const h = harness();
   const previous = reactive(cue('previous'));
-  h.cartOnlyItems.value.set(previous.uuid, previous);
+  h.quickPlayItems.value.set(previous.uuid, previous);
   h.setSave(async () => false);
   assert.equal(await importCue(h), false);
-  assert.deepEqual([...h.cartOnlyItems.value.values()], [previous]);
-  assert.equal(h.slotErrors[0], 'oneShots.saveFailed');
+  assert.deepEqual([...h.quickPlayItems.value.values()], [previous]);
+  assert.equal(h.slotErrors[0], 'quickPlays.saveFailed');
 });
 
 test('a failed save restores the same project slot after Show Mode or hydration changes', async () => {
@@ -219,21 +219,21 @@ test('a failed save restores the same project slot after Show Mode or hydration 
     for (const standalone of [false, true]) {
       const h = harness();
       const previous = cue('previous');
-      if (standalone) h.cartOnlyItems.value.set(previous.uuid, previous);
+      if (standalone) h.quickPlayItems.value.set(previous.uuid, previous);
       else h.project.items.push(previous);
       const blocked = deferred<boolean>();
       const started = deferred<void>();
       h.setSave(() => { started.resolve(); return blocked.promise; });
       const pending = importCue(h);
       await started.promise;
-      assert.notEqual(h.oneShotSlots.value[0]?.uuid, previous.uuid);
+      assert.notEqual(h.quickPlayCells.value[0]?.uuid, previous.uuid);
       if (change === 'show') h.showMode.value = true;
       else h.projectHydrationStatus.value = 'loading';
       blocked.resolve(false);
       assert.equal(await pending, false);
-      assert.equal(h.oneShotSlots.value[0], previous);
-      assert.equal(h.cartOnlyItems.value.size, standalone ? 1 : 0);
-      assert.equal(h.slotErrors[0], 'oneShots.saveFailed');
+      assert.equal(h.quickPlayCells.value[0], previous);
+      assert.equal(h.quickPlayItems.value.size, standalone ? 1 : 0);
+      assert.equal(h.slotErrors[0], 'quickPlays.saveFailed');
     }
   }
 });
@@ -242,9 +242,9 @@ test('detached playlist clone uses the real replacement contract', async () => {
   const h = harness(true);
   h.project.items.push(cue('playlist-source'));
   await h.copyPlaylistItemIntoSlot('playlist-source', 1);
-  const imported = [...h.cartOnlyItems.value.values()][0]!;
+  const imported = [...h.quickPlayItems.value.values()][0]!;
   assert.ok(imported);
-  assert.equal(imported.oneShot?.sourceUuid, 'playlist-source');
+  assert.equal(imported.quickPlay?.sourceUuid, 'playlist-source');
   assert.deepEqual(imported.index, [-1, 1]);
   assert.deepEqual(h.slotErrors, {});
 });

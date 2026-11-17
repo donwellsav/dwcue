@@ -59,8 +59,8 @@ test('a converted video leaves its original unused, and old captures with it', (
 test('QuickPlay-only cues and cues inside groups keep their files', () => {
   const show = {
     items: [{ type: 'group', children: [{ type: 'group', children: [cue('Deep.wav')] }, cue('Child.wav')] }],
-    cartItems: [{ slot: 0, itemUuid: 'uuid-Airhorn.wav' }],
-    cartOnlyItems: [cue('Airhorn.wav', { imagePath: 'media/Airhorn tile.png' })],
+    quickPlaySlots: [{ slot: 0, itemUuid: 'uuid-Airhorn.wav' }],
+    quickPlayItems: [cue('Airhorn.wav', { imagePath: 'media/Airhorn tile.png' })],
   };
   assert.deepEqual(unusedNames(['Deep.wav', 'Child.wav', 'Airhorn.wav', 'Airhorn tile.png', 'Stray.wav'], [show]), ['Stray.wav']);
 });

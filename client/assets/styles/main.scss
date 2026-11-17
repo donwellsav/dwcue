@@ -276,14 +276,14 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   // All text is selectable/copyable by default — error messages that can't be
-  // copied are useless. Cue/cart reordering uses native HTML5 drag
+  // copied are useless. Cue/QuickPlay reordering uses native HTML5 drag
   // (draggable=true), which never starts a text selection; genuine drag
   // surfaces (faders, trim handles, grab zones) opt out with their own
   // user-select: none rules.
 }
 
 // Shared chrome for the three workspace columns. Keeping this global makes
-// Cart, Playlist, Monitor, and Output land on the same baseline in every mode.
+// QuickPlay, Playlist, Monitor, and Output land on the same baseline in every mode.
 .workspace-panel-header {
   display: flex;
   align-items: center;

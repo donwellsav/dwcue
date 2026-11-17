@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "انٹرفیس فونٹ سائز",
-    "oneShotFontSize": "ون شاٹ ٹیکسٹ سائز",
+    "quickPlayFontSize": "ون شاٹ ٹیکسٹ سائز",
     "cycleTrackColors": "نئے ٹریکس کے رنگ باری باری لگائیں",
-    "cartLayout": "لے آؤٹ",
+    "quickPlayLayout": "لے آؤٹ",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "کالم",
@@ -519,7 +519,7 @@
       "error": "امپورٹ ناکام"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlays (ڈیفالٹ)",
     "detachedNoPrimary": "پروجیکٹ کی مرکزی ونڈو دستیاب نہیں ہے۔",
     "detachedWaitingForShow": "QuickPlays دوبارہ فعال کرنے کے لیے مرکزی ونڈو میں شو بحال کریں یا کھولیں۔",
@@ -904,8 +904,8 @@
     "title": "کنٹرولز ترتیب دیں",
     "shortcutBtn": "شارٹ کٹس",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlays",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlays",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "روکیں / جاری رکھیں",
     "toggleLoop": "لوپ ٹوگل کریں",
     "cueToContinue": "جاری رکھنے کا سگنل",
@@ -924,7 +924,7 @@
     "masterVolume": "مجموعی ماسٹر والیوم",
     "midiDevice": "MIDI آلہ",
     "allDevices": "تمام آلات",
-    "conflictOneShot": "پہلے سے QuickPlay {n} کو تفویض ہے",
+    "conflictQuickPlay": "پہلے سے QuickPlay {n} کو تفویض ہے",
     "conflictAction": "پہلے سے {action} کو تفویض",
     "pressAnyKey": "کوئی بھی کلید دبائیں...",
     "reserved": "یہ کلید کا مجموعہ محفوظ ہے",

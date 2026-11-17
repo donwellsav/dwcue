@@ -13,7 +13,7 @@
         <kbd class="shortcuts-bar__key">{{ playbackKeyLabel(action.id) || '—' }}</kbd>
       </span>
       <span class="shortcuts-bar__item">
-        <span class="shortcuts-bar__action">{{ t('oneShots.defaultShortcuts') }}</span>
+        <span class="shortcuts-bar__action">{{ t('quickPlays.defaultShortcuts') }}</span>
         <kbd class="shortcuts-bar__key">1–9, 0</kbd>
         <kbd class="shortcuts-bar__key">Shift+1–9, Shift+0</kbd>
       </span>
@@ -41,7 +41,7 @@
 // Mode and Show Mode: operators should never have to guess the keys. It is
 // two lines high and lists every keyboard action, the ones used while a show
 // runs first. The full editor is under Settings → Shortcuts and Customize.
-import { PLAYBACK_ACTIONS, useCartHotkeys } from '~/composables/useCartHotkeys';
+import { PLAYBACK_ACTIONS, useQuickPlayHotkeys } from '~/composables/useQuickPlayHotkeys';
 import type { PlaybackKeyAction } from '~/types/project';
 
 // Running a show, in the order an operator reaches for them.
@@ -64,7 +64,7 @@ const otherActions = [
 ];
 
 const { t } = useLocalization();
-const { playbackKeyLabel } = useCartHotkeys();
+const { playbackKeyLabel } = useQuickPlayHotkeys();
 
 const open = useState('showShortcutsBar', () => true);
 const showProjectSettings = useState('showProjectSettings', () => false);

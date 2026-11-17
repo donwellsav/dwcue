@@ -1,19 +1,19 @@
 import type { AudioItem } from '~/types/project';
 
-export function useOneShotPlayback() {
+export function useQuickPlayPlayback() {
   const { projectHydrationStatus } = useProject();
-  const { isDetached, identity } = useDetachedOneShotMutation();
+  const { isDetached, identity } = useDetachedQuickPlayMutation();
   const { activeCues, playCue } = useAudioEngine();
   // The detached bank receives its ready document from the primary window.
-  const oneShotPlaybackReady = computed(() =>
+  const quickPlayPlaybackReady = computed(() =>
     isDetached ? identity.value !== null : projectHydrationStatus.value === 'ready');
 
-  function playOneShot(item: AudioItem) {
-    if (!oneShotPlaybackReady.value || (item.oneShot?.retrigger === 'ignore' && activeCues.value.has(item.uuid))) {
+  function playQuickPlay(item: AudioItem) {
+    if (!quickPlayPlaybackReady.value || (item.quickPlay?.retrigger === 'ignore' && activeCues.value.has(item.uuid))) {
       return Promise.resolve(false);
     }
     return playCue(item);
   }
 
-  return { oneShotPlaybackReady, playOneShot };
+  return { quickPlayPlaybackReady, playQuickPlay };
 }

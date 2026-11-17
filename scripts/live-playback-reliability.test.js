@@ -88,7 +88,7 @@ test('HTTP cue actions have one server executor with zero or multiple clients', 
   });
   const show = path.join(folder, 'test.dwcue');
   await writeFile(show, JSON.stringify({ name: 'reliability', folderPath: folder,
-    items: [cue('headless', '/headless', { cue: 1 }), cue('multi', '/multi', { cue: 2 }), cue('failure', '/fail', { cue: 3 })], settings: {}, cartOnlyItems: [] }));
+    items: [cue('headless', '/headless', { cue: 1 }), cue('multi', '/multi', { cue: 2 }), cue('failure', '/fail', { cue: 3 })], settings: {}, quickPlayItems: [] }));
   const loaded = await request('/api/project/load', { path: show });
   assert.equal(loaded.status, 200, await loaded.text());
   await until(async () => (await (await request('/api/project/header')).json()).server?.audioReadiness?.ready === true,

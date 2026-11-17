@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "Skriftstørrelse for grensesnitt",
-    "oneShotFontSize": "Tekststørrelse for one-shots",
+    "quickPlayFontSize": "Tekststørrelse for QuickPlays",
     "cycleTrackColors": "Rullér farger for nye spor",
-    "cartLayout": "Oppsett",
+    "quickPlayLayout": "Oppsett",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "Kolonner",
@@ -519,7 +519,7 @@
       "error": "Importen mislyktes"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlays (standard)",
     "detachedNoPrimary": "Hovedprosjektvinduet er ikke tilgjengelig.",
     "detachedWaitingForShow": "Gjenopprett eller åpne showet i hovedvinduet for å aktivere QuickPlays igjen.",
@@ -904,8 +904,8 @@
     "title": "Konfigurer kontroller",
     "shortcutBtn": "Snarveier",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlays",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlays",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "Pause / Fortsett",
     "toggleLoop": "Bytt løkke",
     "cueToContinue": "Cue to Continue",
@@ -924,7 +924,7 @@
     "masterVolume": "Globalt mastervolum",
     "midiDevice": "MIDI-enhet",
     "allDevices": "Alle enheter",
-    "conflictOneShot": "Allerede tilordnet QuickPlay {n}",
+    "conflictQuickPlay": "Allerede tilordnet QuickPlay {n}",
     "conflictAction": "Allerede tilordnet {action}",
     "pressAnyKey": "Trykk på en tast...",
     "reserved": "Denne tastekombinasjon er reservert",

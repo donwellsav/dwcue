@@ -1,7 +1,7 @@
 <template>
   <div class="main-workspace" :class="{ 'show-mode': uiMode === 'playback' }">
     <!-- Show Mode reuses the full editor layout (header, transport, resizable/
-         detachable playlist⇄cart split). It is not a separate view: the child
+         detachable playlist⇄QuickPlay split). It is not a separate view: the child
          components read useUiMode() and hide their edit affordances, and
          nothing else: every size, waveform, colour, duration, behaviour flag
          and warning renders exactly as in Edit Mode. -->
@@ -48,56 +48,56 @@
 
       <div class="workspace-panels">
         <div
-          v-if="cartVisible"
-          v-show="!recoveryOpen || !cartFullscreen"
+          v-if="quickPlayVisible"
+          v-show="!recoveryOpen || !quickPlayFullscreen"
           :inert="recoveryOpen"
-          id="cart-player-panel"
-          class="cart-section"
-          :class="{ 'cart-section--fullscreen': cartFullscreen }"
-          :style="{ width: cartFullscreen ? '100%' : `${cartWidth}px` }"
+          id="quickplay-workspace-panel"
+          class="quickplay-section"
+          :class="{ 'quickplay-section--fullscreen': quickPlayFullscreen }"
+          :style="{ width: quickPlayFullscreen ? '100%' : `${quickPlayWidth}px` }"
         >
-          <OneShotPanel>
+          <QuickPlayPanel>
             <template #header-leading>
               <button
                 type="button"
-                class="cart-toggle cart-toggle--open"
-                :aria-label="t('oneShots.hide')"
-                :title="t('oneShots.hide')"
+                class="quickplay-toggle quickplay-toggle--open"
+                :aria-label="t('quickPlays.hide')"
+                :title="t('quickPlays.hide')"
                 :aria-expanded="true"
-                aria-controls="cart-player-panel"
-                @click="toggleCart"
+                aria-controls="quickplay-workspace-panel"
+                @click="toggleQuickPlays"
               >
-                <span class="material-symbols-rounded cart-toggle__collapse" aria-hidden="true">chevron_left</span>
+                <span class="material-symbols-rounded quickplay-toggle__collapse" aria-hidden="true">chevron_left</span>
               </button>
             </template>
-          </OneShotPanel>
+          </QuickPlayPanel>
         </div>
 
         <div
-          v-if="!cartDetached"
-          v-show="!recoveryOpen || !cartFullscreen"
+          v-if="!quickPlayDetached"
+          v-show="!recoveryOpen || !quickPlayFullscreen"
           :inert="recoveryOpen"
           class="resize-handle"
-          :class="{ 'collapsed-left': cartClosed, 'collapsed-right': cartFullscreen, dragging: isResizing }"
+          :class="{ 'collapsed-left': quickPlayClosed, 'collapsed-right': quickPlayFullscreen, dragging: isResizing }"
           @pointerdown="startResize"
         ></div>
 
-        <div v-show="recoveryOpen || !cartFullscreen || cartDetached" class="playlist-section">
+        <div v-show="recoveryOpen || !quickPlayFullscreen || quickPlayDetached" class="playlist-section">
           <div class="playlist-panel">
             <PlaylistView :read-only="recoveryOpen">
               <template #header-leading>
                 <button
-                  v-if="cartClosed && !cartDetached"
+                  v-if="quickPlayClosed && !quickPlayDetached"
                   :disabled="recoveryOpen"
                   type="button"
-                  class="cart-toggle cart-toggle--reveal"
-                  :aria-label="t('oneShots.show')"
-                  :title="t('oneShots.show')"
+                  class="quickplay-toggle quickplay-toggle--reveal"
+                  :aria-label="t('quickPlays.show')"
+                  :title="t('quickPlays.show')"
                   :aria-expanded="false"
-                  @click="toggleCart"
+                  @click="toggleQuickPlays"
                 >
-                  <CueSymbol name="one-shots" />
-                  <span class="cart-toggle__label">{{ t('oneShots.show') }}</span>
+                  <CueSymbol name="quickplays" />
+                  <span class="quickplay-toggle__label">{{ t('quickPlays.show') }}</span>
                 </button>
               </template>
             </PlaylistView>
@@ -274,9 +274,9 @@ import PreShowCheckPanel from './PreShowCheckPanel.vue';
 import ProjectSettingsModal from './ProjectSettingsModal.vue';
 import StereoMeter from './StereoMeter.vue';
 import VolumeSlider from './VolumeSlider.vue';
-import { bindingsMatch, eventToBinding } from '~/composables/useCartHotkeys';
+import { bindingsMatch, eventToBinding } from '~/composables/useQuickPlayHotkeys';
 import { usePreShowCheckLongList } from '~/composables/usePreShowCheck';
-import { flattenOneShots } from '~/utils/oneShots';
+import { flattenQuickPlays } from '~/utils/quickPlays';
 
 const { decisionOpen, recoveryOpen } = defineProps<{ decisionOpen: boolean; recoveryOpen: boolean }>();
 const {
@@ -303,7 +303,7 @@ const {
   projectRepair,
   saveRepairedProject,
 } = useProject();
-const { cartOnlyItems } = useCartItems();
+const { quickPlayItems } = useQuickPlayItems();
 const { t } = useLocalization();
 const server = useLiveplayServer();
 const { uiMode, uiFontScale, regularPlaylistRowHeight, folderPlaylistRowHeight } = useUiMode();
@@ -332,7 +332,7 @@ const importPanelTitle = computed(() => {
   if (visibleImportPanel.value === 'video-capture') return t('standbyCapture.panelTitle');
   if (visibleImportPanel.value === 'media-cleanup') return t('mediaCleanup.title');
   if (visibleImportPanel.value === 'quickplay') return t(quickPlayEditor.value?.remove
-    ? 'oneShots.removeConfirmTitle' : quickPlayEditor.value ? 'oneShots.settings' : 'oneShots.importInto',
+    ? 'quickPlays.removeConfirmTitle' : quickPlayEditor.value ? 'quickPlays.settings' : 'quickPlays.importInto',
     { number: (quickPlayImportSlot.value ?? 0) + 1 });
   return '';
 });
@@ -466,29 +466,29 @@ function handlePanelResizeKey(event: KeyboardEvent) {
 }
 
 
-// Resizable cart width
-const cartWidth = ref(300);
+// Resizable QuickPlay width
+const quickPlayWidth = ref(300);
 const isResizing = ref(false);
-const cartClosed = ref(true);
-const cartVisibilityExplicit = ref(false);
-const hasAssignedOneShots = computed(() => {
+const quickPlayClosed = ref(true);
+const quickPlayVisibilityExplicit = ref(false);
+const hasAssignedQuickPlays = computed(() => {
   const project = currentProject.value;
-  return !!project && flattenOneShots(
+  return !!project && flattenQuickPlays(
     project.items ?? [],
-    project.cartOnlyItems ?? [],
+    project.quickPlayItems ?? [],
   ).length > 0;
 });
-watch(hasAssignedOneShots, (assigned) => {
-  if (cartVisibilityExplicit.value) return;
-  cartClosed.value = !assigned;
+watch(hasAssignedQuickPlays, (assigned) => {
+  if (quickPlayVisibilityExplicit.value) return;
+  quickPlayClosed.value = !assigned;
   // Once existing assigned content arrives through paged project hydration,
   // keep the user's resulting panel state stable.
-  if (assigned) cartVisibilityExplicit.value = true;
+  if (assigned) quickPlayVisibilityExplicit.value = true;
 }, { immediate: true });
-const cartFullscreen = ref(false);
-const cartDetached = ref(false);
-const cartVisible = computed(() => !cartClosed.value && !cartDetached.value);
-const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useCartHotkeys({
+const quickPlayFullscreen = ref(false);
+const quickPlayDetached = ref(false);
+const quickPlayVisible = computed(() => !quickPlayClosed.value && !quickPlayDetached.value);
+const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useQuickPlayHotkeys({
   'toggle-settings': () => { showProjectSettings.value = !showProjectSettings.value; },
   'toggle-properties': () => {
     const item = editableSelectedItem.value;
@@ -496,7 +496,7 @@ const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useCa
     if (showCueProperties.value) propertiesPanelOpen.value = false;
     else openItemProperties(item.uuid);
   },
-  'toggle-quickplays': () => { if (!cartDetached.value) toggleCart(); },
+  'toggle-quickplays': () => { if (!quickPlayDetached.value) toggleQuickPlays(); },
 });
 const { stopAllCues } = useAudioEngine();
 const outputConsoleMinDb = -60;
@@ -637,10 +637,10 @@ function cancelLimiterCeilingDrag(event: PointerEvent) {
   drag.input.value = limiterCeilingDb.value.toFixed(1);
 }
 
-function toggleCart() {
-  cartVisibilityExplicit.value = true;
-  cartClosed.value = !cartClosed.value;
-  cartFullscreen.value = false;
+function toggleQuickPlays() {
+  quickPlayVisibilityExplicit.value = true;
+  quickPlayClosed.value = !quickPlayClosed.value;
+  quickPlayFullscreen.value = false;
 }
 
 // Dynamic program-output bank. Main (0/1) is always represented and device
@@ -715,7 +715,7 @@ const startResize = (e: PointerEvent) => {
   // Ignore secondary mouse buttons and any second finger landing on the bar —
   // a concurrent drag would register a duplicate set of document listeners.
   if (isResizing.value || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
-  cartVisibilityExplicit.value = true;
+  quickPlayVisibilityExplicit.value = true;
   const handle = e.currentTarget as HTMLElement | null;
   isResizing.value = true;
   e.preventDefault();
@@ -737,22 +737,22 @@ const startResize = (e: PointerEvent) => {
     
     // Snap closed at the bank's outer edge.
     if (newWidth < snapThreshold) {
-      cartClosed.value = true;
-      cartFullscreen.value = false;
+      quickPlayClosed.value = true;
+      quickPlayFullscreen.value = false;
       return;
     }
     
     // Expand the bank at the opposite edge.
     if (newWidth > container.offsetWidth - snapThreshold) {
-      cartFullscreen.value = true;
-      cartClosed.value = false;
+      quickPlayFullscreen.value = true;
+      quickPlayClosed.value = false;
       return;
     }
     
     // Normal resize
-    cartClosed.value = false;
-    cartFullscreen.value = false;
-    cartWidth.value = Math.round(newWidth);
+    quickPlayClosed.value = false;
+    quickPlayFullscreen.value = false;
+    quickPlayWidth.value = Math.round(newWidth);
   };
   
   const handleMouseUp = () => {
@@ -789,24 +789,24 @@ if (import.meta.client && window.electronAPI) {
     }
   });
 
-  // Cart window detach/attach
-  window.electronAPI.onCartPlayerWindowOpened(() => {
-    cartDetached.value = true;
+  // QuickPlay window detach/attach
+  window.electronAPI.onDetachedQuickPlayWindowOpened(() => {
+    quickPlayDetached.value = true;
   });
-  window.electronAPI.onCartPlayerWindowClosed(() => {
-    cartDetached.value = false;
+  window.electronAPI.onDetachedQuickPlayWindowClosed(() => {
+    quickPlayDetached.value = false;
   });
 
 }
 
 // Keep the main process HTTP API server up-to-date with the full project state.
 // Waveform peak arrays are stripped from the bulk playlist (large, and API
-// consumers don't need them), but PRESERVED for items the detached cart
-// window has to render: cart-only items, plus any playlist item referenced
-// by a cart slot. Without this the detached cart window's waveform canvases
+// consumers don't need them), but PRESERVED for items the detached QuickPlay
+// window has to render: QuickPlay-only items, plus any playlist item referenced
+// by a QuickPlay slot. Without this the detached QuickPlay window's waveform canvases
 // stay blank because it can't poll the project folder when the server is
 // remote.
-// NOTE: This watcher should NOT run in cart window mode to avoid feedback loops.
+// NOTE: This watcher should NOT run in QuickPlay window mode to avoid feedback loops.
 const stripWaveformsKeeping = (items: any[], keep: Set<string>): any[] =>
   items.map(item => {
     const copy: any = { ...item };
@@ -815,32 +815,32 @@ const stripWaveformsKeeping = (items: any[], keep: Set<string>): any[] =>
     return copy;
   });
 
-// Check if this is cart window mode by looking at URL query param
-const isCartWindowMode = import.meta.client
-  ? new URLSearchParams(window.location.search).get('cartWindow') === '1'
+// Check if this is QuickPlay window mode by looking at URL query param
+const isQuickPlayWindowMode = import.meta.client
+  ? new URLSearchParams(window.location.search).get('quickPlayWindow') === '1'
   : false;
 
 watch(
   [currentProject, projectSyncIdentity, projectHydrationStatus, () => server.projectSessionId,
     () => server.connected && !server.cueStartsBlocked],
   ([project, identity, hydrationStatus, sessionId, verified]) => {
-    // Only sync from the main window, not from the detached cart window.
-    if (!import.meta.client || !window.electronAPI || isCartWindowMode) return;
+    // Only sync from the main window, not from the detached QuickPlay window.
+    if (!import.meta.client || !window.electronAPI || isQuickPlayWindowMode) return;
     if (!project || !identity || hydrationStatus !== 'ready') {
       window.electronAPI.syncProjectData(null, null);
       return;
     }
     if (!verified || !sessionId) return;
-    const cartReferenced = new Set<string>([
-      ...flattenOneShots(project.items || []).map(item => item.uuid),
-      ...(project.cartItems || []).map((ci: any) => ci.itemUuid).filter(Boolean),
+    const quickPlayReferenced = new Set<string>([
+      ...flattenQuickPlays(project.items || []).map(item => item.uuid),
+      ...(project.quickPlaySlots || []).map((ci: any) => ci.itemUuid).filter(Boolean),
     ]);
     const data = {
       ...project,
-      items: stripWaveformsKeeping(project.items || [], cartReferenced),
-      // Cart-only items always keep their waveform — the detached cart window
-      // needs them and the cart is bounded to 64 slots.
-      cartOnlyItems: Array.from(cartOnlyItems.value.values()).map(i => ({ ...i })),
+      items: stripWaveformsKeeping(project.items || [], quickPlayReferenced),
+      // QuickPlay-only items always keep their waveform — the detached QuickPlay window
+      // needs them and QuickPlays are bounded to 64 slots.
+      quickPlayItems: Array.from(quickPlayItems.value.values()).map(i => ({ ...i })),
     };
     window.electronAPI.syncProjectData(JSON.parse(JSON.stringify(data)), identity, sessionId);
   },
@@ -1523,7 +1523,7 @@ onUnmounted(() => {
   }
 }
 
-.cart-toggle {
+.quickplay-toggle {
   display: grid;
   place-items: center;
   flex: 0 0 var(--panel-control-height);
@@ -1541,7 +1541,7 @@ onUnmounted(() => {
   }
 
 
-  &.cart-toggle--reveal {
+  &.quickplay-toggle--reveal {
     width: auto;
     flex-basis: auto;
     grid-auto-flow: column;
@@ -1549,12 +1549,12 @@ onUnmounted(() => {
     padding-inline: 10px;
   }
 
-  .cart-toggle__label {
+  .quickplay-toggle__label {
     font-size: 12px;
     font-weight: 600;
     white-space: nowrap;
   }
-  &.cart-toggle--open {
+  &.quickplay-toggle--open {
     color: var(--color-accent-text);
     border-color: var(--color-accent);
   }
@@ -1571,16 +1571,16 @@ onUnmounted(() => {
   }
 }
 
-.cart-toggle__collapse:dir(rtl) { transform: scaleX(-1); }
+.quickplay-toggle__collapse:dir(rtl) { transform: scaleX(-1); }
 
-.cart-section {
-  --cart-max-width: calc(100% - var(--playlist-split-min-width) - var(--resize-handle-width));
+.quickplay-section {
+  --quickplay-max-width: calc(100% - var(--playlist-split-min-width) - var(--resize-handle-width));
   flex: 0 0 auto;
-  min-width: min(220px, var(--cart-max-width));
-  max-width: var(--cart-max-width);
+  min-width: min(220px, var(--quickplay-max-width));
+  max-width: var(--quickplay-max-width);
   overflow: hidden;
 
-  &.cart-section--fullscreen {
+  &.quickplay-section--fullscreen {
     max-width: none;
   }
 }
@@ -1591,9 +1591,9 @@ onUnmounted(() => {
     min-width: 0;
   }
 
-  .cart-section:not(.cart-section--fullscreen) {
-    --cart-max-width: min(32%, 280px);
-    min-width: min(170px, var(--cart-max-width));
+  .quickplay-section:not(.quickplay-section--fullscreen) {
+    --quickplay-max-width: min(32%, 280px);
+    min-width: min(170px, var(--quickplay-max-width));
   }
 }
 </style>

@@ -2,7 +2,7 @@
   <button
     class="action-btn"
     :class="[
-      context === 'Cart' ? 'action-btn--cart' : 'action-btn--playlist',
+      context === 'QuickPlay' ? 'action-btn--quickplay' : 'action-btn--playlist',
       { 'action-btn--active': isActive }
     ]"
     :style="computedStyle"
@@ -21,10 +21,10 @@
 <script setup lang="ts">
 const props = withDefaults(defineProps<{
   icon?: string;
-  symbol?: 'preview' | 'one-shots' | 'ltc' | 'video-output';
+  symbol?: 'preview' | 'quickplays' | 'ltc' | 'video-output';
   highlightColor?: string;
   activeTextColor?: string;
-  context?: 'Playlist' | 'Cart';
+  context?: 'Playlist' | 'QuickPlay';
   isActive?: boolean;
   label?: string;
   hoverLabel?: string;
@@ -131,7 +131,7 @@ const computedStyle = computed(() => {
   }
 }
 
-.action-btn--cart {
+.action-btn--quickplay {
   width: 28px;
   height: 28px;
 

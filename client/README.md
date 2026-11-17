@@ -55,8 +55,8 @@ client/
 │   │   ├── useLiveMeters.ts     meter subscription helpers
 │   │   ├── useProject.ts        project CRUD as exposed by the server
 │   │   ├── useAudioEngine.ts    transport facade (play / stop / fade / seek / ducking)
-│   │   ├── useCartItems.ts      one-shot grid state (legacy cart storage facade)
-│   │   ├── useCartHotkeys.ts    keyboard hotkey bindings → QuickPlay triggers
+│   │   ├── useQuickPlayItems.ts    QuickPlay grid state (the QuickPlay-only cue store)
+│   │   ├── useQuickPlayHotkeys.ts  keyboard hotkey bindings → QuickPlay triggers
 │   │   ├── useMidiController.ts Web MIDI → QuickPlay triggers
 │   │   ├── useStateViewer.ts    feeds the diagnostics popup window
 │   │   └── useLocalization.ts   21-language i18n + RTL handling
@@ -129,8 +129,8 @@ Key IPC channels (non-exhaustive):
 | `update-menu-language` / `get-system-locale` / `get-available-locales` / `get-locale-data` | Dynamic menu localisation. |
 | `help:open-operator-manual` | Opens or focuses the bundled offline operator manual from a trusted app renderer. |
 | `open-folder` / `open-external` / `app:relaunch` / `app:exit` | OS integration. |
-| `open-cart-player-window` / `cart-player-window-attach` / `sync-project-data` | Second-window QuickPlays surface; the cart-player channel names remain for compatibility. |
-| `one-shot-mutation:*` | Identity-fenced detached-window mutation broker; only the primary renderer validates, applies and persists requests. |
+| `open-detached-quickplay-window` / `detached-quickplay-window-attach` / `sync-project-data` | Second-window QuickPlays surface. |
+| `quickplay-mutation:*` | Identity-fenced detached-window mutation broker; only the primary renderer validates, applies and persists requests. |
 | `video-output:open` / `close` / `status` | Session-only Video Output lifecycle and status. |
 | `video-output:list-displays` / `identify-displays` / `set-display` | Enumerate, identify and persist the machine's assigned physical output. |
 | `video-output:set-fullscreen` / `toggle-fullscreen` / `test-card` | Operator controls for the passive output surface. |
@@ -210,8 +210,8 @@ All composables are Vue `setup()`-time helpers, typed in TypeScript.
 | `useLiveMeters`        | Subscribes to the `meters` WS frame and exposes per-cue / per-mixer / per-master reactive refs at the server's default 30 Hz cadence. Drives `LiveMeterBar` and `StereoMeter`. |
 | `useProject`           | Paged hydration, Retry/rejoin, project CRUD and sync. It enforces the no-partial-save barrier and clears document/path on remote close; serialized revision/identity fences ensure only the latest persisted revision becomes clean. |
 | `useAudioEngine`       | Transport facade. **Cue to Continue** is runtime-only for one playback instance: it never rewrites `endBehavior`, and Stop, remove, replay, Stop All, media replacement, or project switch cancels it. |
-| `useCartItems`         | The QuickPlays grid model and slot-to-cue mapping. Storage keeps the existing cart shape. |
-| `useCartHotkeys`       | Configurable QuickPlay shortcuts. The number row defaults to slots 1–10 and Shift plus the number row to slots 11–20. See `ControlConfigModal.vue` for the editor. |
+| `useQuickPlayItems`    | The QuickPlays grid model and slot-to-cue mapping. |
+| `useQuickPlayHotkeys`  | Configurable QuickPlay shortcuts. The number row defaults to slots 1–10 and Shift plus the number row to slots 11–20. See `ControlConfigModal.vue` for the editor. |
 | `useMidiController`    | Web MIDI bindings → QuickPlay triggers and transport. Master Volume targets the server's Global Master—not output channel 0. See `ControlConfigModal.vue`. |
 | `useStateViewer`       | Feeds the live diagnostics popup window (project doc + connection + server status). |
 | `useLocalization`      | i18n (21 languages, RTL). See [Localisation](#localisation-21-languages-rtl). |
@@ -229,7 +229,7 @@ The component tree is intentionally flat — every SFC lives directly in [`app/c
 - `MainWorkspace.vue` — top-level layout once a project is loaded.
 - `PlaybackControls.vue`, `ActiveCueItem.vue` — top-of-screen GO transport and named **Play Next** target. **Set As Next** waits for the authoritative `next_item_set` echo (including empty-string clear), and GO clears it only after accepted play; failures remain ready for retry.
 - `PlaylistView.vue`, `PlaylistItem.vue` — recursive playlist tree.
-- `OneShotPanel.vue`, `OneShotTile.vue` — QuickPlays grid with at least 20 slots and direct Play/Stop in both modes. The detached window routes edits through the primary-owned mutation broker. Click, keyboard and MIDI share the same QuickPlay start path. Duck Level, Attack and Release are server-consumed, generation-fenced settings.
+- `QuickPlayPanel.vue`, `QuickPlayTile.vue` — QuickPlays grid with at least 20 slots and direct Play/Stop in both modes. The detached window routes edits through the primary-owned mutation broker. Click, keyboard and MIDI share the same QuickPlay start path. Duck Level, Attack and Release are server-consumed, generation-fenced settings.
 - `PropertiesPanel.vue` — properties for the selected item (gain, fades, working Start/End Behaviors, ducking, output device and LTC).
 - `WaveformCanvas.vue` — canvas-rendered waveform fetched from `GET /api/waveform/<cueId>`.
 - `WaveformTrimmer.vue` — interactive in/out trimming + normalise.

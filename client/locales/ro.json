@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "Dimensiunea fontului interfeței",
-    "oneShotFontSize": "Dimensiunea textului one-shot",
+    "quickPlayFontSize": "Dimensiunea textului QuickPlay",
     "cycleTrackColors": "Alternează culorile pistelor noi",
-    "cartLayout": "Layout",
+    "quickPlayLayout": "Layout",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "Coloane",
@@ -519,7 +519,7 @@
       "error": "Importul a eșuat"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlay (implicite)",
     "detachedNoPrimary": "Fereastra principală a proiectului nu este disponibilă.",
     "detachedWaitingForShow": "Restaurează sau deschide spectacolul în fereastra principală pentru a reactiva QuickPlay.",
@@ -904,8 +904,8 @@
     "title": "Configurare controale",
     "shortcutBtn": "Comenzi rapide",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlay",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlay",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "Pauză / Reluare",
     "toggleLoop": "Comutare buclă",
     "cueToContinue": "Cue to Continue",
@@ -924,7 +924,7 @@
     "masterVolume": "Volum master global",
     "midiDevice": "Dispozitiv MIDI",
     "allDevices": "Toate dispozitivele",
-    "conflictOneShot": "Deja atribuit lui QuickPlay {n}",
+    "conflictQuickPlay": "Deja atribuit lui QuickPlay {n}",
     "conflictAction": "Deja atribuit la {action}",
     "pressAnyKey": "Apăsați orice tastă...",
     "reserved": "Această combinație de taste este rezervată",

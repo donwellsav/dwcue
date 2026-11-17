@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "इंटरफ़ेस फ़ॉन्ट आकार",
-    "oneShotFontSize": "वन-शॉट टेक्स्ट आकार",
+    "quickPlayFontSize": "वन-शॉट टेक्स्ट आकार",
     "cycleTrackColors": "नए ट्रैक के रंग बारी-बारी से लगाएँ",
-    "cartLayout": "लेआउट",
+    "quickPlayLayout": "लेआउट",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "कॉलम",
@@ -519,7 +519,7 @@
       "error": "आयात विफल रहा"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlays (डिफ़ॉल्ट)",
     "detachedNoPrimary": "मुख्य प्रोजेक्ट विंडो उपलब्ध नहीं है।",
     "detachedWaitingForShow": "QuickPlays फिर चालू करने के लिए मुख्य विंडो में शो बहाल करें या खोलें।",
@@ -904,8 +904,8 @@
     "title": "नियंत्रण कॉन्फ़िगर करें",
     "shortcutBtn": "शॉर्टकट",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlays",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlays",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "रोकें / जारी रखें",
     "toggleLoop": "लूप टॉगल करें",
     "cueToContinue": "Cue to Continue",
@@ -924,7 +924,7 @@
     "masterVolume": "ग्लोबल मास्टर वॉल्यूम",
     "midiDevice": "MIDI डिवाइस",
     "allDevices": "सभी डिवाइस",
-    "conflictOneShot": "QuickPlay {n} को पहले ही असाइन है",
+    "conflictQuickPlay": "QuickPlay {n} को पहले ही असाइन है",
     "conflictAction": "{action} को पहले से असाइन किया गया",
     "pressAnyKey": "कोई भी कुंजी दबाएं...",
     "reserved": "यह कुंजी संयोजन आरक्षित है",

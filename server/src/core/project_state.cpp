@@ -2,7 +2,7 @@
 // project_state.cpp — see project_state.hpp.
 // ============================================================================
 #include "liveplay/core/project_state.hpp"
-#include "liveplay/core/one_shot_migration.hpp"
+#include "liveplay/core/quick_play_migration.hpp"
 #include "liveplay/core/project_file.hpp"
 #include "liveplay/crash_handler.hpp"
 #include "liveplay/logger.hpp"
@@ -214,8 +214,8 @@ inline void relativize_media_paths(json& doc) {
     };
     if (doc.contains("items") && doc["items"].is_array())
         for (auto& it : doc["items"]) visit(it);
-    if (doc.contains("cartOnlyItems") && doc["cartOnlyItems"].is_array())
-        for (auto& it : doc["cartOnlyItems"]) visit(it);
+    if (doc.contains("quickPlayItems") && doc["quickPlayItems"].is_array())
+        for (auto& it : doc["quickPlayItems"]) visit(it);
 }
 
 
@@ -734,10 +734,10 @@ audio::CueId ProjectState::begin_item_load_locked(const std::string& uuid,
 
     {
         std::lock_guard qlock{loader_mutex_};
-        bool prime = item.contains("oneShot") && item["oneShot"].is_object();
-        if (!prime && document_.contains("cartItems") && document_["cartItems"].is_array())
-            for (const auto& cart : document_["cartItems"])
-                if (cart.is_object() && cart.value("itemUuid", std::string{}) == uuid) { prime = true; break; }
+        bool prime = item.contains("quickPlay") && item["quickPlay"].is_object();
+        if (!prime && document_.contains("quickPlaySlots") && document_["quickPlaySlots"].is_array())
+            for (const auto& binding : document_["quickPlaySlots"])
+                if (binding.is_object() && binding.value("itemUuid", std::string{}) == uuid) { prime = true; break; }
         load_queue_.push_back(LoadRequest{uuid, cue_id, std::move(paths), media_changed, item, prime});
         pending_load_uuids_.insert_or_assign(uuid, cue_id);
     }
@@ -1144,7 +1144,7 @@ void ProjectState::start_async_mirror() {
             // Phase 1: snapshot what we need to load under a brief lock.
             std::unordered_map<std::string, detail::MediaPaths> candidates;
             std::unordered_map<std::string, json> item_snaps;
-            std::unordered_set<std::string> cart_uuids;
+            std::unordered_set<std::string> quick_play_uuids;
             std::unordered_set<std::string> backup_uuids;
             struct MirrorLoad {
                 std::string uuid;
@@ -1167,19 +1167,19 @@ void ProjectState::start_async_mirror() {
                     const std::string uuid = item.value("uuid", std::string{});
                     if (uuid.empty()) return;
                     item_snaps.emplace(uuid, item);
-                    if (item.contains("oneShot") && item["oneShot"].is_object())
-                        cart_uuids.insert(uuid);
+                    if (item.contains("quickPlay") && item["quickPlay"].is_object())
+                        quick_play_uuids.insert(uuid);
                     if (candidates.at(uuid).preferred.empty()) {
                         audio_load_failures_[uuid] = {
                             "missing_media_path", std::string{}};
                         ++unresolved_media;
                     }
                 });
-                if (doc.contains("cartItems") && doc["cartItems"].is_array()) {
-                    for (const auto& c : doc["cartItems"]) {
+                if (doc.contains("quickPlaySlots") && doc["quickPlaySlots"].is_array()) {
+                    for (const auto& c : doc["quickPlaySlots"]) {
                         if (c.is_object()) {
                             const std::string u = c.value("itemUuid", std::string{});
-                            if (!u.empty()) cart_uuids.insert(u);
+                            if (!u.empty()) quick_play_uuids.insert(u);
                         }
                     }
                 }
@@ -1244,7 +1244,7 @@ void ProjectState::start_async_mirror() {
                     desc.render_block = engine_.config().render_block;
                     try {
                         job.task = prepare_audio_load(std::move(desc), std::move(item_snaps.at(job.uuid)),
-                            cart_uuids.contains(job.uuid) || backup_uuids.contains(job.uuid),
+                            quick_play_uuids.contains(job.uuid) || backup_uuids.contains(job.uuid),
                             paths.fallback, std::move(job.reusable_path));
                     } catch (...) {
                         std::promise<LoadedAudio> failure;
@@ -1384,7 +1384,7 @@ void ProjectState::start_async_mirror() {
                     }
                 }
             }
-            // New One Shots are primed by owned file tasks; reused cues keep their live buffers.
+            // New QuickPlays are primed by owned file tasks; reused cues keep their live buffers.
         } catch (const std::exception& e) {
             Logger::error("async mirror threw: {}", e.what());
         }
@@ -1490,26 +1490,26 @@ json ProjectState::default_empty_document() {
     // session looks identical to what `createNewProject` would have produced
     // on the client side. Field names are camelCase to match the client.
     return json{
-        {"name",          "Untitled"},
-        {"version",       "2.0.0"},
-        {"folderPath",    ""},
-        {"items",         json::array()},
-        {"cartItems",     json::array()},
-        {"cartSlotKeys",  json::object()},
-        {"playbackKeys",  json::object()},
-        {"cartOnlyItems", json::array()},
-        {"theme",         json{{"mode", "dark"}, {"accentColor", "#315FCF"}}},
-        {"settings",      json{
+        {"name",              "Untitled"},
+        {"version",           "2.0.0"},
+        {"folderPath",        ""},
+        {"items",             json::array()},
+        {"quickPlaySlots",    json::array()},
+        {"quickPlaySlotKeys", json::object()},
+        {"playbackKeys",      json::object()},
+        {"quickPlayItems",    json::array()},
+        {"theme",             json{{"mode", "dark"}, {"accentColor", "#315FCF"}}},
+        {"settings",          json{
             {"defaultOutputDevice", nullptr},
             {"previewDevice",       nullptr},
             {"ltcDevice",           nullptr},
             {"outputTarget",        "live"},
             {"meterMode",           "dBFS"},
-            {"cartSlotCount",       16},
+            {"quickPlaySlotCount",  16},
             {"cycleTrackColors",            true},
         }},
-        {"createdAt",     ""},
-        {"lastModified",  ""},
+        {"createdAt",         ""},
+        {"lastModified",      ""},
     };
 }
 
@@ -1535,10 +1535,10 @@ void ProjectState::for_each_item(json& doc,
     if (doc.contains("items") && doc["items"].is_array()) {
         walk(doc["items"], "");
     }
-    // cartOnlyItems are flat (no groups inside) but use the same walker for
+    // quickPlayItems are flat (no groups inside) but use the same walker for
     // consistency.
-    if (doc.contains("cartOnlyItems") && doc["cartOnlyItems"].is_array()) {
-        for (auto& it : doc["cartOnlyItems"]) {
+    if (doc.contains("quickPlayItems") && doc["quickPlayItems"].is_array()) {
+        for (auto& it : doc["quickPlayItems"]) {
             if (it.is_object()) visit(it, "");
         }
     }
@@ -2503,7 +2503,7 @@ json ProjectState::full_document() const {
     std::lock_guard lock{mutex_};
     json out = document_;
     if (out.contains("items"))         annotate_items_with_cue_ids(out["items"],         item_uuid_to_cue_);
-    if (out.contains("cartOnlyItems")) annotate_items_with_cue_ids(out["cartOnlyItems"], item_uuid_to_cue_);
+    if (out.contains("quickPlayItems")) annotate_items_with_cue_ids(out["quickPlayItems"], item_uuid_to_cue_);
     // Inject computed output-target levels so the client never needs to
     // hardcode platform loudness values.
     if (!out.contains("settings") || !out["settings"].is_object())
@@ -2577,12 +2577,12 @@ json ProjectState::audio_readiness() const {
 
 json ProjectState::header_document() const {
     std::lock_guard lock{mutex_};
-    // Cart-only items carry waveform data is already lazy, but the array
+    // QuickPlay items carry waveform data is already lazy, but the array
     // itself is small relative to the full playlist. We DO include it
-    // because the cart slots reference these items and the workspace
-    // can't paint cart buttons without them.
-    json cart_only = document_.value("cartOnlyItems", json::array());
-    annotate_items_with_cue_ids(cart_only, item_uuid_to_cue_);
+    // because the QuickPlay slots reference these items and the workspace
+    // can't paint QuickPlay buttons without them.
+    json quick_play_items = document_.value("quickPlayItems", json::array());
+    annotate_items_with_cue_ids(quick_play_items, item_uuid_to_cue_);
 
     const auto& items = document_.value("items", json::array());
     const std::size_t item_count = items.is_array() ? items.size() : 0;
@@ -2600,10 +2600,10 @@ json ProjectState::header_document() const {
         {"lastModified", read_last_modified(document_)},
         {"theme",        document_.value("theme",         json::object())},
         {"settings",     std::move(settings_out)},
-        {"cartItems",    document_.value("cartItems",     json::array())},
-        {"cartSlotKeys", document_.value("cartSlotKeys",  json::object())},
+        {"quickPlaySlots", document_.value("quickPlaySlots", json::array())},
+        {"quickPlaySlotKeys", document_.value("quickPlaySlotKeys", json::object())},
         {"playbackKeys", document_.value("playbackKeys",  json::object())},
-        {"cartOnlyItems", std::move(cart_only)},
+        {"quickPlayItems", std::move(quick_play_items)},
         {"itemCount",    item_count},
         {"needsRepair", pending_repair_info_.repaired},
         {"repairIssues", pending_repair_info_.issues},
@@ -2656,8 +2656,8 @@ bool ProjectState::replace_full_document(const json& doc, bool new_session) {
         return false;
     }
     json migrated = std::move(prepared.document);
-    if (prepared.cart_migrated)
-        Logger::info("ProjectState: migrated legacy Cart data to One Shots.");
+    if (prepared.quick_play_migrated)
+        Logger::info("ProjectState: migrated legacy slot data to independent QuickPlays.");
     std::lock_guard operation_lock{project_operation_mutex_};
     {
     std::scoped_lock preparation_lock{playback_preparation_mutex_, preview_preparation_mutex_};
@@ -2775,7 +2775,7 @@ void ProjectState::publish_crash_resume_state() {
 // the engine.
 // ---------------------------------------------------------------------------
 audio::CueId ProjectState::add_item(const json& item, const std::string& parent_uuid,
-                                    bool cart_only) {
+                                    bool quick_play_only) {
     if (!item.is_object()) return {};
     const std::string uuid = item.value("uuid", std::string{});
     if (uuid.empty()) return {};
@@ -2796,15 +2796,15 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
         }
 
         float parent_gain = 1.0f;
-        if (cart_only) {
-            // Cart-bound cue: lives in the separate cartOnlyItems array so it
-            // is mirrored to the engine (cart hotkeys can trigger it) without
+        if (quick_play_only) {
+            // QuickPlay cue: lives in the separate quickPlayItems array so it
+            // is mirrored to the engine (QuickPlay hotkeys can trigger it) without
             // ever appearing in the playlist tree.
-            if (!document_.contains("cartOnlyItems") ||
-                !document_["cartOnlyItems"].is_array()) {
-                document_["cartOnlyItems"] = json::array();
+            if (!document_.contains("quickPlayItems") ||
+                !document_["quickPlayItems"].is_array()) {
+                document_["quickPlayItems"] = json::array();
             }
-            document_["cartOnlyItems"].push_back(item);
+            document_["quickPlayItems"].push_back(item);
         } else if (parent_uuid.empty()) {
             if (!document_.contains("items") || !document_["items"].is_array()) {
                 document_["items"] = json::array();
@@ -2835,7 +2835,7 @@ audio::CueId ProjectState::add_item(const json& item, const std::string& parent_
         // Queue this import and its children. The mirror owns existing items,
         // and retrying one of them here can put a stalled path ahead of the import.
         json inserted{{"items", json::array({item})}};
-        if (!cart_only) cache_group_gains_locked(inserted["items"], parent_gain);
+        if (!quick_play_only) cache_group_gains_locked(inserted["items"], parent_gain);
         for_each_item(inserted, [&](json& it, const std::string&) {
             if (it.value("type", std::string{}) != "audio") return;
             const std::string u = it.value("uuid", std::string{});
@@ -3179,12 +3179,12 @@ bool ProjectState::remove_item(const std::string& uuid) {
         if (document_.contains("items")) {
             removed = erase_from(document_["items"]);
         }
-        if (!removed && document_.contains("cartOnlyItems")) {
-            removed = erase_from(document_["cartOnlyItems"]);
+        if (!removed && document_.contains("quickPlayItems")) {
+            removed = erase_from(document_["quickPlayItems"]);
         }
-        // Clean up cart bindings that reference this uuid.
-        if (document_.contains("cartItems") && document_["cartItems"].is_array()) {
-            auto& arr = document_["cartItems"];
+        // Clean up QuickPlay slot bindings that reference this uuid.
+        if (document_.contains("quickPlaySlots") && document_["quickPlaySlots"].is_array()) {
+            auto& arr = document_["quickPlaySlots"];
             arr.erase(std::remove_if(arr.begin(), arr.end(),
                                      [&](const json& c){
                                          return c.value("itemUuid", std::string{}) == uuid;
@@ -3734,7 +3734,7 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
     std::vector<int> start_behavior_target_index;
     std::string  end_behavior_action;
     std::string  end_behavior_target_uuid;
-    bool         one_shot = false;
+    bool         quick_play = false;
     std::vector<int> end_behavior_target_index;
     audio::CueId target_cue;
     json item_snapshot;
@@ -3763,11 +3763,11 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
             }
         };
         if (doc.contains("items"))              walk(doc["items"]);
-        if (!found && doc.contains("cartOnlyItems")) walk(doc["cartOnlyItems"]);
+        if (!found && doc.contains("quickPlayItems")) walk(doc["quickPlayItems"]);
 
         if (found) {
             item_snapshot = *found;
-            one_shot      = is_one_shot_cue(*found);
+            quick_play    = is_quick_play_cue(*found);
             in_point      = json_get_or(*found, "inPoint",         0.0);
             out_point     = json_get_or(*found, "outPoint",         0.0);
             fade_out_dur  = json_get_or(*found, "fadeOutDuration",  1.0);
@@ -4088,7 +4088,7 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
         si.ducked        = std::move(ducks_made);
         si.duck_release_sec = duck_release_sec;
         si.custom_actions = std::move(custom_actions_snapshot);
-        si.one_shot = one_shot;
+        si.quick_play = quick_play;
         if (recovering) {
             for (auto& action : si.custom_actions)
                 action.triggered = action.time_point <= play_start;
@@ -4120,14 +4120,14 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
     // the one we just started) instead of showing the item armed before the
     // operator jumped. An arming the OPERATOR made is left alone: they chose it
     // deliberately and GO must still honour it.
-    // Cart-only items are excluded: firing an SFX pad is not "moving the
+    // QuickPlay items are excluded: firing an SFX pad is not "moving the
     // playlist", and blanking the arming there would leave GO with nothing to
     // fire until the next cue ended.
     {
         bool stale = false;
         {
             std::lock_guard lock{mutex_};
-            if (!one_shot && !next_item_override_.empty() &&
+            if (!quick_play && !next_item_override_.empty() &&
                 !next_item_override_manual_ &&
                 next_item_override_ != uuid) {
                 std::function<bool(const json&)> in_playlist = [&](const json& arr) -> bool {
@@ -4235,7 +4235,7 @@ bool ProjectState::cue_to_continue(const std::string& uuid,
     {
         std::lock_guard lock{mutex_};
         for_each_item(document_, [&](json& item, const std::string&) {
-            if (item.value("uuid", std::string{}) == uuid) quick_play = is_one_shot_cue(item);
+            if (item.value("uuid", std::string{}) == uuid) quick_play = is_quick_play_cue(item);
         });
         if (!quick_play) target_uuid = resolve_loop_continuation_target_locked(uuid);
     }
@@ -4336,7 +4336,7 @@ bool ProjectState::set_cue_follow(const std::string& uuid, bool follow,
         std::lock_guard lock{mutex_};
         for_each_item(document_, [&](json& item, const std::string&) {
             if (item.value("uuid", std::string{}) != uuid) return;
-            authored_follow = is_one_shot_cue(item) && item.contains("endBehavior") &&
+            authored_follow = is_quick_play_cue(item) && item.contains("endBehavior") &&
                 item["endBehavior"].is_object() &&
                 item["endBehavior"].value("action", std::string{}) == "next";
             in_point = json_get_or(item, "inPoint", 0.0);
@@ -4413,18 +4413,18 @@ bool ProjectState::set_cue_follow(const std::string& uuid, bool follow,
     return false;
 }
 
-std::optional<std::string> ProjectState::one_shot_advance_target(const std::string& source_uuid) {
+std::optional<std::string> ProjectState::quick_play_advance_target(const std::string& source_uuid) {
     {
-        bool one_shot = false;
+        bool quick_play = false;
         std::string action;
         std::lock_guard lock{mutex_};
         for_each_item(document_, [&](json& item, const std::string&) {
             if (item.value("uuid", std::string{}) != source_uuid) return;
-            one_shot = is_one_shot_cue(item);
+            quick_play = is_quick_play_cue(item);
             if (item.contains("endBehavior") && item["endBehavior"].is_object())
                 action = item["endBehavior"].value("action", std::string{});
         });
-        if (!one_shot) return std::nullopt;
+        if (!quick_play) return std::nullopt;
         // Go to Item / Go to Index keep their authored target. Loop, Nothing
         // and anything unrecognised resolve to no follow at all.
         if (action != "next") return resolve_next_item_locked(source_uuid);
@@ -4661,7 +4661,7 @@ json ProjectState::state_summary() const {
         double           duration  = 0.0;  // full-file seconds (0 = unknown)
         double           in_point  = 0.0;
         double           out_point = 0.0;  // 0 = play to end
-        std::vector<int> index;            // playlist index path; empty for cart-only items
+        std::vector<int> index;            // playlist index path; empty for QuickPlay items
     };
     std::unordered_map<std::string, ItemFacts> facts;
     // uuid → (cue, duration from decode metadata)
@@ -4672,7 +4672,7 @@ json ProjectState::state_summary() const {
     std::string locale_now;
     std::unordered_map<std::string, long long> trigger_seq;
     json project_block;
-    json cart_bindings = json::array();
+    json slot_bindings = json::array();
 
     {
         std::lock_guard lock{mutex_};
@@ -4718,10 +4718,10 @@ json ProjectState::state_summary() const {
         std::vector<int> path;
         if (document_.contains("items")) walk(document_["items"], path);
 
-        // Cart-only items live outside the playlist tree — record their names
-        // so cart bindings resolve, but with no index path.
-        if (document_.contains("cartOnlyItems") && document_["cartOnlyItems"].is_array()) {
-            for (const auto& it : document_["cartOnlyItems"]) {
+        // QuickPlay items live outside the playlist tree — record their names
+        // so slot bindings resolve, but with no index path.
+        if (document_.contains("quickPlayItems") && document_["quickPlayItems"].is_array()) {
+            for (const auto& it : document_["quickPlayItems"]) {
                 if (!it.is_object()) continue;
                 const std::string uuid = it.value("uuid", std::string{});
                 if (uuid.empty() || facts.count(uuid)) continue;
@@ -4750,9 +4750,9 @@ json ProjectState::state_summary() const {
         locale_now    = ui_locale_;
         trigger_seq   = item_trigger_seq_;
 
-        if (document_.contains("cartItems") && document_["cartItems"].is_array()) {
-            for (const auto& c : document_["cartItems"]) {
-                if (c.is_object()) cart_bindings.push_back(c);
+        if (document_.contains("quickPlaySlots") && document_["quickPlaySlots"].is_array()) {
+            for (const auto& c : document_["quickPlaySlots"]) {
+                if (c.is_object()) slot_bindings.push_back(c);
             }
         }
     }
@@ -4773,7 +4773,7 @@ json ProjectState::state_summary() const {
         if (s.transport == audio::TransportState::Stopped) continue;
         on_air.push_back(OnAir{uuid, cue.value, s.transport, s.playhead_seconds, duration});
     }
-    // Document order (index path, lexicographic); cart-only items last.
+    // Document order (index path, lexicographic); QuickPlay items last.
     std::sort(on_air.begin(), on_air.end(), [&](const OnAir& a, const OnAir& b) {
         const auto& ia = facts[a.uuid].index;
         const auto& ib = facts[b.uuid].index;
@@ -4818,7 +4818,7 @@ json ProjectState::state_summary() const {
     if (next_uuid.empty() && !on_air.empty()) {
         std::lock_guard lock{mutex_};
         for (const auto& e : on_air) {
-            if (facts[e.uuid].index.empty()) continue; // Cart-only cues have no playlist successor.
+            if (facts[e.uuid].index.empty()) continue; // QuickPlay cues have no playlist successor.
             const auto n = resolve_next_item_locked(e.uuid, /*manual_go=*/true);
             if (!n.empty()) { next_uuid = n; next_source = "auto"; break; }
         }
@@ -4850,9 +4850,9 @@ json ProjectState::state_summary() const {
                                          [&](const OnAir& e){ return e.uuid == selected_uuid; });
     }
 
-    // Cart bindings, decorated with the bound item's name, colour + live state.
-    json cart = json::array();
-    for (const auto& c : cart_bindings) {
+    // QuickPlay slot bindings, decorated with the bound item's name, colour + live state.
+    json quick_plays = json::array();
+    for (const auto& c : slot_bindings) {
         const int slot = c.value("slot", -1);
         const std::string uuid = c.value("itemUuid", std::string{});
         if (slot < 0 || uuid.empty()) continue;
@@ -4863,7 +4863,7 @@ json ProjectState::state_summary() const {
         }
         entry["playing"] = std::any_of(on_air.begin(), on_air.end(),
                                        [&](const OnAir& e){ return e.uuid == uuid; });
-        cart.push_back(std::move(entry));
+        quick_plays.push_back(std::move(entry));
     }
 
     return json{
@@ -4879,7 +4879,7 @@ json ProjectState::state_summary() const {
             {"gainDb",         engine_.master_gain_db()},
             {"limiterEnabled", engine_.limiter_enabled()},
         }},
-        {"cart",    std::move(cart)},
+        {"quickPlays", std::move(quick_plays)},
         {"preview", json{
             {"active",   !current_preview_item_uuid().empty()},
             {"itemUuid", current_preview_item_uuid()},
@@ -4901,11 +4901,11 @@ std::string ProjectState::go(std::optional<std::uint64_t> expected_stop_revision
     return target;
 }
 
-std::string ProjectState::cart_slot_item_uuid(int slot) const {
+std::string ProjectState::quick_play_slot_item_uuid(int slot) const {
     std::lock_guard lock{mutex_};
-    if (!document_.contains("cartItems") || !document_["cartItems"].is_array())
+    if (!document_.contains("quickPlaySlots") || !document_["quickPlaySlots"].is_array())
         return {};
-    for (const auto& c : document_["cartItems"]) {
+    for (const auto& c : document_["quickPlaySlots"]) {
         if (c.is_object() && c.value("slot", -1) == slot)
             return c.value("itemUuid", std::string{});
     }
@@ -4966,7 +4966,7 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
             }
         };
         if (doc.contains("items"))              walk(doc["items"]);
-        if (!found && doc.contains("cartOnlyItems")) walk(doc["cartOnlyItems"]);
+        if (!found && doc.contains("quickPlayItems")) walk(doc["quickPlayItems"]);
         if (!found) return false;
 
         type = found->value("type", std::string{});
@@ -5627,15 +5627,15 @@ audio::CueId ProjectState::current_preview_cue_id() const {
 }
 
 // ---------------------------------------------------------------------------
-// Cart slot bindings
+// QuickPlay slot bindings
 // ---------------------------------------------------------------------------
-bool ProjectState::set_cart_slot(int slot, const std::string& item_uuid) {
+bool ProjectState::set_quick_play_slot(int slot, const std::string& item_uuid) {
     if (slot < 0 || slot >= 64) return false;
     std::lock_guard lock{mutex_};
-    if (!document_.contains("cartItems") || !document_["cartItems"].is_array()) {
-        document_["cartItems"] = json::array();
+    if (!document_.contains("quickPlaySlots") || !document_["quickPlaySlots"].is_array()) {
+        document_["quickPlaySlots"] = json::array();
     }
-    auto& arr = document_["cartItems"];
+    auto& arr = document_["quickPlaySlots"];
     // Remove any existing binding for this slot.
     arr.erase(std::remove_if(arr.begin(), arr.end(),
                              [&](const json& c){
@@ -5650,12 +5650,12 @@ bool ProjectState::set_cart_slot(int slot, const std::string& item_uuid) {
     return true;
 }
 
-bool ProjectState::clear_cart_slot(int slot) {
+bool ProjectState::clear_quick_play_slot(int slot) {
     std::lock_guard lock{mutex_};
-    if (!document_.contains("cartItems") || !document_["cartItems"].is_array()) {
+    if (!document_.contains("quickPlaySlots") || !document_["quickPlaySlots"].is_array()) {
         return false;
     }
-    auto& arr = document_["cartItems"];
+    auto& arr = document_["quickPlaySlots"];
     const auto before = arr.size();
     arr.erase(std::remove_if(arr.begin(), arr.end(),
                              [&](const json& c){
@@ -5689,7 +5689,7 @@ bool ProjectState::patch_settings(
         const double db = ceiling->get<double>();
         if (!std::isfinite(db) || db < -60.0 || db > 0.0) return false;
     }
-    if (auto count = patch.find("cartSlotCount");
+    if (auto count = patch.find("quickPlaySlotCount");
         count != patch.end() && !count->is_null()) {
         if (!count->is_number_integer()) return false;
         const auto slots = count->get<std::int64_t>();
@@ -5854,7 +5854,7 @@ json ProjectState::upgrade_legacy_document(const json& legacy) const {
         out["cues"].push_back(std::move(c));
     };
     if (legacy.contains("carts") && legacy["carts"].is_array()) {
-        for (auto& cart : legacy["carts"]) add_cue(cart);
+        for (auto& it : legacy["carts"]) add_cue(it);
     }
     if (legacy.contains("playlist") && legacy["playlist"].is_array()) {
         for (auto& it : legacy["playlist"]) add_cue(it);
@@ -6035,8 +6035,8 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
         item_trigger_seq_.clear();
     }
     if (client_document) {
-        if (client_document->cart_migrated)
-            Logger::info("ProjectState: migrated legacy Cart data to One Shots.");
+        if (client_document->quick_play_migrated)
+            Logger::info("ProjectState: migrated legacy slot data to independent QuickPlays.");
         RepairInfo repair{
             client_document->repair.repaired,
             client_document->repair.issues,
@@ -6392,7 +6392,7 @@ void ProjectState::sequencer_loop() {
                                                                   : remaining - si.crossfade_sec;
                 // A QuickPlay never pre-arms the playlist cue it will follow into:
                 // GO and Up Next stay entirely the operator's until it ends.
-                if (!si.one_shot && !si.follow_suppressed &&
+                if (!si.quick_play && !si.follow_suppressed &&
                     !si.continue_armed && !si.advance_triggered && !si.start_next_triggered && remaining > 0.0 &&
                     until_next <= kPrepareFollowSec &&
                     (si.end_action == "next" ||
@@ -6955,7 +6955,7 @@ void ProjectState::release_duck_owners(const SequencedItem& item) {
 }
 
 std::string ProjectState::resolve_advance_target(const std::string& source_uuid, bool manual_override_only) {
-    if (auto quick_play_target = one_shot_advance_target(source_uuid)) return *quick_play_target;
+    if (auto quick_play_target = quick_play_advance_target(source_uuid)) return *quick_play_target;
     std::lock_guard lock{mutex_};
     return !next_item_for_go_only_ && !next_item_override_.empty() &&
         (!manual_override_only || next_item_override_manual_)
@@ -6974,7 +6974,7 @@ std::string ProjectState::music_backup_for(const std::string& source_uuid) {
             const auto uuid = json_get_or(item, "uuid", std::string{});
             if (uuid == source_uuid) {
                 const auto* scope = group ? &item : parent;
-                if (scope && !is_one_shot_cue(item) && json_get_or(*scope, "keepMusicGoing", false)) {
+                if (scope && !is_quick_play_cue(item) && json_get_or(*scope, "keepMusicGoing", false)) {
                     backup = json_get_or(*scope, "backupMusicGroup", std::string{});
                     if (backup.empty() && settings != document_.end())
                         backup = json_get_or(*settings, "backupMusicGroup", std::string{});
@@ -7080,7 +7080,7 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
         // QuickPlay ending on Play Next would have nowhere to hand over to.
         std::vector<audio::CueId> quick_play_cues;
         for_each_item(document_, [&](json& item, const std::string&) {
-            if (!is_one_shot_cue(item)) return;
+            if (!is_quick_play_cue(item)) return;
             const auto cue = item_uuid_to_cue_.find(item.value("uuid", std::string{}));
             if (cue != item_uuid_to_cue_.end()) quick_play_cues.push_back(cue->second);
         });
@@ -7120,9 +7120,9 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
             walk(document_["items"], p);
         }
         if (!found) return;
-        // A One Shot is an anytime trigger. Stopping or finishing it must not
+        // A QuickPlay is an anytime trigger. Stopping or finishing it must not
         // advance, replace, or otherwise disturb the Program Up Next pointer.
-        if (is_one_shot_cue(*found)) return;
+        if (is_quick_play_cue(*found)) return;
         // Only the "nothing" end behaviour is armed here — every other action
         // is auto-advanced by the sequencer itself.
         std::string action = "nothing";

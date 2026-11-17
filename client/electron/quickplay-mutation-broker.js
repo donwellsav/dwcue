@@ -101,8 +101,8 @@ function usable(contents) {
   return !!contents && (typeof contents.isDestroyed !== 'function' || !contents.isDestroyed());
 }
 
-function createOneShotMutationBroker({
-  getCartWebContents,
+function createQuickPlayMutationBroker({
+  getQuickPlayWebContents,
   getPrimaryWebContents,
   getCurrentIdentity,
   timeoutMs = 5000,
@@ -129,7 +129,7 @@ function createOneShotMutationBroker({
 
   function request(sender, rawRequest) {
     const request = validateRequest(rawRequest);
-    if (sender !== getCartWebContents()) throw new Error('IPC request rejected: sender is not the detached QuickPlays window');
+    if (sender !== getQuickPlayWebContents()) throw new Error('IPC request rejected: sender is not the detached QuickPlays window');
     if (!sameIdentity(request.identity, getCurrentIdentity())) {
       return Promise.resolve(unavailableResult(request, 'Project ownership changed'));
     }
@@ -144,7 +144,7 @@ function createOneShotMutationBroker({
       watch(entry, sender, 'Detached QuickPlays window');
       watch(entry, primary, 'Primary project owner');
       try {
-        primary.send('one-shot-mutation-request', request);
+        primary.send('quickplay-mutation-request', request);
       } catch {
         settle(entry, unavailableResult(request, 'Primary project owner is unavailable'));
       }
@@ -167,7 +167,7 @@ function createOneShotMutationBroker({
 }
 
 module.exports = {
-  createOneShotMutationBroker,
+  createQuickPlayMutationBroker,
   sameIdentity,
   validateIdentity,
   validateRequest,

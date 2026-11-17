@@ -16,7 +16,7 @@ let exporting = false;
 // main process asks where to save it and writes the file.
 export function useCueSheetExport() {
   const { currentProject, indexDisplayStart } = useProject();
-  const { cartOnlyItems } = useCartItems();
+  const { quickPlayItems } = useQuickPlayItems();
   const { t } = useLocalization();
   const { showHeaderWarning } = useHeaderWarnings();
 
@@ -44,7 +44,7 @@ export function useCueSheetExport() {
       const payload: CueSheetPayload = {
         showName: project.name ?? '',
         indexStart: indexDisplayStart.value,
-        ...cueSheetContents(project.items ?? [], Array.from(cartOnlyItems.value.values())),
+        ...cueSheetContents(project.items ?? [], Array.from(quickPlayItems.value.values())),
         labels,
       };
       const result = await window.electronAPI.exportCueSheet(payload);

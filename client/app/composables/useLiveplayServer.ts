@@ -22,8 +22,9 @@
 //   watch(server.connected, ...);        // react to connection state
 // =====================================================================
 import { reactive, ref, shallowRef, computed } from 'vue';
-import { sameOneShotMutationIdentity, type OneShotMutationIdentity } from '../types/oneShotMutation';
+import { sameQuickPlayMutationIdentity, type QuickPlayMutationIdentity } from '../types/quickPlayMutation';
 import type { HeaderWarning } from '../utils/headerWarnings';
+import { convertLegacyQuickPlayNames } from '../utils/legacyQuickPlayNames';
 import type {
   CueId,
   DeviceId,
@@ -57,7 +58,7 @@ function createClient() {
   const projectSessionId = useState<string>('useProject.serverSessionId', () => '');
   const projectLoad = useState<'create' | 'open' | null>('useProject.projectLoad', () => null);
   const sessionLost = useState<boolean>('connectionGuard.sessionLost', () => false);
-  const detachedProjectForImport = useState<OneShotMutationIdentity | null>('oneShots.detachedProjectIdentity', () => null);
+  const detachedProjectForImport = useState<QuickPlayMutationIdentity | null>('quickPlays.detachedProjectIdentity', () => null);
   // ---- Server URL config (persisted via localStorage) ---------------
   const defaultUrl = (typeof window !== 'undefined' &&
                       window.localStorage?.getItem('liveplay.serverUrl')) ||
@@ -642,7 +643,7 @@ function createClient() {
     try {
       const headers = new Headers(init?.headers);
       const resource = path.split('?')[0];
-      const projectScoped = resource.startsWith('/api/project/items') || resource.startsWith('/api/project/cart')
+      const projectScoped = resource.startsWith('/api/project/items') || resource.startsWith('/api/project/quickplay')
         || ['/api/project/save', '/api/project/document', '/api/project/theme', '/api/project/settings',
           '/api/project/repair', '/api/project/close', '/api/project/load',
           '/api/waveform_generate'].includes(resource);
@@ -701,16 +702,19 @@ function createClient() {
   async function fetchDevices() {
     devices.value = await rest<ServerDeviceInfo[]>('/api/devices');
   }
+  // Every show document the engine hands over (whole, header or a page of
+  // items) passes through convertLegacyQuickPlayNames here, so an engine that
+  // still says the names from before QuickPlay was renamed is understood.
   async function fetchProject(signal?: AbortSignal) {
-    return rest<any>('/api/project', {
+    return convertLegacyQuickPlayNames(await rest<any>('/api/project', {
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
-    });
+    }));
   }
   // Lightweight header — everything except the items tree. Used by the
   // "open project" flow so the workspace shell paints before the items
   // array has even started downloading.
   async function fetchProjectHeader(signal?: AbortSignal) {
-    return rest<{
+    return convertLegacyQuickPlayNames(await rest<{
       name: string;
       version: string;
       folderPath: string;
@@ -718,10 +722,10 @@ function createClient() {
       lastModified: string;
       theme: any;
       settings: any;
-      cartItems: any[];
-      cartSlotKeys: any;
+      quickPlaySlots: any[];
+      quickPlaySlotKeys: any;
       playbackKeys: any;
-      cartOnlyItems: any[];
+      quickPlayItems: any[];
       itemCount: number;
       hasOpenProject: boolean;
       server: { projectFilePath: string; projectSessionId: string; mediaRoot: string;
@@ -729,17 +733,17 @@ function createClient() {
                 audioReadiness?: ServerAudioReadiness };
     }>('/api/project/header', {
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
-    });
+    }));
   }
   // Paged items. Caller drives the loop; we keep this stateless so it
   // composes with the open-project streaming logic in useProject.
   async function fetchProjectItemsPage(offset = 0, limit = 100, signal?: AbortSignal, expectedSessionId?: string) {
-    return rest<{
+    return convertLegacyQuickPlayNames(await rest<{
       offset: number; limit: number; total: number; items: any[];
     }>(`/api/project/items?offset=${offset}&limit=${limit}`, {
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : undefined,
       headers: expectedSessionId === undefined ? undefined : { 'X-DWCUE-Project-Session': expectedSessionId },
-    });
+    }));
   }
   async function fetchProjectProgress(signal?: AbortSignal) {
     return rest<ServerAudioReadiness>('/api/project/progress', { signal });
@@ -873,7 +877,7 @@ function createClient() {
   // Package a project folder server-side into a canonical .dwcuepack archive.
   //  * outputPath set → archive written there on the server; no download token.
   //  * outputPath empty → archive staged in server temp dir; response carries
-  //    a one-shot download token streamed directly to a local file.
+  //    a single-use download token streamed directly to a local file.
   async function exportProjectArchive(folderPath: string, projectName?: string,
                                       outputPath?: string, expectedSessionId?: string) {
     return rest<{
@@ -983,13 +987,13 @@ function createClient() {
   }
 
   // ---- Item CRUD (server is the source of truth for project state) ----
-  // `cartOnly` routes the item into the server document's separate
-  // cartOnlyItems array (cart slots), not the playlist tree — keeping the two
+  // `quickPlayOnly` routes the item into the server document's separate
+  // quickPlayItems array (QuickPlay slots), not the playlist tree — keeping the two
   // lists distinct while still registering the cue with the engine.
-  async function addProjectItem(item: any, parentUuid: string = '', cartOnly: boolean = false) {
+  async function addProjectItem(item: any, parentUuid: string = '', quickPlayOnly: boolean = false) {
     return rest<any>('/api/project/items', {
       method: 'POST',
-      body: JSON.stringify({ item, parentUuid, cartOnly }),
+      body: JSON.stringify({ item, parentUuid, quickPlayOnly }),
     }).then(p => { fetchCues(); return p; });
   }
   async function updateProjectItem(uuid: string, patch: any, clientMutationId: string, expectedSessionId?: string) {
@@ -1087,15 +1091,15 @@ function createClient() {
     });
   }
 
-  // Cart slot bindings.
-  async function setCartSlot(slot: number, itemUuid: string) {
-    return rest<any>('/api/project/cart', {
+  // QuickPlay slot bindings.
+  async function setQuickPlaySlot(slot: number, itemUuid: string) {
+    return rest<any>('/api/project/quickplay', {
       method: 'POST',
       body: JSON.stringify({ slot, itemUuid }),
     });
   }
-  async function clearCartSlot(slot: number) {
-    return rest<any>(`/api/project/cart/${slot}`, { method: 'DELETE' });
+  async function clearQuickPlaySlot(slot: number) {
+    return rest<any>(`/api/project/quickplay/${slot}`, { method: 'DELETE' });
   }
 
   // Preview (DJ-style pre-listening on settings.previewDevice).
@@ -1467,7 +1471,7 @@ function createClient() {
     const projectPath = projectPathForImport.value;
     const detached = detachedProjectForImport.value ? { ...detachedProjectForImport.value } : null;
     const isCurrent = () => detached
-      ? sameOneShotMutationIdentity(detachedProjectForImport.value, detached)
+      ? sameQuickPlayMutationIdentity(detachedProjectForImport.value, detached)
       : currentProjectForImport.value === project && projectPathForImport.value === projectPath;
     const osPath = (import.meta.client && (window as any).electronAPI?.getFilePath)
       ? (window as any).electronAPI.getFilePath(file)
@@ -1642,9 +1646,9 @@ function createClient() {
     outputChannelGains,
     setOutputChannelGainDb,
 
-    // cart bindings
-    setCartSlot,
-    clearCartSlot,
+    // QuickPlay bindings
+    setQuickPlaySlot,
+    clearQuickPlaySlot,
 
     // theme + settings
     patchTheme,

@@ -545,7 +545,7 @@ The detached QuickPlays window has no Properties panel. There the gear opens a c
 
 Choice lists expand inside the panel. The playlist and **GO** stay available in the main window. With a choice list open, **Escape** runs Stop All even if the shortcut was remapped. The detached settings header also has its own **Stop All** button. Both stop actions leave the choices open.
 
-![The compact QuickPlay Settings panel of the detached window, with playback, retrigger, ending, gain and fade controls, and its own Stop All.](manual-assets/one-shot-settings-current.png)
+![The compact QuickPlay Settings panel of the detached window, with playback, retrigger, ending, gain and fade controls, and its own Stop All.](manual-assets/quickplay-settings-current.png)
 
 | Setting | Operator decision |
 | --- | --- |
@@ -572,7 +572,7 @@ The toggle belongs to the play in progress and is never saved. While the QuickPl
 
 A playlist cue that ends while a QuickPlay is still playing over it queues the following cue as Up Next as usual, so the QuickPlay has a cue to hand over to.
 
-![QuickPlay 11 in Show Mode with its Play button and Shift+1 shortcut.](manual-assets/one-shot-show-mode.png)
+![QuickPlay 11 in Show Mode with its Play button and Shift+1 shortcut.](manual-assets/quickplay-show-mode.png)
 
 **Procedure — rehearse a QuickPlay**
 
@@ -810,6 +810,8 @@ A failed autosave or manual save leaves **Save failed** and **Retry** in the hea
 - If saving still fails, preserve the running session and use a writable destination without overwriting a known-good show.
 
 Saves run in order. Each captures one document and destination, then writes through a sibling temporary file before atomically replacing the saved show. Slow storage can delay a save or another save behind it. GO and Stop All remain available while the write waits. A failed Save As leaves the active path unchanged. If another controller switches shows during a write, the old save cannot change the new show's path or clear its pending edits. Wait for a save to finish before opening the file you just saved.
+
+**Shows and earlier versions.** Shows saved by earlier versions open here with nothing lost, and are saved in the current form from then on. An earlier version of DonWells Cue opens a show saved by this version with its playlist, but without its QuickPlays. The QuickPlays stay in the file, and they return when the show is opened in this version again. Keep every computer that will open the show on the same version.
 
 ### Show backups
 

@@ -1,12 +1,12 @@
-import type { AudioItem, CartSlotKeyBinding } from './project';
+import type { AudioItem, QuickPlaySlotKeyBinding } from './project';
 
-export interface OneShotMutationIdentity {
+export interface QuickPlayMutationIdentity {
   projectPath: string;
   projectEpoch: number;
   ownerSessionId: string;
 }
 
-export type OneShotMutableFields = {
+export type QuickPlayMutableFields = {
   displayName?: string;
   color?: string;
   volume?: number;
@@ -17,47 +17,47 @@ export type OneShotMutableFields = {
   duckFadeOut?: number;
   deviceOverride?: string | null;
   retrigger?: 'restart' | 'ignore';
-  hotkey?: CartSlotKeyBinding | null;
+  hotkey?: QuickPlaySlotKeyBinding | null;
   playbackMode?: 'overlay' | 'duck' | 'replace';
   endMode?: 'stop' | 'loop' | 'next';
 };
 
 interface MutationBase {
   requestId: string;
-  identity: OneShotMutationIdentity;
+  identity: QuickPlayMutationIdentity;
 }
 
-export type OneShotMutationRequest = MutationBase & (
-  | { kind: 'set-fields'; itemUuid: string; payload: { fields: OneShotMutableFields } }
+export type QuickPlayMutationRequest = MutationBase & (
+  | { kind: 'set-fields'; itemUuid: string; payload: { fields: QuickPlayMutableFields } }
   | { kind: 'move-slot'; itemUuid: string; payload: { sourceSlot: number; targetSlot: number } }
   | { kind: 'remove-slot'; itemUuid: string; payload: Record<string, never> }
   | { kind: 'replace-slot'; itemUuid?: string; payload: { slot: number; item: AudioItem } }
 );
 
-export interface OneShotMutationResult {
+export interface QuickPlayMutationResult {
   requestId: string;
-  identity: OneShotMutationIdentity;
+  identity: QuickPlayMutationIdentity;
   accepted: boolean;
   persisted: boolean;
   error?: string;
 }
 
-export interface OneShotProjectEnvelope {
+export interface QuickPlayProjectEnvelope {
   project: import('./project').Project | null;
-  identity: OneShotMutationIdentity | null;
+  identity: QuickPlayMutationIdentity | null;
   projectSessionId: string | null;
 }
 
-export const sameOneShotMutationIdentity = (
-  left: OneShotMutationIdentity | null | undefined,
-  right: OneShotMutationIdentity | null | undefined,
+export const sameQuickPlayMutationIdentity = (
+  left: QuickPlayMutationIdentity | null | undefined,
+  right: QuickPlayMutationIdentity | null | undefined,
 ): boolean => !!left && !!right
   && left.projectPath === right.projectPath
   && left.projectEpoch === right.projectEpoch
   && left.ownerSessionId === right.ownerSessionId;
 
-export const isNewerOneShotProject = (
-  incoming: OneShotMutationIdentity,
-  previous: OneShotMutationIdentity | null,
+export const isNewerQuickPlayProject = (
+  incoming: QuickPlayMutationIdentity,
+  previous: QuickPlayMutationIdentity | null,
 ): boolean => !previous || incoming.ownerSessionId !== previous.ownerSessionId
   || incoming.projectEpoch > previous.projectEpoch;

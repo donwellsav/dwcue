@@ -272,9 +272,9 @@ public:
     std::optional<std::uint64_t> request_device_recovery(const DeviceId& id);
 
     // ---- Items / cues ----------------------------------------------------
-    // Create a fresh, independent PlaybackItem for `file_path`. Two carts
+    // Create a fresh, independent PlaybackItem for `file_path`. Two QuickPlays
     // loading the same file get two PlaybackItems with their own state —
-    // this is the fix for the 1.x cross-cart attenuation bug.
+    // this is the fix for the 1.x attenuation bug between cues sharing a file.
     CueId load_cue(const std::filesystem::path& file_path,
                    std::optional<CueId> requested_id = std::nullopt);
 

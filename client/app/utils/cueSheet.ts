@@ -1,6 +1,6 @@
 import type { AudioItem, GroupItem } from '../types/project';
 import type { CueSheetEndBehavior, CueSheetItem, CueSheetQuickPlay } from '../types/cueSheet';
-import { buildOneShotSlots } from './oneShots';
+import { buildQuickPlayCells } from './quickPlays';
 
 type PlaylistEntry = AudioItem | GroupItem;
 
@@ -56,7 +56,7 @@ export function cueSheetContents(
       };
 
   const quickPlays: CueSheetQuickPlay[] = [];
-  buildOneShotSlots(items, standaloneItems).forEach((item, slot) => {
+  buildQuickPlayCells(items, standaloneItems).forEach((item, slot) => {
     if (!item) return;
     quickPlays.push({
       slot: slot + 1,

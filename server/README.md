@@ -451,7 +451,7 @@ Plays an item on `settings.previewDevice` without routing through the live mixer
 | Method · Path | Body | Response | Notes |
 |---------------|------|----------|-------|
 | `GET /api/project`              | — | full project JSON document | The single GET a remote client needs to render the whole project. |
-| `GET /api/project/header`       | — | lightweight header `{ name, itemCount, theme, settings, cart, hasOpenProject, needsRepair, repairIssues, … }` | Repair details belong to the active show and remain in the header until it is saved. |
+| `GET /api/project/header`       | — | lightweight header `{ name, itemCount, theme, settings, quickPlayItems, quickPlaySlots, quickPlaySlotKeys, hasOpenProject, needsRepair, repairIssues, … }` | Repair details belong to the active show and remain in the header until it is saved. |
 | `GET /api/project/items?offset=0&limit=100` | — | `{ "offset": int, "limit": int, "total": int, "items": [...] }` | `limit` clamps to [1,1000]. Top-level items only (groups carry their children inline). |
 | `GET /api/project/progress`     | — | `{ "ready": bool, "loading": bool, "loaded": int, "total": int, "failedCount": int, "failures": [...] }` | Cheap poll for playback readiness and missing/unreadable media. |
 | `POST /api/project/load`        | `{ "path": "/abs/file.dwcue", "openDeadlineMs": 123 }` or `{ "document": { … } }` | header object, augmented with `needsRepair`/`repairIssues` if the document was auto-repaired on load | Broadcasts `project_changed` on success. The controller requests a fresh engine-clock deadline before Open. |
@@ -472,7 +472,7 @@ Mutating routes return `{ ok: true, ... }` only — the full document is **not**
 
 | Method · Path | Body | Response | Broadcast op |
 |---------------|------|----------|--------------|
-| `POST /api/project/items`              | `{ "item": { uuid, displayName, type, … }, "parentUuid": "" (root) or "<group-uuid>" }` | `{ "ok": true, "uuid": "…", "cueId": "…" }` | `item_added` |
+| `POST /api/project/items`              | `{ "item": { uuid, displayName, type, … }, "parentUuid": "" (root) or "<group-uuid>", "quickPlayOnly": bool (optional; adds the item to `quickPlayItems` instead of the playlist) }` | `{ "ok": true, "uuid": "…", "cueId": "…" }` | `item_added` |
 | `PATCH /api/project/items/<uuid>`      | partial item JSON (sparse update) | `{ "ok": true, "uuid": "…" }` · `404` if missing | `item_updated` |
 | `DELETE /api/project/items/<uuid>`     | — | `{ "ok": true, "uuid": "…" }` · `404` if missing | `item_removed` |
 | `POST /api/project/items/reorder`      | `{ "parentUuid": "" or "<group>", "uuids": [string, …] }` | `{ "ok": true }` | `items_reordered` |
@@ -485,15 +485,27 @@ Mutating routes return `{ ok: true, ... }` only — the full document is **not**
 
 Project UI settings such as `settings.indexDisplayStart` only change the numbers shown and entered in the client. REST by-index paths stay zero-based for backwards compatibility.
 
-#### QuickPlay cells (legacy cart API)
-
-The current UI calls these quick-play cells **QuickPlays**. The HTTP paths and broadcast
-event names retain `cart` for compatibility with saved projects and external clients.
+#### QuickPlay slots
 
 | Method · Path | Body | Response | Broadcast op |
 |---------------|------|----------|--------------|
-| `POST /api/project/cart`         | `{ "slot": int, "itemUuid": "<uuid>" }` | `{ "ok": true, "slot": int, "itemUuid": "…" }` | `cart_slot_set` |
-| `DELETE /api/project/cart/<int>` | — | `{ "ok": true, "slot": int }` | `cart_slot_cleared` |
+| `POST /api/project/quickplay`         | `{ "slot": int, "itemUuid": "<uuid>" }` | `{ "ok": true, "slot": int, "itemUuid": "…" }` | `quickplay_slot_set` |
+| `DELETE /api/project/quickplay/<int>` | — | `{ "ok": true, "slot": int }` | `quickplay_slot_cleared` |
+| `POST /api/transport/quickplay/<int>/play` | — | `{ "ok": true, "slot": int, "uuid": "…" }`; `404` when the slot is empty | — |
+
+A show document names this feature `quickPlayItems` (the QuickPlay cues), `quickPlaySlots`
+(slot assignments), `quickPlaySlotKeys`, `settings.quickPlaySlotCount` and, per item,
+`quickPlay` (order, retrigger, hotkey, …). `GET /api/state/summary` lists slot assignments
+under `quickPlays`.
+
+Shows saved before the rename use `cartOnlyItems`, `cartItems`, `cartSlotKeys`,
+`settings.cartSlotCount` and per-item `oneShot`. They still open: every document that enters
+the engine (open, archive import, backup restore, a document pushed by a client) is converted
+once by `convert_legacy_quick_play_names`
+([`include/liveplay/core/legacy_quick_play_names.hpp`](include/liveplay/core/legacy_quick_play_names.hpp)),
+and saving writes only the current names. The old routes `/api/project/cart…`,
+`/api/transport/cart/<int>/play`, the ops `cart_slot_set` / `cart_slot_cleared`, the
+`cartOnly` flag and the summary key `cart` no longer exist.
 
 #### Theme & settings
 
@@ -568,12 +580,12 @@ Stopped cues are omitted from `items`. Silent master channels (`peak_db <= -119 
 | `op`                            | Additional fields                                          | Emitted by |
 |---------------------------------|------------------------------------------------------------|------------|
 | `project_changed`               | (none — clients refetch)                                   | `POST /api/project/{load,close}`, `PUT /api/project/document` |
-| `item_added`                    | `uuid`, `parentUuid`, `item`, `cueId`                      | `POST /api/project/items` |
+| `item_added`                    | `uuid`, `parentUuid`, `quickPlayOnly`, `item`, `cueId`     | `POST /api/project/items` |
 | `item_updated`                  | `uuid`, `patch`                                            | `PATCH /api/project/items/<uuid>` |
 | `item_removed`                  | `uuid`                                                     | `DELETE /api/project/items/<uuid>` |
 | `items_reordered`               | `parentUuid`, `uuids` (array)                              | `POST /api/project/items/reorder` |
-| `cart_slot_set`                 | `slot`, `itemUuid`                                         | `POST /api/project/cart` |
-| `cart_slot_cleared`             | `slot`                                                     | `DELETE /api/project/cart/<slot>` |
+| `quickplay_slot_set`            | `slot`, `itemUuid`                                         | `POST /api/project/quickplay` |
+| `quickplay_slot_cleared`        | `slot`                                                     | `DELETE /api/project/quickplay/<slot>` |
 | `theme_patched`                 | `theme` (full resulting theme object)                      | `PATCH /api/project/theme` |
 | `settings_patched`              | `settings` (full resulting settings object)                | `PATCH /api/project/settings` |
 | `master_gain_changed`           | `db`                                                       | `POST /api/master/gain` |
@@ -614,7 +626,7 @@ Unknown `type` values get a `{ "type": "error", "message": "unknown type" }` rep
 
 ```
 1. User triggers QuickPlay #3.
-2. OneShotTile.vue → useLiveplayServer().play(cueId)
+2. The QuickPlay tile → useLiveplayServer().play(cueId)
 3. WebSocket frame { "type": "play", "cue_id": "…" } sent to server.
 4. ControlServer::handle_ws_message → engine_.play(cueId) — O(1) atomic state flip.
 5. AudioEngine render thread, next block:

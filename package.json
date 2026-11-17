@@ -33,7 +33,7 @@
     "check:packaged:mac": "node scripts/smoke-packaged-app-mac.js",
     "test:mode-layout": "node --test scripts/mode-layout.test.cjs",
     "test:video-preflight": "node --test scripts/video-preflight.test.cjs",
-    "check:client": "node scripts/check-live-safety.js && node scripts/check-audio-rt-safety.js && node scripts/check-gain-regression.js && npm run test:audio-import --workspace=client && node client/electron/path-capabilities.test.js && npm run test:file-formats --workspace=client && node scripts/spotify-import-reliability.test.js && npm run test:video-output --workspace=client && npm run test:one-shots --workspace=client && npm run test:youtube-import --workspace=client && npm run test:playback-safety --workspace=client && npm run test:local-auth --workspace=client && npm run test:operator-manual --workspace=client",
+    "check:client": "node scripts/check-live-safety.js && node scripts/check-audio-rt-safety.js && node scripts/check-gain-regression.js && npm run test:audio-import --workspace=client && node client/electron/path-capabilities.test.js && npm run test:file-formats --workspace=client && node scripts/spotify-import-reliability.test.js && npm run test:video-output --workspace=client && npm run test:quickplays --workspace=client && npm run test:youtube-import --workspace=client && npm run test:playback-safety --workspace=client && npm run test:local-auth --workspace=client && npm run test:operator-manual --workspace=client",
     "version": "node scripts/version.js",
     "bump": "node scripts/version.js"
   },

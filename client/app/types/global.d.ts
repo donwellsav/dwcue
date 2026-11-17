@@ -2,11 +2,11 @@ export {};
 import type { TestCardConfig } from '../../electron/test-card-config.mjs';
 import type { VideoFraming } from '../../electron/video-output-framing.mjs';
 import type {
-  OneShotMutationIdentity,
-  OneShotMutationRequest,
-  OneShotMutationResult,
-  OneShotProjectEnvelope,
-} from './oneShotMutation';
+  QuickPlayMutationIdentity,
+  QuickPlayMutationRequest,
+  QuickPlayMutationResult,
+  QuickPlayProjectEnvelope,
+} from './quickPlayMutation';
 import type { ProjectFileKind } from '../utils/projectFileFormats';
 import type { CueSheetExportResult, CueSheetPayload } from './cueSheet';
 
@@ -204,7 +204,7 @@ declare global {
       onUpdateDownloaded: (callback: (event: any, info: { version: string }) => void) => void;
       onUpdateError: (callback: (event: any, error: string) => void) => void;
       onMenuCheckForUpdates: (callback: () => void) => void;
-      syncProjectData: (data: any, identity: OneShotMutationIdentity | null, captureSession?: string | null) => void;
+      syncProjectData: (data: any, identity: QuickPlayMutationIdentity | null, captureSession?: string | null) => void;
       app?: {
         relaunch: () => Promise<boolean>;
         exit: () => Promise<boolean>;
@@ -219,22 +219,22 @@ declare global {
       getPendingOpenFile: () => Promise<{ filePath: string; kind: ProjectFileKind } | null>;
       readMidiConfig: () => Promise<Record<string, any>>;
       writeMidiConfig: (config: Record<string, any>) => Promise<{ success: boolean }>;
-      // Cart player window
-      openCartPlayerWindow: (projectFolderPath: string) => Promise<void>;
-      toggleCartPlayerWindow: () => Promise<void>;
-      attachCartPlayerWindow: () => void;
-      getCartWindowProjectData: () => Promise<OneShotProjectEnvelope>;
-      onCartPlayerWindowOpened: (callback: () => void) => void;
-      onCartPlayerWindowClosed: (callback: () => void) => void;
-      onCartWindowProjectUpdate: (callback: (snapshot: OneShotProjectEnvelope) => void) => () => void;
-      requestOneShotMutation: (request: OneShotMutationRequest) => Promise<OneShotMutationResult>;
-      onOneShotMutationRequest: (callback: (request: OneShotMutationRequest) => void) => () => void;
-      completeOneShotMutation: (result: OneShotMutationResult) => void;
+      // QuickPlay window
+      openDetachedQuickPlayWindow: (projectFolderPath: string) => Promise<void>;
+      toggleDetachedQuickPlayWindow: () => Promise<void>;
+      attachDetachedQuickPlayWindow: () => void;
+      getQuickPlayWindowProjectData: () => Promise<QuickPlayProjectEnvelope>;
+      onDetachedQuickPlayWindowOpened: (callback: () => void) => void;
+      onDetachedQuickPlayWindowClosed: (callback: () => void) => void;
+      onQuickPlayWindowProjectUpdate: (callback: (snapshot: QuickPlayProjectEnvelope) => void) => () => void;
+      requestQuickPlayMutation: (request: QuickPlayMutationRequest) => Promise<QuickPlayMutationResult>;
+      onQuickPlayMutationRequest: (callback: (request: QuickPlayMutationRequest) => void) => () => void;
+      completeQuickPlayMutation: (result: QuickPlayMutationResult) => void;
       // UI mode ("show mode") sync across windows
       broadcastUiMode: (mode: 'edit' | 'playback') => void;
       onUiModeSet: (callback: (event: any, mode: 'edit' | 'playback') => void) => void;
-      broadcastCartGridLayouts: (layouts: string) => void;
-      onCartGridLayoutsSet: (callback: (event: any, layouts: string) => void) => void;
+      broadcastQuickPlayGridLayouts: (layouts: string) => void;
+      onQuickPlayGridLayoutsSet: (callback: (event: any, layouts: string) => void) => void;
       // Recent-projects history (last 10 canonical shows opened on this client).
       liveplayProjects?: {
         recentList: () => Promise<Array<{ path: string; name: string; folderPath: string; lastOpened: number }>>;
@@ -365,7 +365,7 @@ declare global {
 
   // The show a capture is for, and the cue when it is for one.
   interface VideoStandbyTarget {
-    identity: OneShotMutationIdentity;
+    identity: QuickPlayMutationIdentity;
     sessionId: string;
     itemUuid: string | null;
   }

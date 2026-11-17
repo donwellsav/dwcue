@@ -172,7 +172,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onHeaderWarning: (callback) => replaceIpcListener('header-warning', (_event, message) => callback(message)),
   onMenuCheckForUpdates: (callback) => ipcRenderer.on('menu-check-for-updates', callback),
 
-  // Project data sync between the primary and detached One Shots windows.
+  // Project data sync between the primary and detached QuickPlays windows.
   syncProjectData: (data, identity, ...captureSession) =>
     ipcRenderer.send('sync-project-data', data, identity, ...captureSession),
   
@@ -183,31 +183,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // (cold start). Returns { filePath, kind } | null.
   getPendingOpenFile: () => ipcRenderer.invoke('get-pending-open-file'),
   
-  // Cart player window — detach/attach
-  openCartPlayerWindow: (projectFolderPath) => ipcRenderer.invoke('open-cart-player-window', projectFolderPath),
-  toggleCartPlayerWindow: () => ipcRenderer.invoke('toggle-cart-player-window'),
-  attachCartPlayerWindow: () => ipcRenderer.send('cart-player-window-attach'),
-  getCartWindowProjectData: () => ipcRenderer.invoke('get-cart-window-project-data'),
-  onCartPlayerWindowOpened: (callback) => replaceIpcListener('cart-player-window-opened', callback),
-  onCartPlayerWindowClosed: (callback) => replaceIpcListener('cart-player-window-closed', callback),
-  onCartWindowProjectUpdate: (callback) => {
+  // QuickPlay window — detach/attach
+  openDetachedQuickPlayWindow: (projectFolderPath) => ipcRenderer.invoke('open-detached-quickplay-window', projectFolderPath),
+  toggleDetachedQuickPlayWindow: () => ipcRenderer.invoke('toggle-detached-quickplay-window'),
+  attachDetachedQuickPlayWindow: () => ipcRenderer.send('detached-quickplay-window-attach'),
+  getQuickPlayWindowProjectData: () => ipcRenderer.invoke('get-quickplay-window-project-data'),
+  onDetachedQuickPlayWindowOpened: (callback) => replaceIpcListener('detached-quickplay-window-opened', callback),
+  onDetachedQuickPlayWindowClosed: (callback) => replaceIpcListener('detached-quickplay-window-closed', callback),
+  onQuickPlayWindowProjectUpdate: (callback) => {
     const listener = (_event, snapshot) => callback(snapshot);
-    ipcRenderer.on('cart-window-project-update', listener);
-    return () => ipcRenderer.removeListener('cart-window-project-update', listener);
+    ipcRenderer.on('quickplay-window-project-update', listener);
+    return () => ipcRenderer.removeListener('quickplay-window-project-update', listener);
   },
-  requestOneShotMutation: (request) => ipcRenderer.invoke('one-shot-mutation:request', request),
-  onOneShotMutationRequest: (callback) => {
+  requestQuickPlayMutation: (request) => ipcRenderer.invoke('quickplay-mutation:request', request),
+  onQuickPlayMutationRequest: (callback) => {
     const listener = (_event, request) => callback(request);
-    ipcRenderer.on('one-shot-mutation-request', listener);
-    return () => ipcRenderer.removeListener('one-shot-mutation-request', listener);
+    ipcRenderer.on('quickplay-mutation-request', listener);
+    return () => ipcRenderer.removeListener('quickplay-mutation-request', listener);
   },
-  completeOneShotMutation: (result) => ipcRenderer.send('one-shot-mutation:complete', result),
+  completeQuickPlayMutation: (result) => ipcRenderer.send('quickplay-mutation:complete', result),
 
   // UI mode ("show mode") sync across windows
   broadcastUiMode: (mode) => ipcRenderer.send('ui-mode-changed', mode),
   onUiModeSet: (callback) => ipcRenderer.on('ui-mode-set', callback),
-  broadcastCartGridLayouts: (layouts) => ipcRenderer.send('cart-grid-layouts-changed', layouts),
-  onCartGridLayoutsSet: (callback) => ipcRenderer.on('cart-grid-layouts-set', callback),
+  broadcastQuickPlayGridLayouts: (layouts) => ipcRenderer.send('quickplay-grid-layouts-changed', layouts),
+  onQuickPlayGridLayoutsSet: (callback) => ipcRenderer.on('quickplay-grid-layouts-set', callback),
 
   // State viewer - send state updates to main process
   updateAppState: (state) => ipcRenderer.send('update-app-state', state),

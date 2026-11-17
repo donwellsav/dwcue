@@ -177,9 +177,9 @@
     "folderHeaderTrackHeight": "Folder headers",
     "playlistWaveforms": "Playlist waveforms",
     "interfaceFontSize": "حجم خط الواجهة",
-    "oneShotFontSize": "حجم نص اللقطات الفورية",
+    "quickPlayFontSize": "حجم نص اللقطات الفورية",
     "cycleTrackColors": "تدوير ألوان المقاطع الجديدة",
-    "cartLayout": "التخطيط",
+    "quickPlayLayout": "التخطيط",
     "minimumCardHeight": "Min height",
     "visibleRows": "Visible rows",
     "columns": "الأعمدة",
@@ -519,7 +519,7 @@
       "error": "فشل الاستيراد"
     }
   },
-  "oneShots": {
+  "quickPlays": {
     "defaultShortcuts": "QuickPlay (الافتراضي)",
     "detachedNoPrimary": "نافذة المشروع الرئيسية غير متاحة.",
     "detachedWaitingForShow": "استعد العرض أو افتحه في النافذة الرئيسية لإعادة تفعيل QuickPlay.",
@@ -904,8 +904,8 @@
     "title": "تكوين الضوابط",
     "shortcutBtn": "اختصارات",
     "tabMidi": "MIDI",
-    "sectionOneShots": "QuickPlay",
-    "oneShot": "QuickPlay {n}",
+    "sectionQuickPlays": "QuickPlay",
+    "quickPlay": "QuickPlay {n}",
     "pauseResume": "إيقاف مؤقت / متابعة",
     "toggleLoop": "تبديل التكرار",
     "cueToContinue": "إشارة المتابعة",
@@ -924,7 +924,7 @@
     "masterVolume": "مستوى الصوت الرئيسي العام",
     "midiDevice": "جهاز MIDI",
     "allDevices": "جميع الأجهزة",
-    "conflictOneShot": "معيّن بالفعل لـ QuickPlay {n}",
+    "conflictQuickPlay": "معيّن بالفعل لـ QuickPlay {n}",
     "conflictAction": "تم التعيين بالفعل لـ {action}",
     "pressAnyKey": "اضغط على أي مفتاح...",
     "reserved": "هذه المجموعة من المفاتيح محجوزة",

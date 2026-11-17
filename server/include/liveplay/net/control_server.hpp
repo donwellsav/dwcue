@@ -23,7 +23,7 @@
 //   GET    /api/state/summary                — compact transport state (external control)
 //   POST   /api/transport/go                 — play the armed "Up Next" item
 //   POST   /api/transport/play_index         — { "index": [1, 11] } trigger by index path
-//   POST   /api/transport/cart/{slot}/play   — trigger a cart slot's bound item
+//   POST   /api/transport/quickplay/{slot}/play — trigger a QuickPlay slot's bound item
 //   POST   /api/transport/pause_toggle       — resume all paused, else pause all sounding
 //   GET    /api/selection                    — { "itemUuid": "..." } shared selection
 //   POST   /api/selection                    — { "itemUuid": "..." } or { "delta": -1|1 }
