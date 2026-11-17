@@ -1,5 +1,5 @@
 export {};
-import type { TestCardConfig } from '../../electron/test-card-config';
+import type { TestCardConfig } from '../../electron/test-card-config.mjs';
 import type { VideoFraming } from '../../electron/video-output-framing.mjs';
 import type {
   OneShotMutationIdentity,

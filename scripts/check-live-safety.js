@@ -2533,6 +2533,28 @@ assert.match(
   /<span v-else-if="item\.type === 'group'" class="group-shuffle-action group-shuffle-action--place" aria-hidden="true"><\/span>[\s\S]*\.group-shuffle-action--place \{\s*width: 32px;\s*height: 32px;/,
   'a group row must keep the place of its shuffle button in Show Mode',
 );
+// The icon font is cut down to the icons the app names. Any icon name that
+// appears in the client source must be in it, or the icon would show as its
+// name in letters: run scripts/subset-icon-font.py after using a new icon.
+{
+  const everyIcon = new Set(JSON.parse(read('scripts/material-symbols-rounded-names.json')));
+  const inFont = new Set(JSON.parse(read('client/assets/fonts/material-symbols/icons.json')));
+  const sources = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+      const file = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) walk(file);
+      else if (/\.(vue|ts|js|mjs|cjs|scss)$/.test(entry.name)) sources.push(read(file));
+    }
+  };
+  walk('client/app');
+  walk('client/electron');
+  const words = new Set(sources.join('\n').match(/[a-z0-9_]+/g));
+  const missing = [...everyIcon].filter(name => words.has(name) && !inFont.has(name));
+  assert.deepEqual(missing, [], 'icons named in the source but missing from the bundled icon font');
+  assert.doesNotMatch(read('client/app/app.vue'), /material-symbols\/rounded\.css/,
+    'the full 5 MB icon font must not be bundled again');
+}
 // The shortcut bar is two lines high and lists every keyboard action, the
 // same in both modes.
 assert.match(

@@ -63,18 +63,9 @@ After regeneration, inspect the cover, contents, diagrams, screenshots, tables, 
 |--------|--------------|
 | [`sync-locale-keys.js`](sync-locale-keys.js) | Walks every JSON file in `client/locales/` and copies any keys missing relative to `en.json` (the source of truth). Run after adding new strings to `en.json`. Idempotent. |
 
-### One-off localisation migrations (Python)
+### Adding strings to every language
 
-The four `add_*.py` scripts are migration tools, each written once to bulk-add a specific set of translation keys to every locale. They are kept in tree as documentation of past locale changes and to make follow-up fixes easier, but they are **not part of the regular workflow** — use `sync-locale-keys.js` and edit JSON files directly instead.
-
-| Script | Purpose (historical) |
-|--------|----------------------|
-| [`add_all_missing_locales.py`](add_all_missing_locales.py) | Bulk-add of about/license + miscellaneous missing keys across every locale. |
-| [`add_dual_dialog_locales.py`](add_dual_dialog_locales.py) | Added `exportProject`, `importProject`, `importAudio` sections + `exportProgress.downloading` + `common.cancel` for the dual-dialog import/export flow. |
-| [`add_missing_locales.py`](add_missing_locales.py) | Added local-server / network-discovery strings (e.g. `startingLocalServer`, `serversOnThisNetwork`). |
-| [`add_repair_locales.py`](add_repair_locales.py) | Added the project-repair flow strings. |
-
-If you need to bulk-add new keys across all locales again, prefer writing a one-shot script in this same style rather than editing 21 files by hand. Keep it idempotent (re-runnable) and run `sync-locale-keys.js` afterwards to be sure.
+Add the string to `client/locales/en.json`, run `sync-locale-keys.js` to copy it into the other languages as an English placeholder, then translate. The one-off Python scripts that once bulk-added keys were removed; they are in the git history if one is needed as a model.
 
 ---
 

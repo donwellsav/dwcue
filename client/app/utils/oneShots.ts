@@ -4,7 +4,6 @@ export type OneShotPlaybackMode = 'overlay' | 'duck' | 'replace';
 // 'goto' reports a Go to Item / Go to Index ending authored in Properties. The
 // compact picker shows it but cannot create one, because it needs a target.
 export type OneShotEndMode = 'stop' | 'loop' | 'next' | 'goto';
-export type OneShotSelectableEndMode = Exclude<OneShotEndMode, 'goto'>;
 
 // Server-owned Cue to Continue state for the pass that is playing right now.
 // 'armed' forces Play Up Next for this pass; 'suppressed' cancels an authored

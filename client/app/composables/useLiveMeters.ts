@@ -15,8 +15,6 @@ import type {
   ItemMeterFrame,
   MasterChannelIndex,
   MasterMeterFrame,
-  MixerChannelId,
-  MixerMeterFrame,
   MeterSnapshot,
 } from '~/types/server';
 
@@ -54,26 +52,6 @@ export function useCueMeters(cueId: () => CueId | null | undefined) {
   onScopeDispose(() => unsubscribe());
 
   return { sources, transport, playhead };
-}
-
-export function useMixerMeter(mixerId: () => MixerChannelId | null | undefined) {
-  const server = useLiveplayServer();
-  const peak    = ref(SILENT.peak_db);
-  const rms     = ref(SILENT.rms_db);
-  const peakMax = ref(SILENT.peak_max_db);
-
-  const unsubscribe = server.onMeters((m) => {
-    const id = mixerId();
-    if (!id) { peak.value = SILENT.peak_db; rms.value = SILENT.rms_db; peakMax.value = SILENT.peak_max_db; return; }
-    const frame: MixerMeterFrame | undefined =
-      m.mixer_channels.find(x => x.mixer_id === id);
-    peak.value    = frame?.peak_db     ?? SILENT.peak_db;
-    rms.value     = frame?.rms_db      ?? SILENT.rms_db;
-    peakMax.value = frame?.peak_max_db ?? SILENT.peak_max_db;
-  });
-  onScopeDispose(() => unsubscribe());
-
-  return { peak, rms, peakMax };
 }
 
 // ---------------------------------------------------------------------

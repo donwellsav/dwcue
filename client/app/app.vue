@@ -211,7 +211,6 @@
 </template>
 
 <script setup lang="ts">
-import 'material-symbols/rounded.css';
 import OneShotPanel from './components/OneShotPanel.vue';
 import WelcomeScreen from './components/WelcomeScreen.vue';
 import type { ProjectFileKind } from '~/utils/projectFileFormats';

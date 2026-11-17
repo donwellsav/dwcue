@@ -30,8 +30,18 @@
 }
 
 
-// The rounded Material font is bundled locally from the declared package.
-// app.vue imports only rounded.css; no runtime network fetch is required.
+// The icon font is bundled locally, cut down to the icons the app names: the
+// full font holds about 4,000 icons and weighs 5 MB. After using an icon the
+// app has not used before, run scripts/subset-icon-font.py; the client checks
+// fail until the font holds it.
+@font-face {
+  font-family: 'Material Symbols Rounded';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: block;
+  src: url('../fonts/material-symbols/material-symbols-rounded-subset.woff2') format('woff2');
+}
+
 .material-symbols-rounded {
   font-family: 'Material Symbols Rounded';
   font-weight: normal;
@@ -47,6 +57,7 @@
   -webkit-font-feature-settings: 'liga';
   font-feature-settings: 'liga';
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button > .material-symbols-rounded {

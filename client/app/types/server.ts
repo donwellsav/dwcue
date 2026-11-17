@@ -12,13 +12,6 @@ export type MasterChannelIndex = number;
 
 export type TransportState = 0 | 1 | 2 | 3 | 4;
 // 0=Stopped 1=Playing 2=FadingIn 3=FadingOut 4=Paused
-export const TransportLabel: Record<TransportState, string> = {
-  0: 'Stopped',
-  1: 'Playing',
-  2: 'Fading In',
-  3: 'Fading Out',
-  4: 'Paused',
-};
 
 export interface ServerDeviceInfo {
   id: DeviceId;
