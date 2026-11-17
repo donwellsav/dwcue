@@ -312,7 +312,10 @@ const toggleFollow = () => queueLoopContinuation(props.item);
 const transportLabel = computed(() => isPlaying.value
   ? t('oneShots.stopNamed', { name: props.item.displayName })
   : t('oneShots.playNamed', { name: props.item.displayName }));
-const tileStyle = computed(() => ({ '--one-shot-color': props.item.color || '#315FCF' }));
+// The tile's colour, and the text colour that reads on a solid block of it
+// (the number chip).
+const tileColor = computed(() => props.item.color || '#315FCF');
+const tileStyle = computed(() => ({ '--one-shot-color': tileColor.value, '--one-shot-ink': readableOn(tileColor.value) }));
 const progressStyle = computed(() => {
   const cue = activeCue.value;
   return { width: `${cue?.duration ? Math.min(100, Math.max(0, cue.currentTime / cue.duration * 100)) : 0}%` };
@@ -634,11 +637,17 @@ onUnmounted(() => {
   text-transform: uppercase;
 }
 
+/* The number is a chip in the tile's own colour, so a QuickPlay is found by
+   colour and number together. */
 .one-shot-index {
   flex: none;
-  min-width: 0;
+  min-width: 2.4ch;
+  padding: 2px 4px;
   overflow: hidden;
-  color: var(--color-text-primary);
+  border-radius: 4px;
+  background: var(--one-shot-color);
+  color: var(--one-shot-ink, #ffffff);
+  text-align: center;
   font: inherit;
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
