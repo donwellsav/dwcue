@@ -308,7 +308,7 @@
 </template>
 
 <script setup lang="ts">
-import { countdownColorForSeconds, type AudioItem, type GroupItem, type BaseItem } from '~/types/project';
+import { countdownColorForSeconds, countdownInk, type AudioItem, type GroupItem, type BaseItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
 import ItemLevel from './ItemLevel.vue';
 import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
@@ -671,15 +671,16 @@ const playbackDuration = computed(() => {
   }
   return 0;
 });
+const theme = useState('theme', () => 'dark');
 const durationColor = computed(() => {
   if (!isPlaying.value || props.item.type !== 'audio') return null;
   const duration = playbackDuration.value;
   const current = currentPlaybackTime.value;
   if (!Number.isFinite(duration) || !Number.isFinite(current) || duration <= 0) return null;
-  return countdownColorForSeconds(
+  return countdownInk(countdownColorForSeconds(
     Math.max(0, Math.ceil(duration - current)),
     (currentProject.value as any)?.settings?.countdownColorBands,
-  );
+  ), theme.value);
 });
 const playbackProgress = computed(() => {
   const d = playbackDuration.value;

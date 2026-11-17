@@ -808,6 +808,17 @@ const handlePlayNext = async () => {
   padding-inline: 4px;
 }
 
+/* On a small window the button is narrow: a slightly smaller label keeps
+   "Stop All" together on one line of two. */
+@media (max-width: 1280px) {
+  .playback-controls.show-mode .panic-btn {
+    flex-direction: column;
+    gap: 2px;
+    font-size: 15px;
+    line-height: 1.15;
+  }
+}
+
 .panic-btn:hover:not(:disabled) {
   --stop-face: #2a2a32;
 }

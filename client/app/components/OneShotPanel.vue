@@ -564,7 +564,14 @@ onUnmounted(() => {
   display: flex;
   gap: var(--spacing-xs);
 }
-.detached-quickplay-stop { color: var(--color-danger); }
+/* Stop is never red here either: the same hazard stripes as every other Stop,
+   kept while the pointer is over it. */
+.detached-quickplay-stop.detached-quickplay-stop,
+.detached-quickplay-stop.detached-quickplay-stop:hover:not(:disabled) {
+  border: var(--stop-button-border);
+  background: var(--stop-button-background);
+  color: var(--color-text-primary);
+}
 
 #detached-quickplay-dock {
   overflow: auto;

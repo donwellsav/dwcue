@@ -405,6 +405,15 @@ export function countdownColorForSeconds(
     .find(band => displayedSeconds >= band.startSeconds)!.color;
 }
 
+/**
+ * The band colour as it is drawn on the digits. On the light console it is
+ * deepened: green and yellow digits wash out on a pale surface.
+ */
+export function countdownInk(color: string | null, theme: string): string | null {
+  if (!color || theme !== 'light') return color;
+  return `color-mix(in srgb, ${color} 60%, #000000)`;
+}
+
 export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   outputTarget: 'live',
   meterMode: 'dBFS',

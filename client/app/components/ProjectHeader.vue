@@ -149,7 +149,7 @@ import Btn from './Btn.vue';
 import VideoConfidenceChip from './VideoConfidenceChip.vue';
 import { useVideoOutputToggle } from '~/composables/useCartHotkeys';
 import { usePreShowCheck } from '~/composables/usePreShowCheck';
-import { countdownColorForSeconds, type AudioItem } from '~/types/project';
+import { countdownColorForSeconds, countdownInk, type AudioItem } from '~/types/project';
 import { formatClockSeconds, playlistRemainingSeconds } from '~/utils/playlistRemaining';
 
 const { currentProject, findItemByUuid, findItemByIndex, getAllItemsFlat, autoSaveEnabled, hasUnsavedChanges, saveFailed, saveProject, setAutoSave } = useProject();
@@ -216,10 +216,11 @@ const listLeftSeconds = computed(() => playlistRemainingSeconds(
   effectiveNextUuid.value,
 ));
 const listLeft = computed(() => formatClockSeconds(listLeftSeconds.value));
-const timeLeftColor = computed(() => countdownColorForSeconds(
+const theme = useState('theme', () => 'dark');
+const timeLeftColor = computed(() => countdownInk(countdownColorForSeconds(
   displayedRemainingSeconds.value,
   (currentProject.value as any)?.settings?.countdownColorBands,
-));
+), theme.value));
 
 // ---- Silence warning -------------------------------------------------------
 

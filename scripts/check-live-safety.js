@@ -1019,6 +1019,7 @@ const {
   normalizeCartSlotCount,
   normalizeCountdownColorBands,
   countdownColorForSeconds,
+  countdownInk,
 } = projectRuntime.exports;
 assert.deepEqual(CART_SLOT_COUNT_LIMITS, { min: 1, max: 64, default: 16 });
 assert.equal(DEFAULT_PROJECT_SETTINGS.cartSlotCount, 16);
@@ -1065,6 +1066,10 @@ assert.equal(countdownColorForSeconds(5, undefined), '#E54855');
 assert.equal(countdownColorForSeconds(0, undefined), '#E54855');
 assert.equal(countdownColorForSeconds(10.1, undefined), '#35A96B');
 assert.equal(countdownColorForSeconds(null, undefined), null);
+// On the light console the digits are deepened so green and yellow still read.
+assert.equal(countdownInk('#D8AD35', 'dark'), '#D8AD35');
+assert.equal(countdownInk('#D8AD35', 'light'), 'color-mix(in srgb, #D8AD35 60%, #000000)');
+assert.equal(countdownInk(null, 'light'), null);
 
 const transpiledAudio = ts.transpileModule(
   read('client/app/utils/audio.ts'),

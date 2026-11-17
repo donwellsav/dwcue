@@ -2146,7 +2146,10 @@ onUnmounted(() => {
 }
 
 .audition-btn--stop {
-  color: var(--color-danger);
+  /* Stop is never red: the striped edge every Stop button wears. */
+  border: var(--stop-button-border);
+  background: var(--stop-button-background);
+  color: var(--stop-edge);
 }
 
 .audition-jump {
