@@ -899,9 +899,9 @@ async function refreshDevices() {
 watch(() => props.open, async (v) => {
   if (v) await refreshDevices();
 });
-// Video Output tab. Open/closed state is session-only; display assignment is
-// machine-level state in the Electron main process (<userData>/video-output.json)
-// and deliberately NOT in the project document. All mutations return fresh
+// Video Output tab. Open/closed state and the display assignment are
+// session-only, held in the Electron main process, and deliberately NOT in the
+// project document. All mutations return fresh
 // status; the onStatus push keeps this panel live while it is open.
 // ---------------------------------------------------------------------------
 const voStatus = ref<VideoOutputStatus | null>(null);

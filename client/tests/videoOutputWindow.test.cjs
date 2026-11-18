@@ -354,8 +354,8 @@ test('a screen of another model is not a look-alike and does not block its id la
   assert.equal(rig.resolve([laptop, replugged]), replugged);
 });
 
-test('look-alikes saved with the assignment hold from the first moment of a new session', () => {
-  // The app starts with the audienceProjector unplugged and only its twin connected.
+test('look-alikes recorded when the display was assigned hold before the resolver has seen them', () => {
+  // The audienceProjector is unplugged after it was assigned; only its twin is connected.
   assert.equal(displayResolver({ saved: ['3'] }).resolve([laptop, stageMonitor]), null);
   assert.equal(displayResolver().resolve([laptop, stageMonitor]), stageMonitor,
     'with nothing recorded, one fitting screen is taken to be the display coming back');
@@ -373,4 +373,101 @@ test('every window is kept out of fullscreen Spaces, and the control window fill
     /app\.on\('browser-window-created', \(_event, window\) => keepOutOfFullscreenSpaces\(window, process\.platform\)\)/);
   assert.match(mainSource, /process\.platform === 'darwin'\s*\? \{ role: 'zoom' \}/,
     'the Mac View menu offers Zoom where other platforms offer Fullscreen');
+});
+
+// ---- Going fullscreen on one screen -------------------------------------------
+// Fullscreen changes the display's metrics (on a Mac the menu bar and Dock go),
+// which wakes the display watchdog. Only a physical output whose own display
+// has gone may be closed by it; the preview window has no display to lose.
+function displayWatchdog({ outputWindow }) {
+  const listeners = {};
+  const timers = [];
+  const closes = [];
+  const context = {
+    videoOutputWatchdogInstalled: false,
+    videoOutputWatchdogTimer: null,
+    videoOutputSessionEnabled: true,
+    videoOutputWindow: outputWindow,
+    // A screen chosen earlier that is not connected now.
+    readVideoOutputConfig: () => ({ displayId: '99' }),
+    resolveVideoOutputDisplay: () => null,
+    closeVideoOutputWindow: options => closes.push(options),
+    createVideoOutputWindow: () => assert.fail('nothing to re-acquire'),
+    broadcastVideoOutputStatus() {},
+    screen: { getAllDisplays: () => [laptop], on: (name, listener) => { listeners[name] = listener; } },
+    setTimeout: (callback) => { timers.push(callback); return timers.length; },
+    clearTimeout() {},
+  };
+  vm.runInNewContext(functionSource('installVideoOutputWatchdog'), context);
+  context.installVideoOutputWatchdog();
+  return { closes, metricsChange: () => { listeners['display-metrics-changed'](); timers.splice(0).forEach(run => run()); } };
+}
+
+test('the preview window stays open when going fullscreen changes the display metrics', () => {
+  const preview = { isDestroyed: () => false };   // no videoOutputTargetDisplayId: not a physical output
+  const rig = displayWatchdog({ outputWindow: preview });
+  rig.metricsChange();
+  assert.deepEqual(rig.closes, [], 'the preview window is not closed by a display it never had');
+});
+
+test('a physical output still closes when its own display has gone', () => {
+  const output = { isDestroyed: () => false, videoOutputTargetDisplayId: 99 };
+  const rig = displayWatchdog({ outputWindow: output });
+  rig.metricsChange();
+  assert.deepEqual(JSON.parse(JSON.stringify(rig.closes)), [{ preserveSession: true }]);
+});
+
+// ---- Screens are chosen fresh every time the app starts -------------------------
+// Which display is the output, and which one a capture is taken from, hold for
+// this run only. Nothing about screens is read from or written to disk.
+function videoOutputSettings(fileText) {
+  const disk = { text: fileText };
+  const declarations = mainAst.statements.filter(node => ts.isVariableStatement(node) &&
+    node.declarationList.declarations.every(d => ['VIDEO_OUTPUT_CONFIG_FILENAME', 'videoOutputScreens'].includes(d.name.getText(mainAst))))
+    .map(node => node.getText(mainAst)).join('\n');
+  const context = {
+    app: { getPath: () => '/user-data' },
+    path,
+    fs: {
+      readFileSync: () => { if (disk.text == null) throw new Error('ENOENT'); return disk.text; },
+      writeFileSync: (_file, text) => { disk.text = text; },
+    },
+    readVideoFraming: value => value ?? null,
+    DEFAULT_VIDEO_FRAMING: { width: 1920, height: 1080, scale: 100, scaling: 'fit' },
+    createTestCardConfig: value => value ?? { cardType: 'bars' },
+    console,
+  };
+  vm.runInNewContext([declarations, functionSource('videoOutputConfigPath'),
+    functionSource('readVideoOutputConfig'), functionSource('writeVideoOutputConfig')].join('\n'), context);
+  return { disk, read: () => context.readVideoOutputConfig(), write: cfg => context.writeVideoOutputConfig(cfg) };
+}
+
+test('screens remembered by an earlier version are not used', () => {
+  const framing = { width: 1280, height: 720, scale: 90, scaling: 'fit' };
+  const settings = videoOutputSettings(JSON.stringify({
+    displayId: '5', displayFingerprint: '1920x1080:EPSON PJ', displayLookalikes: ['6'], captureDisplayId: '7', framing,
+  }));
+  const cfg = settings.read();
+  assert.equal(cfg.displayId, null);
+  assert.equal(cfg.displayFingerprint, null);
+  assert.deepEqual([...cfg.displayLookalikes], []);
+  assert.equal(cfg.captureDisplayId, null);
+  assert.deepEqual({ ...cfg.framing }, framing, 'picture framing is not a screen and is still kept');
+});
+
+test('a screen chosen now holds for this run and is never written to disk', () => {
+  const settings = videoOutputSettings(null);
+  const cfg = settings.read();
+  Object.assign(cfg, { displayId: '5', displayFingerprint: '1920x1080:EPSON PJ', displayLookalikes: ['6'], captureDisplayId: '7' });
+  assert.equal(settings.write(cfg), true);
+  const saved = JSON.parse(settings.disk.text);
+  for (const key of ['displayId', 'displayFingerprint', 'displayLookalikes', 'captureDisplayId']) {
+    assert.equal(key in saved, false, `${key} is not saved`);
+  }
+  assert.ok(saved.framing && saved.testCardConfig, 'framing and test card settings are still saved');
+  const again = settings.read();
+  assert.equal(again.displayId, '5');
+  assert.equal(again.displayFingerprint, '1920x1080:EPSON PJ');
+  assert.deepEqual([...again.displayLookalikes], ['6']);
+  assert.equal(again.captureDisplayId, '7');
 });

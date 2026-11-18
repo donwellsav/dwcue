@@ -633,7 +633,7 @@ Cue Basic Info displays **API Trigger URL · POST** with a copy control. An exte
 
 Video Output belongs to the desktop client, not to the headless engine. The recommended arrangement keeps the audio engine and video-rendering desktop on the same machine. If you use a remote engine, the picture still appears on the desktop client's display/HDMI and the media is streamed over the network; include that network in rehearsal and failure planning.
 
-Use **V** or the toolbar's **Video Output** button to open or close the output window. Assign the intended display under **Settings → Video Output** and verify its identity against the physical projector, switcher, or monitor. The app remembers the display assignment on that computer, and the output window starts closed on each application launch. Open and check it for each session.
+Use **V** or the toolbar's **Video Output** button to open or close the output window. Assign the intended display under **Settings → Video Output** and verify its identity against the physical projector, switcher, or monitor. The app does not remember the display: each time the app starts, the output window is closed and no display is assigned. Assign and check it for each session.
 
 ![The docked Video Output tab with the output closed.](manual-assets/video-settings-current.png)
 
