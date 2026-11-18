@@ -398,6 +398,14 @@ function createVideoWindowHarness() {
   };
 }
 
+test('a preview opened while its assigned display is missing waits for that display', () => {
+  const missing = createVideoWindowHarness();
+  missing.context.readVideoOutputConfig = () => ({ displayId: '99' });
+  assert.equal(missing.open().videoOutputWaitingForDisplay, true);
+  const unassigned = createVideoWindowHarness();
+  assert.notEqual(unassigned.open().videoOutputWaitingForDisplay, true, 'no display assigned: nothing to wait for');
+});
+
 test('video confidence capture waits for its current readback before starting another', async () => {
   const h = createVideoWindowHarness();
   h.open();
