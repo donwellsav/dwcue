@@ -25,7 +25,8 @@
         <PlaylistSearch :disabled="readOnly || projectHydrationStatus !== 'ready'" @jump="jumpToSearchHit" />
       </div>
       <!-- Import / add-group are edit actions — hidden in Show Mode. -->
-      <div v-if="!showMode" class="playlist-actions" :inert="readOnly">
+      <div v-if="!showMode" class="playlist-actions" :class="{ 'playlist-actions--results': importReviewAvailable }"
+        :inert="readOnly">
         <!-- One Import button. With online sources available it opens the
              choices in the lower panel, like every other picker; otherwise
              there is only one source and it goes straight to it. -->
@@ -1443,9 +1444,12 @@ const handleDrop = async (e: DragEvent) => {
   color: var(--state-ready);
 }
 
-/* Import, Add Group and Shuffle (and Results while an import is open) need
-   about 480px with their labels; below this they become icon buttons. */
-@container playlist-actions (max-width: 500px) {
+/* Import, Add Group and Shuffle need at most 481px with their labels (German,
+   the longest of the 21 languages; English needs 349px), so at the default
+   window they keep their labels beside the QuickPlay panel's 336px. Narrower
+   than 490px they become icon buttons. While an import offers Results as a
+   fourth button, they become icons below 500px as before. */
+@container playlist-actions (max-width: 490px) {
   .playlist-actions :deep(.btn) {
     flex: 0 0 var(--panel-control-height);
     justify-content: center;
@@ -1453,6 +1457,16 @@ const handleDrop = async (e: DragEvent) => {
   }
 
   .playlist-actions :deep(.btn__text) { display: none; }
+}
+
+@container playlist-actions (max-width: 500px) {
+  .playlist-actions--results :deep(.btn) {
+    flex: 0 0 var(--panel-control-height);
+    justify-content: center;
+    padding: 0;
+  }
+
+  .playlist-actions--results :deep(.btn__text) { display: none; }
 }
 
 @container (max-width: 580px) {

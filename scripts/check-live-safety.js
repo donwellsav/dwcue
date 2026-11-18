@@ -2043,8 +2043,13 @@ assert.match(
 );
 assert.match(
   playlistView,
-  /\.playlist-actions\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow-x:\s*auto;[^}]*container:\s*playlist-actions \/ inline-size;[\s\S]*@container playlist-actions \(max-width: 500px\)/,
+  /\.playlist-actions\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow-x:\s*auto;[^}]*container:\s*playlist-actions \/ inline-size;[\s\S]*@container playlist-actions \(max-width: 490px\)\s*\{\s*\.playlist-actions :deep\(\.btn\)[\s\S]*@container playlist-actions \(max-width: 500px\)\s*\{\s*\.playlist-actions--results :deep\(\.btn\)/,
   'playlist actions must stay bounded by the shared header at every supported width',
+);
+assert.match(
+  playlistView,
+  /class="playlist-actions" :class="\{ 'playlist-actions--results': importReviewAvailable \}"/,
+  'the Results button keeps the wider cut-off for icon-only playlist actions',
 );
 assert.match(
   projectHeader,
