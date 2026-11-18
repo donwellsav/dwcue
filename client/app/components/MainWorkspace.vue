@@ -466,8 +466,9 @@ function handlePanelResizeKey(event: KeyboardEvent) {
 }
 
 
-// Resizable QuickPlay width
-const quickPlayWidth = ref(300);
+// Resizable QuickPlay width. 336 px starts each of the two tiles wide enough
+// for its number, key, a time up to 59:59 and the edit buttons on one line.
+const quickPlayWidth = ref(336);
 const isResizing = ref(false);
 const quickPlayClosed = ref(true);
 const quickPlayVisibilityExplicit = ref(false);
