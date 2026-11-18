@@ -2755,9 +2755,10 @@ function createDetachedQuickPlayWindow() {
 // stack (black / standby image / per-cue image / muted video); this block owns
 // the window, display assignment, shortcut forwarding, and show hygiene.
 //
-// Display assignment is MACHINE-level state in <userData>/video-output.json.
-// Open/closed state is deliberately never persisted: every app launch starts
-// closed so a stale assignment cannot black out the operator's control screen.
+// Neither the display assignment nor open/closed state is persisted: every
+// app launch starts closed with no display assigned, so a stale assignment
+// cannot black out the operator's control screen or close the preview.
+// Framing and test card settings are kept in <userData>/video-output.json.
 // ===========================================================================
 const VIDEO_OUTPUT_CONFIG_FILENAME = 'video-output.json';
 
@@ -2936,33 +2937,44 @@ function videoOutputConfigPath() {
   return path.join(app.getPath('userData'), VIDEO_OUTPUT_CONFIG_FILENAME);
 }
 
+// Screens are chosen fresh every time the app starts. Which display is the
+// output, and which one a capture is taken from, hold for this run only and
+// are never written to disk; screens remembered by an earlier version are
+// ignored. Framing and test card settings are still saved.
+const videoOutputScreens = {
+  displayId: null,
+  // Resolution+label hint for re-attach when the OS hands out a new display
+  // id after a reconnect. Ambiguous for two identical projectors — the id
+  // stays the primary key; the fingerprint is only a fallback hint.
+  displayFingerprint: null,
+  // Other screens of the same size and name that were connected next to
+  // the assigned display: never the output (resolveAssignedDisplay).
+  displayLookalikes: [],
+  captureDisplayId: null,
+};
+
 function readVideoOutputConfig() {
+  const screens = { ...videoOutputScreens, displayLookalikes: [...videoOutputScreens.displayLookalikes] };
   try {
     const parsed = JSON.parse(fs.readFileSync(videoOutputConfigPath(), 'utf-8'));
     return {
-      displayId: typeof parsed.displayId === 'string' ? parsed.displayId : null,
-      captureDisplayId: typeof parsed.captureDisplayId === 'string' ? parsed.captureDisplayId : null,
+      ...screens,
       framing: readVideoFraming(parsed.framing) ?? DEFAULT_VIDEO_FRAMING,
-      // Resolution+label hint for re-attach when the OS hands out a new display
-      // id after a reconnect. Ambiguous for two identical projectors — the id
-      // stays the primary key; the fingerprint is only a fallback hint.
-      displayFingerprint: typeof parsed.displayFingerprint === 'string'
-        ? parsed.displayFingerprint : null,
-      // Other screens of the same size and name that were connected next to
-      // the assigned display: never the output (resolveAssignedDisplay).
-      displayLookalikes: Array.isArray(parsed.displayLookalikes)
-        ? parsed.displayLookalikes.filter(id => typeof id === 'string').slice(0, 16) : [],
       testCardConfig: createTestCardConfig(parsed.testCardConfig),
     };
   } catch {
-    return { displayId: null, displayFingerprint: null, displayLookalikes: [], captureDisplayId: null,
-      framing: DEFAULT_VIDEO_FRAMING, testCardConfig: createTestCardConfig() };
+    return { ...screens, framing: DEFAULT_VIDEO_FRAMING, testCardConfig: createTestCardConfig() };
   }
 }
 
 function writeVideoOutputConfig(cfg) {
+  videoOutputScreens.displayId = cfg.displayId ?? null;
+  videoOutputScreens.displayFingerprint = cfg.displayFingerprint ?? null;
+  videoOutputScreens.displayLookalikes = [...(cfg.displayLookalikes ?? [])];
+  videoOutputScreens.captureDisplayId = cfg.captureDisplayId ?? null;
   try {
-    fs.writeFileSync(videoOutputConfigPath(), JSON.stringify(cfg, null, 2));
+    fs.writeFileSync(videoOutputConfigPath(),
+      JSON.stringify({ framing: cfg.framing, testCardConfig: cfg.testCardConfig }, null, 2));
     return true;
   } catch (e) {
     console.error('[video-output] failed to persist config:', e);
@@ -3608,11 +3620,12 @@ function installVideoOutputWatchdog() {
       const cfg = readVideoOutputConfig();
       if (!videoOutputSessionEnabled) { broadcastVideoOutputStatus(); return; }
       const target = resolveVideoOutputDisplay(cfg);
-      if (videoOutputWindow && cfg.displayId && !target) {
-        // Assigned display is gone: close rather than let the OS park the
-        // fullscreen window on the operator's control display. Preview mode
-        // (no display assigned) intentionally lives on the control screen —
-        // metrics events there (e.g. entering fullscreen) must not kill it.
+      if (videoOutputWindow && videoOutputWindow.videoOutputTargetDisplayId != null && !target) {
+        // The physical output's display is gone: close rather than let the OS
+        // park the window on the operator's control display. The preview
+        // window has no display to lose and lives on the control screen, so
+        // metrics events there (e.g. entering fullscreen) never close it,
+        // even when an assigned display is not connected.
         closeVideoOutputWindow({ preserveSession: true });
       } else if (!videoOutputWindow && target) {
         // Display (re)appeared while armed: re-acquire it.
@@ -4064,7 +4077,7 @@ ipcMain.handle('video-output:set-capture-settings', (event, displayId) => {
     throw new Error('The selected capture display is unavailable.');
   }
   config.captureDisplayId = displayId;
-  if (!writeVideoOutputConfig(config)) throw new Error('Could not save standby capture settings.');
+  writeVideoOutputConfig(config); // held for this run only: nothing to save
   return broadcastVideoOutputStatus();
 });
 
