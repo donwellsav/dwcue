@@ -1,39 +1,39 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "7179281af07fded0e9d1906e09ffe64f2005f5b7",
-  "packageVersion": "2.6.24 development",
-  "edition": "16 November 2026 development refresh of every interface figure: tally colours, striped Stop, List Left, cue search and locators, the Setup button, the checks in Settings, and Show Mode at the same sizes and places as Edit Mode",
+  "sourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+  "packageVersion": "2.7.1",
+  "edition": "17 November 2026, 2.7.1: the five figures that show the attached QuickPlay panel, the playlist bar or the version number, retaken from the packaged 2.7.1 app after the panel's default width grew to 336 pixels",
   "images": [
     {
       "file": "music-continuity-current.png",
-      "view": "Playlist bar with both locators, Keep Music Going beside them and on the Walk-in music group, and the cue search.",
-      "version": "2.6.24 development",
-      "sourceRevision": "ac0650e367eb1a24ebae88edc3a1a9fe5ed50103",
-      "nativeSourceRevision": "73f6ef4f623c88bc928182d82444c01d22e490df",
-      "capturedOn": "2026-11-16",
-      "surface": "DonWells Cue desktop app (development build in Electron on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
+      "view": "Playlist bar with both locators, Keep Music Going beside them and on the Walk-in music group, the cue search, and the labelled Import, Add Group and Shuffle Playlist buttons.",
+      "version": "2.7.1",
+      "sourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+      "nativeSourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+      "capturedOn": "2026-11-17",
+      "surface": "DonWells Cue desktop app (packaged build on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
       "dimensions": [
-        894,
+        858,
         117
       ],
-      "sha256": "458589e44b63f78ffffcecf76b508bca3e5c8b9249c90733d42c74cfcb37a9b9",
-      "fixture": "Disposable Conference rehearsal show with generated WAV files; every cue that was played is silent. Local audio engine on the capture computer.",
+      "sha256": "a6e7cb3a4fb34701d402c1f6f8b5cec1a46faa4d6d690666109dc6cab036034c",
+      "fixture": "Disposable Conference rehearsal show with generated WAV files and the Interval music group as its backup music group; nothing was played. Local audio engine on the capture computer.",
       "captureMethod": "Chrome DevTools Protocol screenshot of the running app window, clipped to the panel or control.",
       "presentation": "Unaltered crop of the panel or control."
     },
     {
       "file": "welcome-current.png",
-      "view": "Welcome screen using the audio engine on this computer, showing version 2.7.0.",
-      "version": "2.7.0",
-      "sourceRevision": "6a36f4e919811b16d22ad71ecab31d3dbb166ea8",
-      "nativeSourceRevision": "6a36f4e919811b16d22ad71ecab31d3dbb166ea8",
+      "view": "Welcome screen using the audio engine on this computer, showing version 2.7.1.",
+      "version": "2.7.1",
+      "sourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+      "nativeSourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
       "capturedOn": "2026-11-17",
       "surface": "DonWells Cue desktop app (packaged build on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
       "dimensions": [
         768,
         378
       ],
-      "sha256": "a5350a9c8645d11bf18525c06e31bf506d46bead0f156be4752b3a6c325cdb9b",
+      "sha256": "c0db9062fb49354dec153ca3013ce799e1aec895dc3cf4d48e78f7a7c72eb1c0",
       "fixture": "No show open; a disposable practice folder. Local audio engine on the capture computer.",
       "captureMethod": "Chrome DevTools Protocol screenshot of the running app window, clipped to the panel or control.",
       "presentation": "Unaltered crop of the panel or control."
@@ -57,17 +57,17 @@
     },
     {
       "file": "edit-workspace.png",
-      "view": "Edit Mode at the default window size: one-line rows, ten QuickPlays in view, each with its number in a chip of its own colour, List Left, the cue search and both locators, the Up Next cue edged in green, the two-line shortcut bar, and Basic Info open for a different cue.",
-      "version": "2.6.24 development",
-      "sourceRevision": "7179281af07fded0e9d1906e09ffe64f2005f5b7",
-      "nativeSourceRevision": "73f6ef4f623c88bc928182d82444c01d22e490df",
-      "capturedOn": "2026-11-16",
-      "surface": "DonWells Cue desktop app (development build in Electron on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
+      "view": "Edit Mode at the default window size with the attached QuickPlay panel at its 336-pixel default width: the QuickPlay tiles, List Left, the cue search and both locators, the Up Next cue edged in green, the two-line shortcut bar, and Basic Info open for a different cue.",
+      "version": "2.7.1",
+      "sourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+      "nativeSourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+      "capturedOn": "2026-11-17",
+      "surface": "DonWells Cue desktop app (packaged build on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
       "dimensions": [
         1400,
         868
       ],
-      "sha256": "030e162d6cf8033070a1cfef6e10cb44b5708ab8d551ce70f7e22c3998ba9490",
+      "sha256": "194d883a484a17219b830f9a1f696ebfd590c5d117c96ae1bcc87fec777358b9",
       "fixture": "Disposable Conference rehearsal show with generated WAV files; every cue that was played is silent. Local audio engine on the capture computer.",
       "captureMethod": "Chrome DevTools Protocol screenshot of the running app window.",
       "presentation": "Full window screenshot."
@@ -92,19 +92,19 @@
     {
       "file": "show-mode.png",
       "view": "Show Mode at the same window size as the Edit Mode figure: the same screen without the editing controls, with the silence warning, the playing cue edged in red, Up Next in green, and the two-line shortcut bar.",
-      "version": "2.6.24 development",
-      "sourceRevision": "7179281af07fded0e9d1906e09ffe64f2005f5b7",
-      "nativeSourceRevision": "73f6ef4f623c88bc928182d82444c01d22e490df",
-      "capturedOn": "2026-11-16",
-      "surface": "DonWells Cue desktop app (development build in Electron on macOS), dark theme, window content 1200 × 700 CSS pixels at 100% interface scale.",
+      "version": "2.7.1",
+      "sourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+      "nativeSourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+      "capturedOn": "2026-11-17",
+      "surface": "DonWells Cue desktop app (packaged build on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
       "dimensions": [
         1400,
         868
       ],
-      "sha256": "053114370463bbbafb59dcebaa965bf7567545cd66388cafe6444d314ffb192c",
+      "sha256": "58f1d28b0aeb88188a3b5031e00369265ce20e716498399c7921b98ccbe92388",
       "fixture": "Disposable Conference rehearsal show with generated WAV files; every cue that was played is silent. Local audio engine on the capture computer.",
       "captureMethod": "Chrome DevTools Protocol screenshot of the running app window.",
-      "presentation": "Full window screenshot."
+      "presentation": "Full window screenshot. The flashing end-of-cue warning edge on the playing row is shown at the low point of its pulse."
     },
     {
       "file": "import-media.png",
@@ -295,17 +295,17 @@
     },
     {
       "file": "quickplay-show-mode.png",
-      "view": "QuickPlay 11 in Show Mode: its number in a chip of its own colour, key and time on the top line, its name, and one row with the centred level, Play and Cue to Continue.",
-      "version": "2.6.24 development",
-      "sourceRevision": "7179281af07fded0e9d1906e09ffe64f2005f5b7",
-      "nativeSourceRevision": "73f6ef4f623c88bc928182d82444c01d22e490df",
-      "capturedOn": "2026-11-16",
-      "surface": "DonWells Cue desktop app (development build in Electron on macOS), dark theme, window content 1200 × 700 CSS pixels at 100% interface scale.",
+      "view": "QuickPlay 11 in Show Mode: its number in a chip of its own colour, its Shift+1 key and time on the top line, its name, and one row with the level, Play and Cue to Continue.",
+      "version": "2.7.1",
+      "sourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+      "nativeSourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+      "capturedOn": "2026-11-17",
+      "surface": "DonWells Cue desktop app (packaged build on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
       "dimensions": [
-        141,
+        159,
         123
       ],
-      "sha256": "5ab3a48537ef40861d87522d3aa0ca0b87c91dea2469c2db344cb6a9b4027d44",
+      "sha256": "94c5d17b8a2c183601c6a73644b098401e17b85bd5e29caab6ff85976b3056b1",
       "fixture": "Disposable Conference rehearsal show with generated WAV files; every cue that was played is silent. Local audio engine on the capture computer.",
       "captureMethod": "Chrome DevTools Protocol screenshot of the running app window, clipped to the panel or control.",
       "presentation": "Unaltered crop of the panel or control."
@@ -475,11 +475,11 @@
     "duckEnvelope": "Schematic explanation, not a measured response plot",
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
-  "uiBuildRevision": "7179281af07fded0e9d1906e09ffe64f2005f5b7",
-  "manualSourceRevision": "7179281af07fded0e9d1906e09ffe64f2005f5b7",
+  "uiBuildRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+  "manualSourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
   "visualCompatibility": {
-    "checkedOn": "2026-11-16",
-    "revision": "7179281af07fded0e9d1906e09ffe64f2005f5b7",
-    "basis": "Three figures (Edit Mode, Show Mode and the Show Mode QuickPlay) were recaptured at this revision, at one window size, after the two modes were made identical apart from the removed controls, the QuickPlay tile was rebuilt with a colour chip for its number, and the shortcut bar became two lines. The others keep their earlier captures; the panels and controls they show were not changed since. All in the dark theme on an Apple silicon Mac; nothing was captured on Windows."
+    "checkedOn": "2026-11-17",
+    "revision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+    "basis": "Five figures (the welcome screen, Edit Mode, Show Mode, the Show Mode QuickPlay and the playlist bar) were recaptured from the packaged 2.7.1 app at one window size. The attached QuickPlay panel now opens 336 pixels wide instead of 300, so the playlist opens 36 pixels narrower. The other figures show the lower panel, which spans the whole window, or controls that did not change, and keep their earlier captures. All in the dark theme on an Apple silicon Mac; nothing was captured on Windows."
   }
 }
