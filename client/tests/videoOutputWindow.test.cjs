@@ -379,28 +379,31 @@ test('every window is kept out of fullscreen Spaces, and the control window fill
 // Fullscreen changes the display's metrics (on a Mac the menu bar and Dock go),
 // which wakes the display watchdog. Only a physical output whose own display
 // has gone may be closed by it; the preview window has no display to lose.
-function displayWatchdog({ outputWindow }) {
+function displayWatchdog({ outputWindow, displays = [laptop], target = null }) {
   const listeners = {};
   const timers = [];
   const closes = [];
+  const actions = [];
   const context = {
     videoOutputWatchdogInstalled: false,
     videoOutputWatchdogTimer: null,
     videoOutputSessionEnabled: true,
     videoOutputWindow: outputWindow,
-    // A screen chosen earlier that is not connected now.
+    // A screen chosen earlier; connected only when `target` is given.
     readVideoOutputConfig: () => ({ displayId: '99' }),
-    resolveVideoOutputDisplay: () => null,
-    closeVideoOutputWindow: options => closes.push(options),
-    createVideoOutputWindow: () => assert.fail('nothing to re-acquire'),
+    resolveVideoOutputDisplay: () => target,
+    closeVideoOutputWindow: (options) => { closes.push(options); actions.push('close'); },
+    createVideoOutputWindow: () => actions.push('create'),
     broadcastVideoOutputStatus() {},
-    screen: { getAllDisplays: () => [laptop], on: (name, listener) => { listeners[name] = listener; } },
+    screen: { getAllDisplays: () => displays, on: (name, listener) => { listeners[name] = listener; } },
     setTimeout: (callback) => { timers.push(callback); return timers.length; },
     clearTimeout() {},
+    process: { platform: 'darwin' },
   };
   vm.runInNewContext(functionSource('installVideoOutputWatchdog'), context);
   context.installVideoOutputWatchdog();
-  return { closes, metricsChange: () => { listeners['display-metrics-changed'](); timers.splice(0).forEach(run => run()); } };
+  const fire = (name) => { listeners[name](); timers.splice(0).forEach(run => run()); };
+  return { closes, actions, metricsChange: () => fire('display-metrics-changed'), displayAdded: () => fire('display-added') };
 }
 
 test('the preview window stays open when going fullscreen changes the display metrics', () => {
@@ -415,6 +418,33 @@ test('a physical output still closes when its own display has gone', () => {
   const rig = displayWatchdog({ outputWindow: output });
   rig.metricsChange();
   assert.deepEqual(JSON.parse(JSON.stringify(rig.closes)), [{ preserveSession: true }]);
+});
+
+// The projector drops out, the operator reopens the output (a preview on the
+// control screen), and the projector comes back: the preview becomes the
+// output on it, as when a display is assigned in Settings. It is not moved
+// there as an ordinary window with a title bar.
+const returnedProjector = { ...audienceProjector, bounds: { x: 1728, y: 0, width: 1920, height: 1080 } };
+const controlScreen = { ...laptop, bounds: { x: 0, y: 0, width: 1728, height: 1117 } };
+
+test('a preview opened while its display was missing becomes the output when the display returns', () => {
+  const preview = { isDestroyed: () => false, videoOutputWaitingForDisplay: true };
+  const rig = displayWatchdog({ outputWindow: preview, displays: [controlScreen, returnedProjector], target: returnedProjector });
+  rig.displayAdded();
+  assert.deepEqual([...rig.actions], ['close', 'create']);
+  assert.deepEqual(JSON.parse(JSON.stringify(rig.closes)), [{ preserveSession: true }], 'the session stays open');
+});
+
+test('a preview that was not waiting for a display is not turned into an output by a new screen', () => {
+  // The operator assigned the only screen, then plugged in a second one: the
+  // control screen must not be taken over by a borderless output.
+  const preview = {
+    isDestroyed: () => false, isFullScreen: () => false,
+    getBounds: () => ({ x: 100, y: 100, width: 960, height: 540 }), setBounds() {},
+  };
+  const rig = displayWatchdog({ outputWindow: preview, displays: [controlScreen, returnedProjector], target: controlScreen });
+  rig.displayAdded();
+  assert.deepEqual([...rig.actions], []);
 });
 
 // ---- Screens are chosen fresh every time the app starts -------------------------

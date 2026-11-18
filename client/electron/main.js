@@ -3478,6 +3478,9 @@ function createVideoOutputWindow() {
   // Only a physical output must cover its display; the preview is a normal window.
   resetVideoOutputGeometry(realOutput);
   if (realOutput) outputWindow.videoOutputTargetDisplayId = target.id;
+  // A preview opened while its assigned display is not connected becomes the
+  // output on that display when it returns (installVideoOutputWatchdog).
+  if (cfg.displayId && !target) outputWindow.videoOutputWaitingForDisplay = true;
   // Native coverage survives renderer loss and hides the control page during hydration.
   const cover = new View();
   cover.setBackgroundColor('#000000');
@@ -3629,6 +3632,13 @@ function installVideoOutputWatchdog() {
         closeVideoOutputWindow({ preserveSession: true });
       } else if (!videoOutputWindow && target) {
         // Display (re)appeared while armed: re-acquire it.
+        createVideoOutputWindow();
+      } else if (videoOutputWindow && target && videoOutputWindow.videoOutputWaitingForDisplay &&
+                 screen.getAllDisplays().length > 1) {
+        // The assigned display is back while the preview opened in its
+        // absence is up: make that the output on it, as assigning a display
+        // in Settings does, instead of moving a window with a title bar there.
+        closeVideoOutputWindow({ preserveSession: true });
         createVideoOutputWindow();
       } else if (videoOutputWindow && target &&
                  screen.getAllDisplays().length > 1 &&
