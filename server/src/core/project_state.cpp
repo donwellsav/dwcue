@@ -3735,6 +3735,7 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
     std::string  end_behavior_action;
     std::string  end_behavior_target_uuid;
     bool         quick_play = false;
+    bool         quick_play_restarts = false;
     std::vector<int> end_behavior_target_index;
     audio::CueId target_cue;
     json item_snapshot;
@@ -3768,6 +3769,12 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
         if (found) {
             item_snapshot = *found;
             quick_play    = is_quick_play_cue(*found);
+            if (quick_play) {
+                // Retrigger: "restart" (the default) or "ignore".
+                const auto& settings = (*found)["quickPlay"];
+                const auto retrigger = settings.find("retrigger");
+                quick_play_restarts = retrigger == settings.end() || *retrigger != "ignore";
+            }
             in_point      = json_get_or(*found, "inPoint",         0.0);
             out_point     = json_get_or(*found, "outPoint",         0.0);
             fade_out_dur  = json_get_or(*found, "fadeOutDuration",  1.0);
@@ -3911,6 +3918,12 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
             lifecycle_lock.unlock();
             playback->set_out_point_seconds(out_point > 0.0 ? out_point : 0.0);
             playback->set_loop(end_behavior_action == "loop", in_point);
+            // A QuickPlay set to Restart that is started again while it runs
+            // starts over from its In point; prime() and play() would leave
+            // it playing where it is.
+            if (quick_play_restarts && phase == ItemPlayPhase::Immediate &&
+                playback->stats().transport != audio::TransportState::Stopped)
+                playback->seek_seconds(play_start);
             const bool primed = playback->prime(2.0, play_start);
             lifecycle_lock.lock();
             if (!current()) return false;

@@ -2460,6 +2460,42 @@ void test_quick_play_continuation(const std::filesystem::path& wav) {
     }
 }
 
+// A QuickPlay pressed again while it plays starts over from its In point when
+// its Retrigger is Restart, and keeps its place when it is Ignore. (For Ignore
+// the client does not send the second press; the engine honours it as well.)
+void test_quick_play_restart(const std::filesystem::path& wav) {
+    for (const std::string retrigger : {"restart", "ignore"}) {
+        const bool restarts = retrigger == "restart";
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        auto show = document(json::array());
+        show["quickPlayItems"] = json::array({audio("quick-play", wav, {
+            {"quickPlay", {{"order", 0}, {"retrigger", retrigger}}}, {"inPoint", 0.1},
+        })});
+        check(state.load_from_json(show) && wait_ready(state), "QuickPlay restart: project and media load");
+        close_devices(engine);
+        check(state.trigger_item("quick-play"), "QuickPlay restart: first press starts it");
+        const auto item = engine.find_cue(*state.item_to_cue_id("quick-play"));
+        std::array<float, 256> left{}, right{};
+        float* channels[]{left.data(), right.data()};
+        for (int i = 0; i < 40; ++i) {
+            item->service_read_ahead(1);
+            item->render_block(channels, 2, 256);
+        }
+        const double played = item->stats().playhead_seconds;
+        check(played > 0.15, "QuickPlay restart: playback has moved past its In point");
+        check(state.trigger_item("quick-play") && on_air(state, engine, "quick-play"),
+              "QuickPlay restart: second press is accepted and it stays on air");
+        if (restarts)
+            check(std::abs(item->stats().playhead_seconds - 0.1) < 0.01,
+                  "QuickPlay restart: Restart starts it again from its In point");
+        else
+            check(std::abs(item->stats().playhead_seconds - played) < 0.01,
+                  "QuickPlay restart: Ignore keeps it playing where it was");
+        state.stop_all_cues(0);
+    }
+}
+
 // A QuickPlay's saved ending, and the Cue to Continue toggle that overrides it
 // for one pass, both resolve against the playlist's Up Next rather than the
 // QuickPlay's own (meaningless) position.
@@ -3781,6 +3817,7 @@ int main() try {
     test_shuffle_items(wav);
     test_quick_play_continuation(wav);
     test_quick_play_authored_follow(wav);
+    test_quick_play_restart(wav);
     test_legacy_quick_play_names(wav);
     test_group_levels();
     test_music_backup(wav);
