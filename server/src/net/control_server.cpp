@@ -39,6 +39,10 @@
 #include <curl/curl.h>
 
 #include <algorithm>
+#if defined(__APPLE__)
+#include <pthread.h>
+#include <pthread/qos.h>
+#endif
 #include <array>
 #include <atomic>
 #include <cctype>
@@ -1219,6 +1223,11 @@ void ControlServer::http_action_worker() {
 // (which can take a few seconds for long files) then broadcasts a
 // waveform_ready doc_patch so every connected client can update its UI.
 void ControlServer::waveform_worker() {
+#if defined(__APPLE__)
+    // Waveform and loudness analysis is background work: on a first open it
+    // decodes every file in the show while cues may already be playing.
+    pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
+#endif
     for (;;) {
         Impl::WaveformTask task;
         {
