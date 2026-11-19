@@ -230,7 +230,9 @@ function cspHashesForInlineScripts(html) {
 }
 
 function configureSessionSecurity() {
-  const allowedPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write', 'midi']);
+  // Chromium asks for "midiSysex" for every Web MIDI request, including the
+  // app's requestMIDIAccess({ sysex: false }); "midi" alone refuses MIDI.
+  const allowedPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write', 'midi', 'midiSysex']);
   const permissionAllowed = (webContents, permission) =>
     !!webContents &&
     isTrustedRendererUrl(webContents.getURL()) &&
