@@ -649,11 +649,20 @@ function toggleQuickPlays() {
 // Monitor strip on the opposite side of the workspace.
 // Keeping the original selection rules here makes this a layout move only:
 // the faders still write the same server-authoritative stereo channel gains.
+// Which other output pairs have signal, as a plain key: the strips rebuild
+// only when that changes, not on every meter frame (30 a second), which
+// re-rendered the whole workspace. The meters update themselves.
+const activeOverridePairs = computed(() => {
+  const active = new Set((server.meters?.master_channels ?? []).map((meter: any) => meter.index as number));
+  const pairs: number[] = [];
+  for (let index = 2; index < 30; index += 2) {
+    if (active.has(index) || active.has(index + 1)) pairs.push(index);
+  }
+  return pairs.join(',');
+});
+
 const outputPairs = computed(() => {
-  const meters = server.meters;
-  const activeIndices = new Set(
-    (meters?.master_channels ?? []).map((meter: any) => meter.index as number),
-  );
+  const activeIndices = new Set(activeOverridePairs.value.split(',').filter(Boolean).map(Number));
 
   // Main plays through the output chosen in Settings (kept by its display
   // name), or the system default when none is chosen.
@@ -671,7 +680,7 @@ const outputPairs = computed(() => {
   const overridePairs: typeof pairs = [];
 
   for (let index = 2; index < 30; index += 2) {
-    if (activeIndices.has(index) || activeIndices.has(index + 1)) {
+    if (activeIndices.has(index)) {
       overridePairs.push({
         key: `out-${index}`,
         leftIndex: index,

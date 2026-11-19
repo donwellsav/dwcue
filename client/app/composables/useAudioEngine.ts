@@ -424,19 +424,23 @@ export const useAudioEngine = () => {
   server.onMeters((m: any) => {
     if (!m) return;
     if (Array.isArray(m.items)) {
+      let moved = false;
       for (const meter of m.items) {
         for (const cue of activeCues.value.values()) {
           if (cue.serverCueId !== meter.cue_id) continue;
+          if (cue.playheadSeconds === meter.playhead_seconds) break;
           const inP = cue.inPoint || 0;
           cue.currentTime = Math.max(0,
             Math.min(meter.playhead_seconds - inP, cue.duration));
           cue.playheadSeconds = meter.playhead_seconds;
+          moved = true;
           break;
         }
       }
-      // Rebuild group projection so playhead changes propagate to
-      // group progress indicators.
-      recomputeActiveGroups();
+      // Rebuild group progress only when a playing cue moved: rebuilding it
+      // on every meter frame walked the show and refreshed every group row
+      // 30 times a second, even with nothing playing.
+      if (moved) recomputeActiveGroups();
     }
     if (Array.isArray(m.master_channels) && m.master_channels.length > 0) {
       // Sum L and R (channels 0 and 1) for a single mono master level.
