@@ -1048,7 +1048,8 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
         backend->vtable = &stalled;
         auto edit = std::async(std::launch::async, [&] {
             if (operation == 0) item.seek_seconds(0.5);
-            else if (operation == 1) item.set_out_point_seconds(1.5);
+            // A trim inside the queued audio still goes to storage.
+            else if (operation == 1) item.set_out_point_seconds(0.05);
             else if (operation == 2) item.set_loop(true, 0.25);
             else item.play();
         });
@@ -1106,7 +1107,7 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
             check(item.stats().transport == TransportState::Stopped &&
                       (mode == 4 || item.stats().playhead_frame == 0),
                   "live edit stall: cancelled I/O cannot restore transport or stopped playhead");
-            if (operation == 2) item.set_out_point_seconds(0.0);  // the out-point queued above
+            if (operation == 1 || operation == 2) item.set_out_point_seconds(0.0);  // the short out-point above
             check(item.prime(2.0, 0.125), "live edit stall: deliberate retry prepares fresh audio");
             item.play(); item.service_read_ahead(1);
             const float expected = static_cast<std::int16_t>(

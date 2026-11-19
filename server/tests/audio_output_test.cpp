@@ -1162,6 +1162,30 @@ void test_stop_without_output(const std::filesystem::path& tone) {
     engine.stop();
 }
 
+// Trimming the out point of a playing cue, away from what is queued, keeps
+// the queued audio and ends at the new point: no hole while it refills.
+void test_out_point_trim_keeps_playing(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.render(3);
+    for (int i = 0; i < 30; ++i) { f.render(); (void)f.drain(); }
+    f.item->service_read_ahead(16);  // the decode worker keeps the queue full
+    const auto queued_before = f.item->read_ahead_write_.load() - f.item->read_ahead_read_.load();
+    f.item->set_out_point_seconds(0.6);
+    const auto queued_after = f.item->read_ahead_write_.load() - f.item->read_ahead_read_.load();
+    bool ended = false;
+    for (int i = 0; i < 400 && !ended; ++i) {
+        f.render();
+        (void)f.drain();
+        ended = f.item->take_natural_end();
+    }
+    const auto end = f.item->stats().playhead_frame;
+    std::printf("out point trim: queued %llu then %llu blocks, ended at frame %llu\n",
+                static_cast<unsigned long long>(queued_before), static_cast<unsigned long long>(queued_after),
+                static_cast<unsigned long long>(end));
+    check(queued_after == queued_before && ended,
+          "out point trim: keeps the queued audio and ends at the new point");
+}
+
 void test_clock_zero_crossing(const std::filesystem::path& ramp) {
     for (const int direction : {-1, 1}) {
         Fixture f(ramp, false, true);
@@ -1627,6 +1651,7 @@ int main() {
     test_cue_to_continue_keeps_playing(seamless_44k(dir));
     test_mixer_changes_ramp(tone);
     test_stop_without_output(tone);
+    test_out_point_trim_keeps_playing(quiet);
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);

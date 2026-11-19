@@ -728,6 +728,22 @@ void PlaybackItem::set_out_point_seconds(double seconds) noexcept {
         end_render_exclusion();
         return;
     }
+    // Trimming a playing cue away from what is queued: nothing queued
+    // changes, only where the decoder stops. Keep the queue: flushing it and
+    // seeking back left a hole mid-music.
+    bool queue_reaches_boundary = decode_out_point_passed_ ||
+        decode_terminal_.load(std::memory_order_acquire) ||
+        (frames > 0 && decode_cursor_frame_ >= frames);
+    for (auto r = read_ahead_read_.load(std::memory_order_acquire),
+              w = read_ahead_write_.load(std::memory_order_acquire);
+         !queue_reaches_boundary && r != w && !read_ahead_.empty(); ++r) {
+        const auto& queued = read_ahead_[r % read_ahead_.size()];
+        queue_reaches_boundary = queued.loop_end_frame != 0 || queued.natural_end;
+    }
+    if (!queue_reaches_boundary) {
+        end_render_exclusion();
+        return;
+    }
 
     // Already-decoded blocks reflect the old boundary. Refill from the audible
     // playhead so the new out-point takes effect on the next rendered block.
