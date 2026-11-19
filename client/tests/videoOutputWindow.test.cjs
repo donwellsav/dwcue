@@ -477,7 +477,8 @@ function videoOutputSettings(fileText) {
     createTestCardConfig: value => value ?? { cardType: 'bars' },
     console,
   };
-  vm.runInNewContext([declarations, functionSource('videoOutputConfigPath'),
+  vm.runInNewContext([declarations, 'const PICTURE_OFFSET_MAX_MS = 500;', functionSource('readPictureOffset'),
+    functionSource('videoOutputConfigPath'),
     functionSource('readVideoOutputConfig'), functionSource('writeVideoOutputConfig')].join('\n'), context);
   return { disk, read: () => context.readVideoOutputConfig(), write: cfg => context.writeVideoOutputConfig(cfg) };
 }
@@ -505,9 +506,17 @@ test('a screen chosen now holds for this run and is never written to disk', () =
     assert.equal(key in saved, false, `${key} is not saved`);
   }
   assert.ok(saved.framing && saved.testCardConfig, 'framing and test card settings are still saved');
+  assert.equal(saved.pictureOffsetMs, 0, 'picture sync is saved with them');
   const again = settings.read();
   assert.equal(again.displayId, '5');
   assert.equal(again.displayFingerprint, '1920x1080:EPSON PJ');
   assert.deepEqual([...again.displayLookalikes], ['6']);
   assert.equal(again.captureDisplayId, '7');
+});
+
+test('picture sync takes whole milliseconds from 0 to 500 and nothing else', () => {
+  const context = {};
+  vm.runInNewContext(`const PICTURE_OFFSET_MAX_MS = 500;\n${functionSource('readPictureOffset')}\nthis.read = readPictureOffset;`, context);
+  for (const value of [0, 33, 500]) assert.equal(context.read(value), value);
+  for (const value of [-1, 501, 12.5, '80', null, undefined, Number.NaN]) assert.equal(context.read(value), null);
 });

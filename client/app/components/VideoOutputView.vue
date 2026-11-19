@@ -75,7 +75,7 @@ const {
   liveSlot, slotSources, registerVideoElement, onSpareEvent, onSpareError, onCueImageLoaded,
   onVideoLoadedMetadata, onVideoCanPlay, onVideoError,
   getPictureHealth,
-} = useVideoOutput(diagnosticSource);
+} = useVideoOutput(diagnosticSource, computed(() => status.value?.pictureOffsetMs ?? 0));
 
 useHead({ title: 'DonWells Cue — Video Output' });
 let offStatus: (() => void) | null = null;

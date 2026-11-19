@@ -138,7 +138,8 @@ async function flush() {
 }
 
 // Timing aside, tests see a start land on the playhead: no learned start lead.
-function createHarness(initialProject: unknown, connected = true, captureApi = {}, startLead: string | null = '0') {
+function createHarness(initialProject: unknown, connected = true, captureApi = {}, startLead: string | null = '0',
+  pictureOffsetMs = 0) {
   const stored = new Map<string, string>(startLead === null ? [] : [['dwcue.videoStartLead', startLead]]);
   const cueStateHandlers = new Set<(value: unknown) => void>();
   const meterHandlers = new Set<(value: any) => void>();
@@ -195,7 +196,7 @@ function createHarness(initialProject: unknown, connected = true, captureApi = {
 
   const scope = effectScope();
   const diagnostic = shallowRef<VideoTestCardPlayback | null>(null);
-  const controller = scope.run(() => useVideoOutput(diagnostic));
+  const controller = scope.run(() => useVideoOutput(diagnostic, ref(pictureOffsetMs)));
   assert.ok(controller);
   const element = videoElement();
   controller.videoEl.value = element as unknown as HTMLVideoElement;
@@ -876,6 +877,24 @@ test('a cut from video to a still holds the last frame until the still has loade
     assert.equal(h.controller.showHeldFrame.value, true, 'the last video frame stays up while the still loads');
     h.controller.onCueImageLoaded();
     assert.equal(h.controller.showHeldFrame.value, false, 'the loaded still replaces it');
+  } finally { h.stop(); }
+});
+
+test('picture sync runs the picture ahead of the sound by the operator offset', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, '0', 80);
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 0.03));
+    h.controller.onVideoCanPlay();
+    await flush();
+    assert.ok(Math.abs(h.element.currentTime - 0.11) < 1e-9, `the start lands 80 ms ahead (${h.element.currentTime})`);
+    // Held 80 ms ahead of the sound, the picture is where it should be.
+    for (let i = 0; i < 12; i++) {
+      const heard = 0.2 + i / 30;
+      h.element.currentTime = heard + 0.08;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: heard + 0.02, audible_seconds: heard }] });
+    }
+    assert.equal(h.element.playbackRate, 1, 'no correction away from the offset');
   } finally { h.stop(); }
 });
 

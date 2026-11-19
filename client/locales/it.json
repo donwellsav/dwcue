@@ -157,6 +157,11 @@
       "help": "Adatta l’immagine intera in proporzione.",
       "invalid": "Inserisci dimensioni del canvas come numeri interi da 64 a 16384 px e una dimensione del riquadro da 25 a 100%."
     },
+    "videoPictureOffset": {
+      "title": "Sincronia immagine",
+      "label": "Immagine in anticipo sul suono (ms)",
+      "help": "Compensa un mixer video, uno scaler o un proiettore che ritarda l'immagine: l'immagine anticipa il suono di questo valore. Misura il ritardo con il monoscopio Sincronizzazione AV. Da 0 a 500 ms."
+    },
     "videoOutputTestCard": "Mostra monoscopio",
     "videoOutputStatus": "Stato uscita",
     "videoOutputStatusOff": "L’uscita video è spenta.",

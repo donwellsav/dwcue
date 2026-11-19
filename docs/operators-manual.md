@@ -710,6 +710,12 @@ In **Settings → Video Output → Picture framing**, click the current **Canvas
 
 Set the HDMI resolution, refresh rate, and display rotation in the operating system. Confirm the received signal at the switcher or display. For a standard projector or TV, rehearse at Full HD with Fit to display at 100%. Check that the corner markers and edges of a framing pattern are visible and its circle is round.
 
+### Set picture sync
+
+When the picture reaches the audience through a switcher, scaler, extender or projector, it arrives later than the sound, which usually goes from the computer straight to the sound desk. In **Settings → Video Output → Picture sync**, enter that delay in **Picture ahead of sound (ms)**, from 0 to 500 ms. The picture then runs that far ahead of the sound, so the two arrive together. The setting is saved on this machine and applies at once to an open Video Output window. Paused cues still show their exact frame.
+
+To measure the delay, show the **AV Sync** test card and compare its flash on the audience screen with its tone at the sound desk, for example by filming both with a phone in slow motion. Start at 0 and raise the value until they line up; one frame at 30 fps is about 33 ms.
+
 ### Capture a picture
 
 A capture takes a picture of what is on **Video Output** and saves it in the show's media folder. You say what it is for as you capture it:
@@ -717,7 +723,7 @@ A capture takes a picture of what is on **Video Output** and saves it in the sho
 - **Capture as standby picture** (default **G**) makes it the show's **Standby image**, shown when a cue has no picture of its own.
 - **Capture for cue** (default **Shift+G**) makes it the **Cue image** of one cue: the cue that is playing, or the selected cue when nothing is playing. The button names that cue.
 
-Click the small Video Output picture in the top bar to open the **Capture a picture** panel. It is available in Show Mode, and the same controls are in **Settings → Video Output**. The panel shows the picture just captured with **Undo**, which puts back the picture that was there before, and the current standby and cue pictures with **Clear picture**.
+Click the Video Output status in the top bar to open the **Capture a picture** panel. It is available in Show Mode, and the same controls are in **Settings → Video Output**. The panel shows the picture just captured with **Undo**, which puts back the picture that was there before, and the current standby and cue pictures with **Clear picture**.
 
 To capture another screen instead, such as a presenter's slide, choose it under **Capture from** and then press a capture button. That choice lasts only while the panel is open; the shortcuts always capture Video Output. The first time, the operating system may ask whether the app may see that screen.
 

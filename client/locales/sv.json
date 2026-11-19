@@ -157,6 +157,11 @@
       "help": "Anpassar hela bilden proportionellt.",
       "invalid": "Ange heltal för dukens mått från 64 till 16384 px och en bildstorlek från 25 till 100 %."
     },
+    "videoPictureOffset": {
+      "title": "Bildsynk",
+      "label": "Bild före ljud (ms)",
+      "help": "Kompenserar för en videomixer, skalare eller projektor som fördröjer bilden: bilden går så här mycket före ljudet. Mät fördröjningen med testbilden AV-synkronisering. 0 till 500 ms."
+    },
     "videoOutputTestCard": "Visa testbild",
     "videoOutputStatus": "Utgångsstatus",
     "videoOutputStatusOff": "Videoutgången är av.",

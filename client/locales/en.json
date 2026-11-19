@@ -157,6 +157,11 @@
       "help": "Fits the full picture proportionally.",
       "invalid": "Enter whole-number canvas dimensions from 64 to 16384 px and a frame size from 25 to 100%."
     },
+    "videoPictureOffset": {
+      "title": "Picture sync",
+      "label": "Picture ahead of sound (ms)",
+      "help": "Makes up for a switcher, scaler or projector that delays the picture: the picture runs this far ahead of the sound. Measure the delay with the AV Sync test card. 0 to 500 ms."
+    },
     "videoOutputTestCard": "Show test card",
     "videoOutputStatus": "Output status",
     "videoOutputStatusOff": "Video output is off.",

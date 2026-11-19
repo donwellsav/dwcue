@@ -259,6 +259,7 @@ declare global {
         identifyDisplays: () => Promise<VideoOutputDisplay[]>;
         setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
         setFraming: (framing: VideoFraming) => Promise<VideoOutputStatus>;
+        setPictureOffset: (ms: number) => Promise<VideoOutputStatus>;
         checkFrame: (request: {
           id: string; serverUrl: string; accessToken: string; sessionId: string;
           uuid: string; fileRevision: string | null; inPoint: number; outPoint: number | null;
@@ -344,6 +345,8 @@ declare global {
     displayId: string | null;
     captureDisplayId: string | null;
     framing: VideoFraming;
+    // How far the picture runs ahead of the sound (ms), for a delaying video chain.
+    pictureOffsetMs: number;
     targetId: string | null;
     targetLabel: string | null;
     displays: VideoOutputDisplay[];

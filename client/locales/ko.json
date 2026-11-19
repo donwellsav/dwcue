@@ -157,6 +157,11 @@
       "help": "전체 화면을 비율에 맞춰 표시합니다.",
       "invalid": "캔버스 크기는 64~16384px의 정수, 프레임 크기는 25~100%로 입력하세요."
     },
+    "videoPictureOffset": {
+      "title": "영상 동기",
+      "label": "소리보다 앞선 영상 (ms)",
+      "help": "영상을 지연시키는 스위처, 스케일러, 프로젝터를 보정합니다. 영상이 소리보다 이만큼 앞서 재생됩니다. AV 동기화 테스트 카드로 지연을 측정하세요. 0~500 ms."
+    },
     "videoOutputTestCard": "테스트 카드 표시",
     "videoOutputStatus": "출력 상태",
     "videoOutputStatusOff": "비디오 출력이 꺼져 있습니다.",

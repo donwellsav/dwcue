@@ -154,8 +154,14 @@ function readActiveCue(value: unknown): ActiveCue | null {
   };
 }
 
-export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlayback | null>>) {
+export function useVideoOutput(
+  diagnosticSource?: Readonly<Ref<VideoTestCardPlayback | null>>,
+  pictureOffsetMs?: Readonly<Ref<number>>,
+) {
   const server = useLiveplayServer();
+  // Picture sync: how far the picture runs ahead of the sound, making up for
+  // a switcher, scaler or projector that delays it (Video Output settings).
+  const pictureOffset = () => Math.max(0, pictureOffsetMs?.value ?? 0) / 1000;
 
   const videoEl = ref<HTMLVideoElement | null>(null);
   // Two <video> elements: the live one and a spare. While a video cue plays,
@@ -579,7 +585,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
       return;
     }
 
-    pendingSeekSeconds = playheadSeconds + (startPending ? startLead : 0);
+    pendingSeekSeconds = playheadSeconds + (startPending ? startLead + pictureOffset() : 0);
     const url = itemMediaUrl(item);
     if (url !== videoSrc.value) {
       pauseVideo();
@@ -868,7 +874,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     if (chaseCueId !== active.cueId) resetChase(active.cueId);
     // Follow the cue as heard: the render position runs ahead of the sound by
     // the output's queue, and following it would put the picture early.
-    const heard = meter.audible_seconds ?? meter.playhead_seconds;
+    const heard = (meter.audible_seconds ?? meter.playhead_seconds) + pictureOffset();
     const drift = element.currentTime - heard;
     chaseSamples.push(drift);
     if (chaseSamples.length > CHASE_WINDOW) chaseSamples.shift();

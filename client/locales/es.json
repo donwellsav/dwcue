@@ -157,6 +157,11 @@
       "help": "Ajusta la imagen completa de forma proporcional.",
       "invalid": "Introduzca dimensiones de lienzo en números enteros de 64 a 16384 px y un tamaño de cuadro del 25 al 100 %."
     },
+    "videoPictureOffset": {
+      "title": "Sincronía de imagen",
+      "label": "Imagen adelantada al sonido (ms)",
+      "help": "Compensa un mezclador, escalador o proyector que retrasa la imagen: la imagen va por delante del sonido esta cantidad. Mida el retraso con la carta de ajuste Sincronización AV. De 0 a 500 ms."
+    },
     "videoOutputTestCard": "Mostrar carta de ajuste",
     "videoOutputStatus": "Estado de la salida",
     "videoOutputStatusOff": "La salida de vídeo está desactivada.",

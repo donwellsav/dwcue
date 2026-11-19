@@ -2914,6 +2914,14 @@ const videoOutputScreens = {
   captureDisplayId: null,
 };
 
+// How far the picture runs ahead of the sound, to make up for a switcher,
+// scaler or projector that delays it. Whole milliseconds, 0 to 500; this
+// machine's video chain, so it lives with the display and framing.
+const PICTURE_OFFSET_MAX_MS = 500;
+function readPictureOffset(value) {
+  return Number.isInteger(value) && value >= 0 && value <= PICTURE_OFFSET_MAX_MS ? value : null;
+}
+
 function readVideoOutputConfig() {
   const screens = { ...videoOutputScreens, displayLookalikes: [...videoOutputScreens.displayLookalikes] };
   try {
@@ -2921,10 +2929,11 @@ function readVideoOutputConfig() {
     return {
       ...screens,
       framing: readVideoFraming(parsed.framing) ?? DEFAULT_VIDEO_FRAMING,
+      pictureOffsetMs: readPictureOffset(parsed.pictureOffsetMs) ?? 0,
       testCardConfig: createTestCardConfig(parsed.testCardConfig),
     };
   } catch {
-    return { ...screens, framing: DEFAULT_VIDEO_FRAMING, testCardConfig: createTestCardConfig() };
+    return { ...screens, framing: DEFAULT_VIDEO_FRAMING, pictureOffsetMs: 0, testCardConfig: createTestCardConfig() };
   }
 }
 
@@ -2935,7 +2944,8 @@ function writeVideoOutputConfig(cfg) {
   videoOutputScreens.captureDisplayId = cfg.captureDisplayId ?? null;
   try {
     fs.writeFileSync(videoOutputConfigPath(),
-      JSON.stringify({ framing: cfg.framing, testCardConfig: cfg.testCardConfig }, null, 2));
+      JSON.stringify({ framing: cfg.framing, pictureOffsetMs: cfg.pictureOffsetMs ?? 0,
+        testCardConfig: cfg.testCardConfig }, null, 2));
     return true;
   } catch (e) {
     console.error('[video-output] failed to persist config:', e);
@@ -3025,6 +3035,7 @@ function videoOutputStatus() {
     displayId: cfg.displayId,
     captureDisplayId: cfg.captureDisplayId,
     framing: cfg.framing,
+    pictureOffsetMs: cfg.pictureOffsetMs ?? 0,
     targetId: target ? String(target.id) : null,
     targetLabel: target ? (target.label || `Display ${target.id}`) : null,
     displays,
@@ -3738,6 +3749,17 @@ function requireCaptureTarget(event, target) {
   if (!cue) throw new Error('Select a media cue in the current show.');
   return cue;
 }
+
+ipcMain.handle('video-output:set-picture-offset', (event, value) => {
+  requireTrustedIpc(event);
+  if (event.sender !== mainWindow?.webContents) throw new Error('Picture sync requires the main workspace.');
+  const offset = readPictureOffset(value);
+  if (offset === null) throw new TypeError('Picture sync must be a whole number of milliseconds from 0 to 500.');
+  const config = readVideoOutputConfig();
+  config.pictureOffsetMs = offset;
+  if (!writeVideoOutputConfig(config)) throw new Error('Could not save picture sync.');
+  return broadcastVideoOutputStatus();
+});
 
 ipcMain.handle('video-output:set-framing', (event, value) => {
   requireTrustedIpc(event);

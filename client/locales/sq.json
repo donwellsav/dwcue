@@ -157,6 +157,11 @@
       "help": "Përshtat figurën e plotë në përpjesëtim.",
       "invalid": "Vendos përmasa të plota të kanavacës nga 64 në 16384 px dhe madhësi kuadri nga 25 në 100%."
     },
+    "videoPictureOffset": {
+      "title": "Sinkronizimi i figurës",
+      "label": "Figura para zërit (ms)",
+      "help": "Kompenson një mikser video, shkallëzues ose projektor që vonon figurën: figura shkon kaq përpara zërit. Matni vonesën me kartën e testit Sinkronizimi AV. Nga 0 deri në 500 ms."
+    },
     "videoOutputTestCard": "Shfaq kartën e testit",
     "videoOutputStatus": "Gjendja e daljes",
     "videoOutputStatusOff": "Dalja e videos është e fikur.",

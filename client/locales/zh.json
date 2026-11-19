@@ -157,6 +157,11 @@
       "help": "按比例缩放以显示完整画面。",
       "invalid": "请输入 64 至 16384 像素的整数画布尺寸，以及 25 至 100% 的画面尺寸。"
     },
+    "videoPictureOffset": {
+      "title": "画面同步",
+      "label": "画面领先声音 (ms)",
+      "help": "补偿会延迟画面的切换台、缩放器或投影机：画面比声音提前这么多。请用 AV 同步 测试卡测量延迟。0 至 500 毫秒。"
+    },
     "videoOutputTestCard": "显示测试卡",
     "videoOutputStatus": "输出状态",
     "videoOutputStatusOff": "视频输出已关闭。",

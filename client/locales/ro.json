@@ -157,6 +157,11 @@
       "help": "Potrivește imaginea întreagă proporțional.",
       "invalid": "Introdu dimensiuni întregi ale canvasului între 64 și 16384 px și o dimensiune a cadrului între 25 și 100%."
     },
+    "videoPictureOffset": {
+      "title": "Sincronizare imagine",
+      "label": "Imaginea înaintea sunetului (ms)",
+      "help": "Compensează un mixer video, un scaler sau un proiector care întârzie imaginea: imaginea rulează cu atât înaintea sunetului. Măsurați întârzierea cu cartela de test Sincronizare AV. Între 0 și 500 ms."
+    },
     "videoOutputTestCard": "Afișează mira de test",
     "videoOutputStatus": "Starea ieșirii",
     "videoOutputStatusOff": "Ieșirea video este oprită.",

@@ -157,6 +157,11 @@
       "help": "Tilpasser hele bildet proporsjonalt.",
       "invalid": "Angi hele tall for lerretsmål fra 64 til 16384 px og en rammestørrelse fra 25 til 100 %."
     },
+    "videoPictureOffset": {
+      "title": "Bildesynk",
+      "label": "Bilde foran lyd (ms)",
+      "help": "Kompenserer for en videomikser, skalerer eller projektor som forsinker bildet: bildet går så mye foran lyden. Mål forsinkelsen med testbildet AV-synkronisering. 0 til 500 ms."
+    },
     "videoOutputTestCard": "Vis testbilde",
     "videoOutputStatus": "Utgangsstatus",
     "videoOutputStatusOff": "Videoutgangen er av.",

@@ -157,6 +157,11 @@
       "help": "Tüm görüntüyü orantılı olarak sığdırır.",
       "invalid": "64 ile 16384 px arasında tam sayı tuval boyutları ve 25 ile 100% arasında bir çerçeve boyutu girin."
     },
+    "videoPictureOffset": {
+      "title": "Görüntü senkronu",
+      "label": "Görüntü sesten önde (ms)",
+      "help": "Görüntüyü geciktiren bir görüntü mikseri, ölçekleyici veya projektörü telafi eder: görüntü sesten bu kadar önde gider. Gecikmeyi AV eşzamanlama test kartıyla ölçün. 0 ile 500 ms arası."
+    },
     "videoOutputTestCard": "Test kartını göster",
     "videoOutputStatus": "Çıkış durumu",
     "videoOutputStatusOff": "Video çıkışı kapalı.",
