@@ -253,6 +253,7 @@ function followMeters(engine) {
       state.lastAt = at;
       state.frames += 1;
       state.masters = new Map((message.master_channels ?? []).map(channel => [channel.index, channel.peak_db]));
+      if (state.log) state.log.push({ t: Date.now(), items: (message.items ?? []).map(item => [item.cue_id, item.playhead_seconds, item.audible_seconds ?? item.playhead_seconds]) });
     };
   };
   open();
@@ -642,43 +643,86 @@ async function runSoak({ minutes, seed, probe = false }) {
     const choose = () => { let roll = rng() * totalWeight; for (const [name, weight] of weighted) { roll -= weight; if (roll < 0) return name; } return 'go'; };
 
     if (probe && option('video-cue')) {
-      // One video cue played through, uninterrupted, with the output open:
-      // dropped frames each second, and every seek and speed change the
-      // output makes to stay with the audio clock.
+      // A video cue started --starts times (default 1), each played --seconds
+      // uninterrupted with the output open. Per start: GO to first frame, the
+      // picture's offset from the sound as it reaches the screen, dropped
+      // frames, and every seek and speed change the output makes.
       const name = option('video-cue');
       const seconds = Number(option('seconds', 50));
+      const starts = Number(option('starts', 1));
       await actions.videoOutput();
       if (!videoPage) throw new Error('the video output page did not open');
-      await videoPage.send('Runtime.evaluate', { expression: `(() => {
-        window.__check = { seeks: 0, rates: [] };
-        document.addEventListener('seeking', () => { window.__check.seeks += 1; }, true);
-        document.addEventListener('ratechange', e => { window.__check.rates.push(+e.target.playbackRate.toFixed(3)); }, true);
-        return true; })()`, returnByValue: true });
-      await page.evaluate(`(${ROW})(${JSON.stringify(name)})?.querySelector(':scope > .item-content .set-next-action')?.click()`);
-      if (!await waitFor(async () => (await ui()).upNext.includes(name), 3000)) throw new Error(`could not queue "${name}"`);
-      await page.evaluate(`(() => { document.querySelector('.play-next-btn').click(); return true; })()`);
-      const read = async () => (await videoPage.send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
+      const inVideo = async expression => (await videoPage.send('Runtime.evaluate', { returnByValue: true, expression })).result.result.value;
+      await inVideo(`(() => {
+        const trace = window.__trace = { frames: [], events: [], seeks: 0, rates: [] };
+        for (const type of ['seeking', 'seeked', 'playing', 'waiting', 'ratechange', 'play'])
+          document.addEventListener(type, e => {
+            if (type === 'seeking') trace.seeks += 1;
+            if (type === 'ratechange') trace.rates.push(+e.target.playbackRate.toFixed(3));
+            trace.events.push({ e: type, t: Date.now(), ct: e.target.currentTime, rate: e.target.playbackRate });
+          }, true);
+        // Each frame is timed by when it is expected on screen, on the wall clock.
+        const watch = v => v.requestVideoFrameCallback((now, m) => {
+          if (trace.frames.length < 600) trace.frames.push({ t: Date.now() - performance.now() + m.expectedDisplayTime, media: m.mediaTime });
+          watch(v); });
+        const watched = new WeakSet();
+        setInterval(() => { for (const v of document.querySelectorAll('video')) if (!watched.has(v)) { watched.add(v); watch(v); } }, 50);
+        return true; })()`);
+      const quality = () => inVideo(`(() => {
         const v = [...document.querySelectorAll('video')].find(e => !e.paused) || document.querySelector('video');
         const q = v?.getVideoPlaybackQuality?.();
-        return { total: q?.totalVideoFrames ?? 0, dropped: q?.droppedVideoFrames ?? 0, time: v?.currentTime ?? 0,
-          seeks: window.__check.seeks, rates: window.__check.rates.length }; })()` })).result.result.value;
-      const timeline = [];
-      let previous = await read();
-      for (let i = 0; i < seconds && !fatal; i++) {
-        await delay(1000);
-        await guard();
-        const next = await read();
-        timeline.push({ s: i + 1, frames: next.total - previous.total, dropped: next.dropped - previous.dropped,
-          seeks: next.seeks - previous.seeks, rates: next.rates - previous.rates });
-        previous = next;
+        return { total: q?.totalVideoFrames ?? 0, dropped: q?.droppedVideoFrames ?? 0, seeks: window.__trace.seeks, rates: window.__trace.rates.length }; })()`);
+      const results = [];
+      for (let n = 1; n <= starts && !fatal; n++) {
+        await page.evaluate(`(${ROW})(${JSON.stringify(name)})?.querySelector(':scope > .item-content .set-next-action')?.click()`);
+        if (!await waitFor(async () => (await ui()).upNext.includes(name), 3000)) throw new Error(`could not queue "${name}"`);
+        // In a show the next cue is queued well before GO, so its video is loaded.
+        await delay(Number(option('preload-ms', 2000)));
+        await inVideo(`(() => { window.__trace.frames = []; window.__trace.events = []; return true; })()`);
+        meters.state.log = [];
+        const before = await quality();
+        const pressedAt = Date.now();
+        await page.evaluate(`(() => { document.querySelector('.play-next-btn').click(); return true; })()`);
+        const dropsBySecond = [];
+        let last = before;
+        for (let i = 0; i < seconds && !fatal; i++) {
+          await delay(1000); await guard();
+          const now = await quality();
+          if (now.dropped > last.dropped) dropsBySecond.push(`${i + 1}s:${now.dropped - last.dropped}`);
+          last = now;
+        }
+        const after = last;
+        const trace = await inVideo('window.__trace');
+        const log = meters.state.log; meters.state.log = null;
+        await actions.stopAll();
+        await delay(1500);
+        const cueId = log.flatMap(entry => entry.items).find(([, playhead]) => playhead > 0)?.[0];
+        // The cue as heard at a wall-clock moment, between the two readings around it.
+        const points = log.map(entry => ({ t: entry.t, p: entry.items.find(([id]) => id === cueId)?.[2] })).filter(x => x.p !== undefined);
+        const heardAt = t => {
+          const next = points.findIndex(x => x.t >= t);
+          if (next <= 0) return null;
+          const a = points[next - 1], b = points[next];
+          return a.p + (b.p - a.p) * (t - a.t) / Math.max(1, b.t - a.t);
+        };
+        const frames = trace.frames.filter(f => f.t >= pressedAt);
+        const offset = f => { const p = f && heardAt(f.t); return p == null ? null : round((f.media - p) * 1000); };
+        const at = ms => frames.find(f => f.t >= pressedAt + ms);
+        const result = {
+          start: n, firstFrameMs: frames[0] ? round(frames[0].t - pressedAt) : null,
+          offsetMs: Object.fromEntries([0, 500, 1000, 2000, 4000, 8000].map(ms => [ms, offset(at(ms))])),
+          frames: after.total - before.total, dropped: after.dropped - before.dropped,
+          seeks: after.seeks - before.seeks, speedChanges: after.rates - before.rates, dropsBySecond,
+          events: trace.events.filter(e => e.t >= pressedAt && e.t < pressedAt + 6000 && e.e !== 'play')
+            .map(e => `${e.t - pressedAt}ms ${e.e}${e.e === 'ratechange' ? ' ' + e.rate : ''}`),
+        };
+        results.push(result);
+        say('video start', JSON.stringify(result));
       }
-      const final = (await videoPage.send('Runtime.evaluate', { returnByValue: true, expression: 'window.__check' })).result.result.value;
-      await actions.stopAll();
-      const sum = key => timeline.reduce((total, row) => total + row[key], 0);
-      say('video check', JSON.stringify({ cue: name, seconds: timeline.length, frames: sum('frames'), dropped: sum('dropped'),
-        seeks: sum('seeks'), speedChanges: sum('rates'), speeds: [...new Set(final.rates)].sort() }));
-      say('seconds with drops', JSON.stringify(timeline.filter(row => row.dropped || row.seeks)));
-      fs.writeFileSync(path.join(RESULTS, 'video-check.json'), JSON.stringify({ timeline, final }, null, 1));
+      const total = key => results.reduce((sum, r) => sum + r[key], 0);
+      say('video check', JSON.stringify({ cue: name, starts: results.length, frames: total('frames'), dropped: total('dropped'),
+        seeks: total('seeks'), speedChanges: total('speedChanges') }));
+      fs.writeFileSync(path.join(RESULTS, 'video-check.json'), JSON.stringify(results, null, 1));
       say('probe finished');
       return;
     }
