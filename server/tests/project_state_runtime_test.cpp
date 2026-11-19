@@ -803,11 +803,70 @@ void test_program_reroute_preserves_ltc() {
     {
         std::lock_guard lock{engine.mutex_};
         const auto& channels = engine.pending_.item_sources.at(cue.value).by_source_channel;
-        check(!warned.load() && !channels.front().empty() && channels.front().front().mixer == warmed &&
-                  channels.size() > 1 && channels.back().size() == 1 && channels.back().front().mixer == warmed,
+        // Program plays through Main on the same device; LTC keeps its own route.
+        check(!warned.load() && !channels.front().empty() && channels.front().front().mixer == engine.main_mixer_ &&
+                  channels.size() > 1 && channels.back().size() == 1 && channels.back().front().mixer == warmed &&
+                  engine.devices_.size() == 1,
               "Settings reroute: Program changes without clearing or reopening LTC");
     }
     state.set_ui_state_broadcaster({});
+    state.stop_all_cues(0);
+}
+
+// Program has one audio path: Main (master channels 0/1), opened on the output
+// chosen in Settings or, with none chosen, on the system default. A chosen
+// output used to get a second route of its own while Main kept the system
+// default open, so the console metered and faded the wrong device.
+void test_program_plays_through_main() {
+    const auto wav = make_wav(8'192, 480'000);
+    liveplay::audio::AudioEngine engine;
+    engine.device_test_context_ = null_preview_context();
+    liveplay::core::ProjectState state(engine);
+    state.test_program_main_routing_ = true;
+    check(state.replace_full_document(document(json::array({
+              audio("main-path", wav),
+              audio("main-path-override", wav, {{"deviceOverride", "NULL Playback Device"}}),
+          }))) && wait_ready(state) && state.trigger_item("main-path"),
+          "Program path: plays on the system default");
+    const auto cue = *state.item_to_cue_id("main-path");
+    const auto program_mixer = [&] {
+        std::lock_guard lock{engine.mutex_};
+        const auto& channels = engine.pending_.item_sources.at(cue.value).by_source_channel;
+        return channels.empty() || channels.front().empty() ? liveplay::audio::MixerChannelId{}
+                                                           : channels.front().front().mixer;
+    };
+    const auto main_device = [&] {
+        std::lock_guard lock{engine.mutex_};
+        const auto& dest = engine.pending_.master_destinations[0];
+        return dest ? dest->device : liveplay::audio::DeviceId{};
+    };
+    const auto program_routes = [&] {
+        std::lock_guard lock{state.mutex_};
+        return state.device_routings_.size();
+    };
+    check(!engine.main_mixer_.empty() && program_mixer() == engine.main_mixer_ && program_routes() == 0,
+          "Program path: the system default is Main");
+
+    check(state.patch_settings({{"defaultOutputDevice", "NULL Playback Device"}}),
+          "Program path: the chosen output is accepted");
+    check(on_air(state, engine, "main-path") && program_mixer() == engine.main_mixer_ && program_routes() == 0,
+          "Program path: a chosen output plays through Main, with no route of its own");
+    check(!main_device().empty() && engine.devices_.size() == 1 &&
+              engine.devices_.front()->id == main_device() &&
+              engine.devices_.front()->open_references.value() == 1,
+          "Program path: Main holds the chosen output, once, and nothing else is open");
+
+    state.stop_all_cues(0);
+    check(state.trigger_item("main-path") && program_mixer() == engine.main_mixer_ && program_routes() == 0,
+          "Program path: GO keeps the chosen output on Main");
+
+    check(state.patch_settings({{"defaultOutputDevice", nullptr}}) && program_mixer() == engine.main_mixer_ &&
+              program_routes() == 0 && engine.devices_.size() == 1 &&
+              engine.devices_.front()->open_references.value() == 1,
+          "Program path: back to the system default, still on Main and one reference");
+
+    check(state.trigger_item("main-path-override") && program_routes() == 1,
+          "Program path: a cue with its own output still gets its own route");
     state.stop_all_cues(0);
 }
 
@@ -3780,6 +3839,7 @@ int main() try {
     test_stop_all_during_ltc_edit();
     test_loader_output_wait();
     test_program_reroute_preserves_ltc();
+    test_program_plays_through_main();
     test_stop_all_during_diagnostic_output_start();
     test_stop_all_during_output_settings_open();
     test_stop_all_during_preview_retirement();

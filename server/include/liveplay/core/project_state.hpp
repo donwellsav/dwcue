@@ -544,11 +544,14 @@ public:
                                   std::unique_lock<std::recursive_mutex>* playback_lock = nullptr,
                                   std::optional<audio::MixerChannelId> prepared = std::nullopt);
 
-    // Re-route all cues that have no per-item deviceOverride to the project's
-    // configured defaultOutputDevice mixer. Called when defaultOutputDevice
-    // changes in settings (including during playback).
-    void apply_default_device_routing(std::unique_lock<std::recursive_mutex>& playback_lock,
-                                      const audio::MixerChannelId& prepared = {});
+    // Program has one audio path: Main (masters 0/1), opened on the output
+    // chosen in Settings (defaultOutputDevice) or, with none chosen, on the
+    // system default. Points Main at the current choice and puts every cue
+    // without its own output (deviceOverride) on it. Called when the choice
+    // changes (including during playback) and when a show has loaded.
+    // `prepared` is a device the caller already opened for Main.
+    void apply_program_output(std::unique_lock<std::recursive_mutex>& playback_lock,
+                              const audio::DeviceId& prepared = {});
 
     // Stop any active preview and reset preview state so the next call to
     // start_preview() picks up the updated previewDevice setting.
@@ -686,6 +689,9 @@ private:
         audio::MasterChannelIndex  master_r;
     };
     std::unordered_map<std::string, DeviceRouting> device_routings_;
+    // The selection Main was last opened for ("" = system default); empty
+    // until Main has a device. Guarded by mutex_.
+    std::optional<std::string> main_follows_;
     // Serializes route creation with project-boundary release across mirror,
     // settings, and transport callers. Always acquire before mutex_.
     std::mutex device_routing_mutex_;
@@ -706,9 +712,23 @@ private:
         const std::function<audio::DeviceId()>& open = {});
     bool reject_output_selection(const std::string& selection,
                                  const std::string& item_uuid = {});
+    // Main, on the output Program should play through; opens it when Main is
+    // on anything else. Empty when that output cannot be opened, or when
+    // `current` turns false while it opens.
     audio::MixerChannelId ensure_program_main(std::unique_lock<std::recursive_mutex>& lifecycle_lock,
                                              const std::function<bool()>& current,
                                              bool route_unassigned = false);
+    // Main without opening anything: empty unless Main already plays through
+    // the current choice (buffered starts cannot wait for a device).
+    audio::MixerChannelId program_main_if_ready();
+    // The output Program should play through: the chosen one's name, or empty
+    // for the system default.
+    std::string program_output_selection() const;
+    audio::DeviceId open_program_output(const std::string& selection);
+    // Hands `device` (opened for Main) to Main and releases the reference Main
+    // held before. Empty, with `device` released, when it cannot be bound.
+    audio::MixerChannelId bind_program_main(const audio::DeviceId& device, const std::string& selection,
+                                            bool route_unassigned);
     audio::DeviceId open_output_for_edit(
         const std::string& name, std::unique_lock<std::recursive_mutex>& lifecycle_lock,
         std::unique_lock<std::recursive_mutex>* project_lock, const std::function<bool()>& current,

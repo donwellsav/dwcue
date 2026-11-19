@@ -655,9 +655,12 @@ const outputPairs = computed(() => {
     (meters?.master_channels ?? []).map((meter: any) => meter.index as number),
   );
 
-  const configuredId = (currentProject.value as any)?.settings?.defaultOutputDevice;
-  const mainLabel = configuredId
-    ? (server.devices.find((device: any) => device.id === configuredId)?.display_name ?? 'Main')
+  // Main plays through the output chosen in Settings (kept by its display
+  // name), or the system default when none is chosen.
+  const configured = (currentProject.value as any)?.settings?.defaultOutputDevice;
+  const mainLabel = configured
+    ? (server.devices.find((device: any) => device.display_name === configured || device.id === configured)
+      ?.display_name ?? configured)
     : (server.devices.find((device: any) => device.is_default)?.display_name ?? 'Main');
   const pairs: Array<{
     key: string;

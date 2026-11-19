@@ -328,6 +328,17 @@ public:
     // Main needs a device and runs without the engine mutex.
     MixerChannelId ensure_main_output(const std::function<DeviceId()>& open,
                                       bool route_unassigned = false);
+    // Program plays through Main. Moves Main (masters 0/1) onto `device`,
+    // which the caller opened for it; Main keeps that reference. `previous`
+    // is the device Main played through before (possibly the same one), whose
+    // reference the caller releases. Not bound when `device` is not open.
+    struct MainOutputBinding {
+        bool     bound = false;
+        DeviceId previous;
+    };
+    MainOutputBinding retarget_main_output(const DeviceId& device);
+    // The device Main plays through, or empty when Main has none.
+    DeviceId main_output_device() const;
 
     // ---- Mixer channels --------------------------------------------------
     MixerChannelId create_mixer_channel(std::string display_name);
