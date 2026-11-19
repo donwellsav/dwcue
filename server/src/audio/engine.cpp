@@ -18,6 +18,13 @@
 #include <random>
 #include <string>
 
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+#include <mach/thread_policy.h>
+#include <pthread.h>
+#include <pthread/qos.h>
+#endif
 #if defined(_WIN32)
 #  include <windows.h>   // SetThreadPriority
 #endif
@@ -33,6 +40,34 @@ namespace liveplay::audio {
 namespace {
 
 constexpr auto kDeviceBusyWait = std::chrono::milliseconds{500};
+
+// The render thread feeds every output with only a few blocks of headroom:
+// on macOS it runs under the time-constraint (real-time) policy audio
+// threads use, with a period of one block. It blocks between blocks, so it
+// cannot take the machine. Decode workers run at user-interactive priority.
+void make_render_thread_realtime(double block_seconds) noexcept {
+#if defined(__APPLE__)
+    mach_timebase_info_data_t timebase{};
+    if (mach_timebase_info(&timebase) != KERN_SUCCESS || timebase.numer == 0) return;
+    const double ticks_per_second = 1e9 * static_cast<double>(timebase.denom) / static_cast<double>(timebase.numer);
+    thread_time_constraint_policy_data_t policy{};
+    policy.period = static_cast<uint32_t>(block_seconds * ticks_per_second);
+    policy.computation = static_cast<uint32_t>(block_seconds * 0.25 * ticks_per_second);
+    policy.constraint = static_cast<uint32_t>(block_seconds * ticks_per_second);
+    policy.preemptible = TRUE;
+    if (thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_TIME_CONSTRAINT_POLICY,
+            reinterpret_cast<thread_policy_t>(&policy), THREAD_TIME_CONSTRAINT_POLICY_COUNT) != KERN_SUCCESS)
+        Logger::warn("Render thread: real-time scheduling was refused; running at normal priority.");
+#else
+    (void)block_seconds;
+#endif
+}
+
+void raise_decode_thread_priority() noexcept {
+#if defined(__APPLE__)
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+#endif
+}
 
 std::shared_ptr<std::timed_mutex> native_device_mutex() {
     static const auto mutex = std::make_shared<std::timed_mutex>();
@@ -2092,6 +2127,7 @@ bool AudioEngine::reset_device_if_requested(Device& device) noexcept {
 //   * When no healthy device exists we use a coarse timer so stopped-device
 //     state and later native recovery are still observed.
 void AudioEngine::render_loop() {
+    make_render_thread_realtime(static_cast<double>(cfg_.render_block) / static_cast<double>(cfg_.mix_sample_rate));
 #if defined(LIVEPLAY_HAVE_SSE_DENORMAL)
     // Flush-to-zero + denormals-are-zero for this thread. The limiter and meter
     // states decay exponentially toward zero during silence and can enter
@@ -2330,6 +2366,7 @@ void AudioEngine::decode_loop(const std::shared_ptr<DecodeState>& state) {
                         state->shutdown.load(std::memory_order_acquire)) break;
                     if (!state->workers.insert(item.get()).second) continue;
                     std::thread([state, item] {
+                        raise_decode_thread_priority();
                         while (state->active.load(std::memory_order_acquire) &&
                                !state->shutdown.load(std::memory_order_acquire)) {
                             const auto transport = item->stats().transport;

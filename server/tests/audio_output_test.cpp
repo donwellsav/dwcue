@@ -18,6 +18,11 @@
 #include <fstream>
 #include <functional>
 #include <future>
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/thread_policy.h>
+#include <pthread.h>
+#endif
 #include <memory>
 #include <mutex>
 #include <new>
@@ -1208,6 +1213,25 @@ void test_read_ahead_rides_out_a_stall(const std::filesystem::path& tone) {
           "read-ahead: a 200 ms decoder stall leaves no gap");
 }
 
+#if defined(__APPLE__)
+// The render thread feeds every output with about 10 ms of headroom, so it
+// runs under macOS's time-constraint (real-time) policy, as audio threads do.
+void test_render_thread_is_realtime() {
+    AudioEngine engine{EngineConfig{48'000, block, 32, -1.0f}};
+    check(engine.start(false), "real-time render: engine running");
+    std::this_thread::sleep_for(std::chrono::milliseconds{50});
+    thread_time_constraint_policy_data_t policy{};
+    mach_msg_type_number_t count = THREAD_TIME_CONSTRAINT_POLICY_COUNT;
+    boolean_t get_default = FALSE;
+    const auto thread = pthread_mach_thread_np(engine.render_thread_.native_handle());
+    const bool read = thread_policy_get(thread, THREAD_TIME_CONSTRAINT_POLICY,
+        reinterpret_cast<thread_policy_t>(&policy), &count, &get_default) == KERN_SUCCESS;
+    check(read && !get_default && policy.period > 0 && policy.computation > 0,
+          "real-time render: the render thread runs under the time-constraint policy");
+    engine.stop();
+}
+#endif
+
 void test_clock_zero_crossing(const std::filesystem::path& ramp) {
     for (const int direction : {-1, 1}) {
         Fixture f(ramp, false, true);
@@ -1675,6 +1699,9 @@ int main() {
     test_stop_without_output(tone);
     test_out_point_trim_keeps_playing(quiet);
     test_read_ahead_rides_out_a_stall(tone);
+#if defined(__APPLE__)
+    test_render_thread_is_realtime();
+#endif
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);
