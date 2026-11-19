@@ -870,6 +870,102 @@ void test_program_plays_through_main() {
     state.stop_all_cues(0);
 }
 
+// Two software outputs: "Main Output" (the system default) and "Second Output".
+ma_context* two_output_context() {
+    static ma_context context{};
+    static const auto initialized = [] {
+        const auto backend = ma_backend_null;
+        return ma_context_init(&backend, 1, nullptr, &context) == MA_SUCCESS;
+    }();
+    if (!initialized) std::abort();
+    static const auto original = context.callbacks;
+    context.callbacks.onContextEnumerateDevices = [](ma_context* ctx, ma_enum_devices_callback_proc cb, void* data) {
+        ma_device_info info{};
+        std::snprintf(info.name, sizeof(info.name), "Main Output");
+        info.isDefault = MA_TRUE;
+        if (cb(ctx, ma_device_type_playback, &info, data)) {
+            info.id.nullbackend = 1;
+            info.isDefault = MA_FALSE;
+            std::snprintf(info.name, sizeof(info.name), "Second Output");
+            cb(ctx, ma_device_type_playback, &info, data);
+        }
+        return MA_SUCCESS;
+    };
+    context.callbacks.onContextGetDeviceInfo = [](ma_context* ctx, ma_device_type type,
+                                                  const ma_device_id* id, ma_device_info* info) {
+        const auto result = original.onContextGetDeviceInfo(ctx, type, nullptr, info);
+        if (id) info->id = *id;
+        std::snprintf(info->name, sizeof(info->name), "%s", id && id->nullbackend ? "Second Output" : "Main Output");
+        return result;
+    };
+    return &context;
+}
+
+// Main really moves between two outputs: a playing cue goes with it, the old
+// output is released, and a settings save that leaves the output alone opens
+// nothing (the client sends every setting on any change, e.g. Auto-save).
+void test_program_switches_outputs() {
+    using namespace std::chrono_literals;
+    const auto wav = make_wav(8'192, 480'000);
+    liveplay::audio::AudioEngine engine;
+    engine.device_test_context_ = two_output_context();
+    liveplay::core::ProjectState state(engine);
+    state.test_program_main_routing_ = true;
+    check(engine.start(false), "Program switch: headless engine started");
+    (void)engine.enumerate_devices();
+    {
+        auto& catalog = *engine.device_catalog_;
+        std::unique_lock catalog_lock{catalog.mutex};
+        catalog.ready.wait_for(catalog_lock, 2s, [&] { return catalog.has_snapshot; });
+    }
+    check(engine.enumerate_devices().size() == 2, "Program switch: two outputs available");
+    check(state.replace_full_document(document(json::array({audio("switch", wav)}))) && wait_ready(state) &&
+              state.trigger_item("switch"),
+          "Program switch: plays on the system default");
+    const auto cue = *state.item_to_cue_id("switch");
+    const auto on_main = [&] {
+        std::lock_guard lock{engine.mutex_};
+        const auto& channels = engine.pending_.item_sources.at(cue.value).by_source_channel;
+        return !channels.empty() && !channels.front().empty() && channels.front().front().mixer == engine.main_mixer_;
+    };
+    // The one open output, by name, and Main's hold on it.
+    const auto only_output = [&]() -> std::string {
+        std::lock_guard lock{engine.mutex_};
+        const auto& dest = engine.pending_.master_destinations[0];
+        if (engine.devices_.size() != 1 || !dest || engine.devices_.front()->id != dest->device ||
+            engine.devices_.front()->open_references.value() != 1) return {};
+        return engine.devices_.front()->display_name;
+    };
+    check(on_main() && only_output() == "Main Output", "Program switch: Main holds the system default alone");
+
+    check(state.patch_settings({{"defaultOutputDevice", "Second Output"}}), "Program switch: Second Output accepted");
+    check(on_air(state, engine, "switch") && on_main() && only_output() == "Second Output",
+          "Program switch: the playing cue moves with Main and the old output is released");
+
+    check(state.patch_settings({{"defaultOutputDevice", "Second Output"}, {"autoSave", false}}) &&
+              on_air(state, engine, "switch") && on_main() && only_output() == "Second Output",
+          "Program switch: a save that repeats the chosen output keeps Main as it is");
+
+    check(state.patch_settings({{"defaultOutputDevice", nullptr}}), "Program switch: System Default accepted");
+    check(on_air(state, engine, "switch") && on_main() && only_output() == "Main Output",
+          "Program switch: back on the system default, Second Output released");
+
+    // A busy device layer must not fail a save that does not change the output.
+    {
+        std::lock_guard busy{*engine.device_lifecycle_mutex_};
+        check(state.patch_settings({{"defaultOutputDevice", nullptr}, {"autoSave", true}}),
+              "Program switch: an unrelated save succeeds while outputs are busy");
+    }
+    check(on_air(state, engine, "switch") && on_main() && only_output() == "Main Output",
+          "Program switch: the unrelated save left Main as it was");
+    {
+        std::lock_guard lock{state.mutex_};
+        const auto& settings = state.document_["settings"];
+        check(settings.value("autoSave", false), "Program switch: the unrelated setting was saved");
+    }
+    state.stop_all_cues(0);
+}
+
 void test_stop_all_during_diagnostic_output_start() {
     auto* context = null_preview_context();
     static const auto start = context->callbacks.onDeviceStart;
@@ -3840,6 +3936,7 @@ int main() try {
     test_loader_output_wait();
     test_program_reroute_preserves_ltc();
     test_program_plays_through_main();
+    test_program_switches_outputs();
     test_stop_all_during_diagnostic_output_start();
     test_stop_all_during_output_settings_open();
     test_stop_all_during_preview_retirement();
