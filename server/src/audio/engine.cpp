@@ -137,6 +137,7 @@ AudioEngine::AudioEngine(EngineConfig cfg) : cfg_(cfg), device_lifecycle_mutex_(
     for (MasterChannelIndex i = 0; i < cfg_.master_channels; ++i) {
         output_channel_gains_[i].store(1.0f, std::memory_order_relaxed);
     }
+    master_applied_gains_.assign(cfg_.master_channels, 1.0f);
 
     // Publish an empty topology so the render thread has something to read.
     auto initial = std::make_shared<Topology>();
@@ -2370,10 +2371,19 @@ void AudioEngine::render_one_block(const Topology& topo) {
         const float gain_lin = m->peek_gain_linear();
         const bool  audible  = !m->is_muted() && (!any_soloed || m->is_soloed());
         const float effective = audible ? gain_lin : 0.0f;
+        // Ramp from where the last block ended: a fader move, mute or solo
+        // that jumped at the block edge clicked.
+        const float last = m->exchange_applied_gain(effective);
+        const float from = last < 0.0f ? effective : last;
+        const float step = (effective - from) / static_cast<float>(block);
         for (ChannelIndex lane = 0; lane < kMixerLanes; ++lane) {
             Sample* buf =
                 topo.mixer_accumulators[i * kMixerLanes + lane].data();
-            for (std::size_t s = 0; s < block; ++s) buf[s] *= effective;
+            if (step == 0.0f) {
+                for (std::size_t s = 0; s < block; ++s) buf[s] *= effective;
+            } else {
+                for (std::size_t s = 0; s < block; ++s) buf[s] *= from + step * static_cast<float>(s + 1);
+            }
             m->update_meter(lane, buf, block);
         }
     }
@@ -2393,15 +2403,18 @@ void AudioEngine::render_one_block(const Topology& topo) {
     const float mg = master_gain_linear_.load(std::memory_order_acquire);
     for (MasterChannelIndex mc = 0; mc < cfg_.master_channels; ++mc) {
         Sample* buf = topo.master_accumulators[mc].data();
-        // Global master gain
-        if (mg != 1.0f) {
-            for (std::size_t s = 0; s < block; ++s) buf[s] *= mg;
-        }
-        // Per-output-channel gain (independent fader per device output pair)
+        // Global master gain times the output pair's own fader, ramped from
+        // where the last block ended so a fader move never jumps.
         const float og =
             output_channel_gains_[mc].load(std::memory_order_acquire);
-        if (og != 1.0f) {
-            for (std::size_t s = 0; s < block; ++s) buf[s] *= og;
+        const float gain = mg * og;
+        const float from = master_applied_gains_[mc];
+        master_applied_gains_[mc] = gain;
+        if (from != gain) {
+            const float step = (gain - from) / static_cast<float>(block);
+            for (std::size_t s = 0; s < block; ++s) buf[s] *= from + step * static_cast<float>(s + 1);
+        } else if (gain != 1.0f) {
+            for (std::size_t s = 0; s < block; ++s) buf[s] *= gain;
         }
         master_state_[mc].meter->push_block(buf, block);
     }

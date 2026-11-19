@@ -324,6 +324,7 @@ struct Fixture {
     std::shared_ptr<AudioEngine::Device> device =
         std::make_shared<AudioEngine::Device>();
     std::shared_ptr<PlaybackItem> item;
+    MixerChannelId mixer;
     ma_device native{};
 
     Fixture(const std::filesystem::path& path, bool collide = false,
@@ -364,7 +365,7 @@ struct Fixture {
         native.playback.channels = 2;
 
         const auto cue = engine.load_cue_no_route(path);
-        const auto mixer = engine.create_mixer_channel("Output regression");
+        mixer = engine.create_mixer_channel("Output regression");
         engine.route_item_source_to_mixer(cue, 0, mixer, 0, 0.0f);
         for (MasterChannelIndex master : {0u, 1u, 2u})
             engine.route_mixer_to_master(mixer, master, 0.0f, 0);
@@ -1072,6 +1073,32 @@ void test_cue_to_continue_keeps_playing(const std::filesystem::path& seamless) {
           "cue to continue: arming keeps the queued audio and plays on without a tick");
 }
 
+// Faders, mute and solo change level smoothly across a block: a jump at the
+// block edge, or a mute from full level to silence in one sample, clicks.
+void test_mixer_changes_ramp(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.item->set_loop(true, 0.0);
+    const auto strip = f.engine.find_mixer_channel(f.mixer);
+    f.render(3);
+    float previous = 0.0f, largest_step = 0.0f;
+    bool first = true;
+    for (int i = 0; i < 64; ++i) {
+        // Change something every few blocks, at different points in the wave.
+        if (i % 4 == 1) f.engine.set_master_gain_db(i % 8 == 1 ? -40.0f : 0.0f);
+        if (i % 6 == 3 && strip) strip->set_mute(i % 12 == 3);
+        f.render();
+        const auto out = f.drain();
+        for (std::size_t n = 0; n < block; ++n) {
+            if (!first) largest_step = std::max(largest_step, std::fabs(out[n * 2] - previous));
+            previous = out[n * 2];
+            first = false;
+        }
+    }
+    // A 1 kHz tone at amplitude 0.7 moves at most 0.092 per 48 kHz sample.
+    std::printf("fader and mute changes: largest step %.3f\n", largest_step);
+    check(strip && largest_step < 0.12f, "fader, mute and solo changes ramp across the block, no click");
+}
+
 void test_clock_zero_crossing(const std::filesystem::path& ramp) {
     for (const int direction : {-1, 1}) {
         Fixture f(ramp, false, true);
@@ -1534,6 +1561,7 @@ int main() {
     test_rego_during_fade_ramps(tone);
     test_restart_while_playing_declicks(tone);
     test_cue_to_continue_keeps_playing(seamless_44k(dir));
+    test_mixer_changes_ramp(tone);
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);
