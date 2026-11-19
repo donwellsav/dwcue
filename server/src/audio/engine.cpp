@@ -1288,6 +1288,27 @@ MixerChannelId AudioEngine::ensure_main_output(const std::function<DeviceId()>& 
     return ensure_default_routing_impl(route_unassigned ? std::nullopt : std::optional{CueId{}}, open);
 }
 
+AudioEngine::MainOutputBinding AudioEngine::retarget_main_output(const DeviceId& device) {
+    std::lock_guard lock{mutex_};
+    if (device.empty() || !find_device_locked(device)) return {};
+    if (pending_.master_destinations.size() < 2) pending_.master_destinations.resize(2);
+    MainOutputBinding binding{true, {}};
+    for (std::size_t i = 0; i < 2; ++i) {
+        auto& dest = pending_.master_destinations[i];
+        if (dest && binding.previous.empty()) binding.previous = dest->device;
+        dest = MasterDestination{device, static_cast<ChannelIndex>(i)};
+    }
+    rebuild_topology_locked();
+    return binding;
+}
+
+DeviceId AudioEngine::main_output_device() const {
+    std::lock_guard lock{mutex_};
+    for (std::size_t i = 0; i < 2 && i < pending_.master_destinations.size(); ++i)
+        if (pending_.master_destinations[i]) return pending_.master_destinations[i]->device;
+    return {};
+}
+
 MixerChannelId AudioEngine::ensure_default_routing_impl(
     const std::optional<CueId>& cue_filter, const std::function<DeviceId()>& open) {
     std::unique_lock lock{mutex_};

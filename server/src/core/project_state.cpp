@@ -24,6 +24,7 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace liveplay::core {
 
@@ -1008,13 +1009,14 @@ void ProjectState::loaded_routing_loop() {
             if (!current()) continue;
             prepare_music_backups();
             // shortcut: background routing is sequential; deliberate GO prepares its own output.
-            if (request.apply_main) {
+            if (request.apply_program) {
+                apply_program_output(lifecycle_lock);
+            } else if (request.apply_main) {
 #ifdef LIVEPLAY_TEST_NO_DEVICE_ROUTING
-                if (test_loader_main_routing_)
+                if (test_loader_main_routing_ || !program_output_selection().empty())
 #endif
                     ensure_program_main(lifecycle_lock, current, true);
             }
-            if (current() && request.apply_program) apply_default_device_routing(lifecycle_lock);
             if (current()) apply_ltc_device_routing({}, &lifecycle_lock);
         } catch (const std::exception& e) {
             Logger::warn("Loaded audio routing failed: {}", e.what());
@@ -1738,7 +1740,8 @@ DiagnosticCueResult ProjectState::add_av_sync_diagnostic_cue(
         std::string route_device_name;
         std::string route_key;
         std::optional<audio::DeviceId> required_open_device;
-        if (!selection.empty()) {
+        // Following Program, the diagnostic plays through Main like any cue.
+        if (!follows_default) {
             const auto devices = engine_.enumerate_devices();
             const auto selected = detail::resolve_output_device(selection, devices);
             if (!selected) return reject("output_device_id must exactly match an available, unambiguous device; reselect an output device");
@@ -1766,12 +1769,13 @@ DiagnosticCueResult ProjectState::add_av_sync_diagnostic_cue(
 
         lifecycle_lock.lock();
         if (!current()) return reject("diagnostic setup was canceled");
-        const auto mixer = selection.empty()
+        const auto mixer = follows_default
             ? ensure_program_main(lifecycle_lock, current)
             : ensure_device_routing_impl(route_key, route_device_name, required_open_device, &lifecycle_lock);
         if (!current()) return reject("diagnostic setup was canceled");
         if (mixer.empty()) return reject("output device '" +
-            (selection.empty() ? std::string{"System Default"} : route_device_name) + "' could not be routed");
+            (!follows_default ? route_device_name : selection.empty() ? std::string{"System Default"} : selection) +
+            "' could not be routed");
         route_cue_to_mixer(cue_id, mixer);
         {
             std::lock_guard lock{mutex_};
@@ -1947,54 +1951,28 @@ void ProjectState::apply_ltc_device_routing(
 }
 
 // ---------------------------------------------------------------------------
-// Default output device routing — re-route all cues that have no per-item
-// deviceOverride to the configured defaultOutputDevice. Settings supplies
-// its validated mixer. Only background preparation needs to open a device.
+// Program output — Program has one audio path, Main (masters 0/1), on the
+// output chosen in Settings or, with none chosen, the system default. Moving
+// Main moves every cue on it at once, so a playing cue keeps its sends; cues
+// with no route yet are put on Main. Cues with their own output keep theirs.
 // ---------------------------------------------------------------------------
-void ProjectState::apply_default_device_routing(
-    std::unique_lock<std::recursive_mutex>& playback_lock, const audio::MixerChannelId& prepared) {
-    const auto selected_device = [&]() -> std::string {
-        const auto settings = document_.find("settings");
-        if (settings == document_.end() || !settings->is_object()) return {};
-        const auto device = settings->find("defaultOutputDevice");
-        return device != settings->end() && device->is_string() ? device->get<std::string>() : std::string{};
+void ProjectState::apply_program_output(
+    std::unique_lock<std::recursive_mutex>& playback_lock, const audio::DeviceId& prepared) {
+    const auto selection = program_output_selection();
+#ifdef LIVEPLAY_TEST_NO_DEVICE_ROUTING
+    // These tests open no system default output when a show loads unless they ask for one.
+    if (selection.empty() && prepared.empty() && !test_loader_main_routing_) return;
+#endif
+    const auto intent = playback_intent_revision_;
+    const auto generation = document_generation_;
+    const auto current = [&] {
+        return intent == playback_intent_revision_ && generation == document_generation_ &&
+            program_output_selection() == selection;
     };
-    std::vector<audio::CueId> non_override_cues;
-    const auto collect_cues = [&] {
-        non_override_cues.clear();
-        for_each_item(document_, [&](json& item, const std::string&) {
-            const std::string uuid = item.value("uuid", std::string{});
-            if (uuid.empty()) return;
-            // Skip items with a per-item device override.
-            if (item.contains("deviceOverride") && item["deviceOverride"].is_string() &&
-                !item["deviceOverride"].get<std::string>().empty()) return;
-            auto it = item_uuid_to_cue_.find(uuid);
-            if (it != item_uuid_to_cue_.end()) non_override_cues.push_back(it->second);
-        });
-    };
-    std::string device_name;
-    {
-        std::lock_guard lock{mutex_};
-        device_name = selected_device();
-        if (device_name.empty()) return;
-        collect_cues();
-    }
-    if (non_override_cues.empty()) return;
-    auto mixer = prepared;
-    if (mixer.empty()) {
-        const auto intent = playback_intent_revision_;
-        const auto generation = document_generation_;
-        mixer = ensure_device_routing(device_name, &playback_lock);
-        if (intent != playback_intent_revision_ || generation != document_generation_) return;
-        std::lock_guard lock{mutex_};
-        if (device_name != selected_device()) return;
-        collect_cues();
-    }
-    if (mixer.empty()) { (void)reject_output_selection(device_name); return; }
-    for (const auto& cue_id : non_override_cues) route_cue_to_mixer(cue_id, mixer, true);
-
-    Logger::info("apply_default_device_routing: routed {} cue(s) to '{}'",
-                 non_override_cues.size(), device_name);
+    const auto mixer = prepared.empty() ? ensure_program_main(playback_lock, current, true)
+                                        : bind_program_main(prepared, selection, true);
+    if (!mixer.empty() || !current()) return;
+    (void)reject_output_selection(selection.empty() ? std::string{"System Default"} : selection);
 }
 
 // ---------------------------------------------------------------------------
@@ -3944,29 +3922,35 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
             }
             return std::string{};
         };
-        const auto requested_output = device_override.empty() ? default_output() : device_override;
-        if (!requested_output.empty()) {
-            const auto mixer = ensure_device_routing(requested_output, buffered ? nullptr : &lifecycle_lock);
-            if (!current() || (device_override.empty() && requested_output != default_output())) return false;
-            if (mixer.empty()) return buffered ? false : reject_output_selection(requested_output, uuid);
+        // A cue with its own output plays there; every other cue plays through
+        // Main, which is on the output chosen in Settings or the system default.
+        const auto program_output = default_output();
+        const auto output_is_current = [&] {
+            return current() && (!device_override.empty() || default_output() == program_output);
+        };
+        if (!device_override.empty()) {
+            const auto mixer = ensure_device_routing(device_override, buffered ? nullptr : &lifecycle_lock);
+            if (!current()) return false;
+            if (mixer.empty()) return buffered ? false : reject_output_selection(device_override, uuid);
             route_cue_to_mixer(target_cue, mixer);
         } else {
 #ifdef LIVEPLAY_TEST_NO_DEVICE_ROUTING
-            if (!test_program_main_routing_) engine_.unroute_item_from_all_mixers(target_cue);
+            if (program_output.empty() && !test_program_main_routing_) engine_.unroute_item_from_all_mixers(target_cue);
             else
 #endif
             {
-                const auto route_is_current = [&] { return current() && default_output().empty(); };
-                const auto mixer = buffered ? engine_.ensure_main_output([] { return audio::DeviceId{}; })
-                                            : ensure_program_main(lifecycle_lock, route_is_current);
-                if (!route_is_current()) return false;
-                if (mixer.empty()) return buffered ? false : reject_output_selection("System Default", uuid);
+                const auto mixer = buffered ? program_main_if_ready()
+                                            : ensure_program_main(lifecycle_lock, output_is_current);
+                if (!output_is_current()) return false;
+                if (mixer.empty())
+                    return buffered ? false : reject_output_selection(
+                        program_output.empty() ? std::string{"System Default"} : program_output, uuid);
                 route_cue_to_mixer(target_cue, mixer);
             }
         }
         if (playback->ltc_enabled()) {
             apply_ltc_device_routing(target_cue, buffered ? nullptr : &lifecycle_lock);
-            if (!current() || (device_override.empty() && requested_output != default_output())) return false;
+            if (!output_is_current()) return false;
         }
     }
 
@@ -4963,6 +4947,7 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
     std::vector<int> group_end_index;
     json routed_group;
     json default_output_selection;
+    std::string default_output;   // the output chosen in Settings, for a group
     {
         std::lock_guard lock{mutex_};
         json* found = nullptr;
@@ -4985,7 +4970,6 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
         type = found->value("type", std::string{});
         if (type == "group") {
             if (buffered && !music_opening_cue(found)) return false;
-            std::string default_output;
             if (document_.contains("settings") && document_["settings"].is_object()) {
                 const auto output = document_["settings"].find("defaultOutputDevice");
                 if (output != document_["settings"].end()) {
@@ -5023,9 +5007,9 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
                 const auto child_uuid = child.value("uuid", std::string{});
                 if (child.value("type", std::string{}) == "audio") {
                     std::string output;
+                    // Empty: the leaf plays through Main (Program's output).
                     if (child.contains("deviceOverride") && child["deviceOverride"].is_string())
                         output = child["deviceOverride"].get<std::string>();
-                    if (output.empty()) output = default_output;
                     if (!child_uuid.empty()) selected_leaves.emplace_back(child_uuid, std::move(output));
                     return;
                 }
@@ -5099,12 +5083,13 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
                 if (mixer.empty()) return reject_output_selection(output, leaf);
             } else if (!main_ready
 #ifdef LIVEPLAY_TEST_NO_DEVICE_ROUTING
-                       && test_program_main_routing_
+                       && (test_program_main_routing_ || !default_output.empty())
 #endif
             ) {
                 const auto mixer = ensure_program_main(lifecycle_lock, current);
                 if (!current()) return false;
-                if (mixer.empty()) return reject_output_selection("System Default", leaf);
+                if (mixer.empty())
+                    return reject_output_selection(default_output.empty() ? std::string{"System Default"} : default_output, leaf);
                 main_ready = true;
             }
             const auto id = item_to_cue_id(leaf);
@@ -5223,23 +5208,85 @@ bool ProjectState::reject_output_selection(const std::string& selection,
     return false;
 }
 
+std::string ProjectState::program_output_selection() const {
+    std::lock_guard lock{mutex_};
+    const auto settings = document_.find("settings");
+    if (settings == document_.end() || !settings->is_object()) return {};
+    const auto output = settings->find("defaultOutputDevice");
+    return output != settings->end() && output->is_string() ? output->get<std::string>() : std::string{};
+}
+
+audio::DeviceId ProjectState::open_program_output(const std::string& selection) {
+    if (selection.empty()) return engine_.open_default_device();
+    const auto devices = engine_.enumerate_devices();
+    const auto selected = detail::resolve_output_device(selection, devices);
+    if (!selected) {
+        Logger::warn("Output '{}' is unavailable or ambiguous; reselect an output device", selection);
+        return {};
+    }
+    const auto device = engine_.open_device_by_name(selected->is_open ? selected->id.value : selected->display_name, 2);
+    // An open device that closed in the meantime must not resolve to another.
+    if (selected->is_open && !device.empty() && device != selected->id) {
+        engine_.close_device(device);
+        return {};
+    }
+    return device;
+}
+
+audio::MixerChannelId ProjectState::bind_program_main(
+    const audio::DeviceId& device, const std::string& selection, bool route_unassigned) {
+    const auto binding = engine_.retarget_main_output(device);
+    if (!binding.bound) {
+        if (!device.empty()) engine_.close_device(device);
+        return {};
+    }
+    // Main keeps the reference it was just given; the one it held goes.
+    if (!binding.previous.empty()) engine_.close_device(binding.previous);
+    {
+        std::lock_guard lock{mutex_};
+        main_follows_ = selection;
+    }
+    if (binding.previous != device)
+        Logger::info("Program output: Main now plays through '{}'", selection.empty() ? "System Default" : selection);
+    return engine_.ensure_main_output([] { return audio::DeviceId{}; }, route_unassigned);
+}
+
+audio::MixerChannelId ProjectState::program_main_if_ready() {
+    const auto selection = program_output_selection();
+    {
+        std::lock_guard lock{mutex_};
+        if (main_follows_ != selection) return {};
+    }
+    return engine_.ensure_main_output([] { return audio::DeviceId{}; });
+}
+
 audio::MixerChannelId ProjectState::ensure_program_main(
     std::unique_lock<std::recursive_mutex>& lifecycle_lock, const std::function<bool()>& current,
     bool route_unassigned) {
-    return engine_.ensure_main_output([&]() -> audio::DeviceId {
-        lifecycle_lock.unlock();
-        audio::DeviceId device;
-        try {
-            device = engine_.open_default_device();
-        } catch (...) {
-            lifecycle_lock.lock();
-            throw;
-        }
+    const auto selection = program_output_selection();
+    bool following = false;
+    {
+        std::lock_guard lock{mutex_};
+        following = main_follows_ == selection;
+    }
+    if (following && !engine_.main_output_device().empty())
+        return engine_.ensure_main_output([] { return audio::DeviceId{}; }, route_unassigned);
+    // Open what Program should play through, then hand it to Main.
+    lifecycle_lock.unlock();
+    audio::DeviceId device;
+    try {
+        device = open_program_output(selection);
+    } catch (...) {
         lifecycle_lock.lock();
-        if (current()) return device;
+        throw;
+    }
+    lifecycle_lock.lock();
+    if (!current() || program_output_selection() != selection) {
         if (!device.empty()) engine_.close_device(device);
         return {};
-    }, route_unassigned);
+    }
+    if (device.empty()) return {};
+    return bind_program_main(device, selection, route_unassigned);
 }
 
 audio::DeviceId ProjectState::open_output_for_edit(
@@ -5716,19 +5763,40 @@ bool ProjectState::patch_settings(
         return edit == settings_intent_revision_ && generation == document_generation_ &&
             stopped == stop_revision() && session == project_session_id();
     };
-    audio::MixerChannelId program_mixer, ltc_mixer;
+    audio::MixerChannelId ltc_mixer;
+    // Program plays through Main: open the chosen output (or, cleared, the
+    // system default) before committing, and hand it to Main afterwards.
+    audio::DeviceId program_device;
+    struct ReleaseUnused {
+        audio::AudioEngine& engine;
+        audio::DeviceId& device;
+        ~ReleaseUnused() { if (!device.empty()) engine.close_device(device); }
+    } release_unused{engine_, program_device};
     for (const char* key : {"defaultOutputDevice", "previewDevice", "ltcDevice"}) {
+        const bool program = std::string_view{key} == "defaultOutputDevice";
         const auto selection = patch.find(key);
-        if (selection == patch.end() || selection->is_null()) continue;
-        if (!selection->is_string()) return false;
-        const auto requested = selection->get<std::string>();
-        if (requested.empty()) continue;
+        if (selection == patch.end()) continue;
+        if (!selection->is_null() && !selection->is_string()) return false;
+        const auto requested = selection->is_string() ? selection->get<std::string>() : std::string{};
+        if (requested.empty()) {
+            if (!program) continue;
+            program_device = open_output_for_edit("", lifecycle_lock, project_lock, current);
+            if (!current()) return false;
+            if (program_device.empty()) return reject_output_selection("System Default");
+            continue;
+        }
         const auto devices = engine_.enumerate_devices();
         const auto selected = detail::resolve_output_device(requested, devices);
         if (!selected || !detail::resolve_output_device(selected->display_name, devices))
             return reject_output_selection(requested);
-        if (std::string_view{key} != "previewDevice") {
-            const auto opened = selected->is_open ? std::optional{selected->id} : std::nullopt;
+        const auto opened = selected->is_open ? std::optional{selected->id} : std::nullopt;
+        if (program) {
+            program_device = open_output_for_edit(opened ? opened->value : selected->display_name,
+                lifecycle_lock, project_lock, current);
+            if (!current()) return false;
+            if (program_device.empty() || (opened && program_device != *opened))
+                return reject_output_selection(requested);
+        } else if (std::string_view{key} == "ltcDevice") {
             const auto mixer = ensure_device_routing_impl(selected->display_name, selected->display_name,
                 opened, nullptr, [&] {
                     return open_output_for_edit(opened ? opened->value : selected->display_name,
@@ -5736,7 +5804,7 @@ bool ProjectState::patch_settings(
                 });
             if (!current()) return false;
             if (mixer.empty()) return reject_output_selection(requested);
-            (std::string_view{key} == "ltcDevice" ? ltc_mixer : program_mixer) = mixer;
+            ltc_mixer = mixer;
         }
         *selection = selected->display_name;
     }
@@ -5805,7 +5873,8 @@ bool ProjectState::patch_settings(
     }
     // Re-apply device routing when device selections change mid-playback.
     if (ltc_device_changed)     apply_ltc_device_routing({}, &lifecycle_lock, ltc_mixer);
-    if (default_device_changed && !program_mixer.empty()) apply_default_device_routing(lifecycle_lock, program_mixer);
+    // Main takes over the reference opened for it.
+    if (default_device_changed) apply_program_output(lifecycle_lock, std::exchange(program_device, audio::DeviceId{}));
     if (preview_device_changed) apply_preview_device_change(lifecycle_lock);
     // Apply true-peak limiter ceiling for the chosen output platform.
     if (output_target_changed || limiter_ceiling_changed)
