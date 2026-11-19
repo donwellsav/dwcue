@@ -1099,6 +1099,28 @@ void test_mixer_changes_ramp(const std::filesystem::path& tone) {
     check(strip && largest_step < 0.12f, "fader, mute and solo changes ramp across the block, no click");
 }
 
+// With no output running (a lost device, a stuck OS audio service) nothing
+// renders, so a stop fade never advanced and Stop All left every cue
+// "playing". A stop must still finish; nobody can hear the fade.
+void test_stop_without_output(const std::filesystem::path& tone) {
+    AudioEngine engine{EngineConfig{48'000, block, 32, -1.0f}};
+    check(engine.start(false), "stop without output: engine running with no output");
+    const auto cue = engine.load_cue_no_route(tone);
+    engine.route_item_source_to_mixer(cue, 0, engine.create_mixer_channel("No output"), 0, 0.0f);
+    const auto item = engine.find_cue(cue);
+    check(item && item->prime(2, 0), "stop without output: cue ready");
+    item->set_fade_out(std::chrono::milliseconds{500});
+    item->play();
+    item->stop();
+    bool stopped = false;
+    for (int i = 0; i < 100 && !stopped; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        stopped = item->stats().transport == TransportState::Stopped;
+    }
+    check(stopped, "stop without output: a stop finishes though nothing renders");
+    engine.stop();
+}
+
 void test_clock_zero_crossing(const std::filesystem::path& ramp) {
     for (const int direction : {-1, 1}) {
         Fixture f(ramp, false, true);
@@ -1562,6 +1584,7 @@ int main() {
     test_restart_while_playing_declicks(tone);
     test_cue_to_continue_keeps_playing(seamless_44k(dir));
     test_mixer_changes_ramp(tone);
+    test_stop_without_output(tone);
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);

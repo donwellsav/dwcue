@@ -264,6 +264,9 @@ public:
     // Returns the number of frames actually written. May be less than
     // frame_count when end-of-file is reached this block; the rest is silenced
     // and the transport transitions to Stopped (via the fade pathway).
+    // Render thread, while no output is running (so nothing renders): finish
+    // an explicit stop at once instead of leaving its fade where it is.
+    void settle_stop_without_output() noexcept;
     std::size_t render_block(Sample* const* out_channel_buffers,
                              ChannelCount   out_channel_count,
                              std::size_t    frame_count) noexcept;

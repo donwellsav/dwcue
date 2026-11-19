@@ -2144,6 +2144,10 @@ void AudioEngine::render_loop() {
             }
 
             if (!clock_master) {
+                // Nothing renders without a running output, so stop fades
+                // cannot advance: finish explicit stops so Stop All works.
+                for (const auto& entry : snap->items)
+                    if (entry.item) entry.item->settle_stop_without_output();
                 std::this_thread::sleep_for(block_duration);
                 continue;
             }

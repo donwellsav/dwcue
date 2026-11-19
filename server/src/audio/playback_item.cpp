@@ -1542,6 +1542,19 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     return frames_read;
 }
 
+void PlaybackItem::settle_stop_without_output() noexcept {
+    if (render_exclusion_.test_and_set(std::memory_order_acquire)) return;
+    RenderActiveGuard guard{render_exclusion_};
+    if (transport_.load(std::memory_order_acquire) != TransportState::FadingOut ||
+        fading_out_naturally_.load(std::memory_order_acquire)) return;
+    fade_elapsed_samples_.store(fade_duration_samples_.load(std::memory_order_relaxed),
+                                std::memory_order_relaxed);
+    gain_current_linear_.store(fade_end_linear_.load(std::memory_order_relaxed),
+                               std::memory_order_release);
+    declick_remaining_ = 0;
+    transport_.store(TransportState::Stopped, std::memory_order_release);
+}
+
 bool PlaybackItem::take_natural_end() noexcept {
     return stopped_naturally_.exchange(false, std::memory_order_acq_rel);
 }
