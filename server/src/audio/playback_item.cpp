@@ -835,7 +835,7 @@ bool PlaybackItem::prime(double seconds, double start_seconds) noexcept {
     const auto end = end_frame();
     if (end > 0 && start_frame >= end) return false;
     const auto requested_frames = static_cast<std::uint64_t>(std::min(std::max(0.0, seconds),
-        static_cast<double>(kReadAheadBlockCount * desc_.render_block) / desc_.mix_sample_rate) * desc_.mix_sample_rate);
+        static_cast<double>(kPrimeBlockCount * desc_.render_block) / desc_.mix_sample_rate) * desc_.mix_sample_rate);
     const auto blocks = std::max<std::size_t>(1,
         (requested_frames + desc_.render_block - 1) / desc_.render_block);
     if (transport_.load(std::memory_order_acquire) != TransportState::Stopped) return true;
@@ -881,7 +881,7 @@ bool PlaybackItem::prime(double seconds, double start_seconds) noexcept {
         clear_decode_error();
     }
     if (seconds <= 0.0) return true;
-    service_read_ahead(std::min(blocks, kReadAheadBlockCount));
+    service_read_ahead(std::min(blocks, kPrimeBlockCount));
     std::lock_guard lock{decoder_mutex_};
     begin_render_exclusion();
     RenderActiveGuard guard{render_exclusion_};

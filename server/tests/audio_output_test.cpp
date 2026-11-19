@@ -1186,6 +1186,28 @@ void test_out_point_trim_keeps_playing(const std::filesystem::path& tone) {
           "out point trim: keeps the queued audio and ends at the new point");
 }
 
+// A playing cue keeps about a quarter second decoded ahead, so a decoder
+// held up by a slow disk or a busy machine for 200 ms leaves no gap.
+void test_read_ahead_rides_out_a_stall(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.render(3);
+    f.item->service_read_ahead(liveplay::audio::PlaybackItem::kReadAheadBlockCount);
+    const auto misses = f.item->stats().read_ahead_underruns;
+    std::size_t audible = 0;
+    for (int i = 0; i < 40; ++i) {  // 213 ms with the decoder stalled
+        const auto topology = f.engine.snapshot_topology();
+        f.engine.render_one_block(*topology);
+        const auto out = f.drain();
+        float peak = 0.0f;
+        for (std::size_t n = 0; n < block; ++n) peak = std::max(peak, std::fabs(out[n * 2]));
+        audible += peak > 0.05f;
+    }
+    std::printf("decoder stall: %zu of 40 blocks audible, misses %llu\n", audible,
+                static_cast<unsigned long long>(f.item->stats().read_ahead_underruns - misses));
+    check(audible == 40 && f.item->stats().read_ahead_underruns == misses,
+          "read-ahead: a 200 ms decoder stall leaves no gap");
+}
+
 void test_clock_zero_crossing(const std::filesystem::path& ramp) {
     for (const int direction : {-1, 1}) {
         Fixture f(ramp, false, true);
@@ -1652,6 +1674,7 @@ int main() {
     test_mixer_changes_ramp(tone);
     test_stop_without_output(tone);
     test_out_point_trim_keeps_playing(quiet);
+    test_read_ahead_rides_out_a_stall(tone);
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);

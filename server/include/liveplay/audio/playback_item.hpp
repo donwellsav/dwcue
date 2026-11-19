@@ -291,7 +291,12 @@ private:
 
     // Fixed-capacity read-ahead allocated in load(). decoder_mutex_ serializes
     // worker/control producers; the sole consumer is render_block().
-    static constexpr std::size_t kReadAheadBlockCount = 16;
+    // Decoded audio kept ahead of each playing cue: 48 blocks, about a
+    // quarter second at 48 kHz, so a slow disk, network share or a busy
+    // machine can stall the decoder that long without a gap. GO decodes only
+    // the first kPrimeBlockCount itself; the decode worker fills the rest.
+    static constexpr std::size_t kReadAheadBlockCount = 48;
+    static constexpr std::size_t kPrimeBlockCount = 16;
     struct ReadAheadBlock {
         std::vector<Sample> samples;
         std::uint32_t       frames = 0;

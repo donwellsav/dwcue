@@ -29,6 +29,16 @@ extern "C" {
 namespace liveplay::audio {
 namespace {
 
+// Only the chosen audio stream is decoded: let the demuxer skip every other
+// stream's packets (for a video cue, the whole video bitstream) instead of
+// reading them from disk and throwing them away.
+void discard_other_streams(AVFormatContext* format, int keep) {
+    if (!format) return;
+    for (unsigned i = 0; i < format->nb_streams; ++i)
+        format->streams[i]->discard = static_cast<int>(i) == keep ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
+}
+
+
 using namespace std::string_view_literals;
 
 std::uint32_t read_be32(const std::uint8_t* data) {
@@ -861,6 +871,7 @@ ma_result on_seek(ma_data_source* data_source, ma_uint64 frame_index) {
         }
         avformat_close_input(&source.format);
         source.format = fresh;
+        discard_other_streams(source.format, source.stream_index);
     }
 
     avcodec_flush_buffers(source.codec);
@@ -1007,6 +1018,7 @@ ma_result open_ffmpeg(const char* path, ma_data_source** backend) {
     if (result >= 0) {
         result = av_find_best_stream(source->format, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
         source->stream_index = result;
+        if (result >= 0) discard_other_streams(source->format, result);
     }
 
     // Silent-video transport: no audio stream, but a presentable video stream
