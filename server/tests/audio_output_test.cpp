@@ -284,6 +284,37 @@ void test_lost_output_comes_back() {
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
 }
 
+// Reading the device list for live state does not rebuild it: a rebuild
+// opens the OS audio system and holds the device lock that opening an
+// output needs. The meter loop reads 30 times a second; rebuilds are rarer.
+void test_device_list_read_without_rebuild() {
+    NativeDeviceGate gate;
+    AudioEngine engine;
+    engine.device_test_context_ = &gate.context;
+    (void)engine.enumerate_devices();
+    auto& catalog = *engine.device_catalog_;
+    {
+        std::unique_lock lock{catalog.mutex};
+        catalog.ready.wait_for(lock, std::chrono::seconds{2}, [&] { return catalog.has_snapshot && !catalog.refreshing; });
+        catalog.next_refresh = std::chrono::steady_clock::now() - std::chrono::seconds{1};  // a rebuild is due
+    }
+    (void)engine.enumerate_devices(false);
+    bool rebuilt;
+    {
+        std::lock_guard lock{catalog.mutex};
+        rebuilt = catalog.refreshing || catalog.next_refresh > std::chrono::steady_clock::now();
+    }
+    check(!rebuilt, "device list: a live-state read does not rebuild the list");
+    (void)engine.enumerate_devices();
+    {
+        std::lock_guard lock{catalog.mutex};
+        rebuilt = catalog.refreshing || catalog.next_refresh > std::chrono::steady_clock::now();
+    }
+    check(rebuilt, "device list: asking for the list still rebuilds it when due");
+    std::unique_lock lock{catalog.mutex};
+    catalog.ready.wait_for(lock, std::chrono::seconds{2}, [&] { return !catalog.refreshing; });
+}
+
 void test_device_catalog_survives_native_stall() {
   for (const bool cold : {false, true}) {
     NativeDeviceGate gate;
@@ -1674,6 +1705,7 @@ int main() {
     test_initial_device_start_keeps_controls();
     test_held_device_recovery_lifetime();
     test_lost_output_comes_back();
+    test_device_list_read_without_rebuild();
     test_device_catalog_survives_native_stall();
     test_catalog_follows_native_reroute();
     test_stop_before_render_wait_snapshot(quiet);

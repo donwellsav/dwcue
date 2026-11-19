@@ -257,7 +257,9 @@ public:
 
     // ---- Device management ----------------------------------------------
     // Cached hardware plus current runtime; only the first catalog has a bounded 50 ms grace.
-    std::vector<DeviceInfo> enumerate_devices() const;
+    // With refresh_catalog false, the cached hardware list with live state
+    // from the open devices: no rebuild, which holds the device lock.
+    std::vector<DeviceInfo> enumerate_devices(bool refresh_catalog = true) const;
 
     // Open the platform's default playback device with `output_channels`
     // channels at the engine's mix rate.

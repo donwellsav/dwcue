@@ -868,6 +868,7 @@ void ControlServer::broadcast_loop() {
     std::unordered_map<std::string, DeviceStateSignature> prev_device_states;
     auto next_download_cleanup = clock::now() + std::chrono::minutes(1);
     auto next_upload_cleanup = clock::now() + std::chrono::minutes(1);
+    auto next_device_list_rebuild = clock::now();
 
     while (running_.load(std::memory_order_acquire)) {
         // Guard the entire tick: an exception escaping this thread would call
@@ -1012,7 +1013,12 @@ void ControlServer::broadcast_loop() {
 
         std::vector<std::string> device_state_events;
         try {
-            for (const auto& device : engine_.enumerate_devices()) {
+            // Live device state every tick from the cached list; rebuild the
+            // hardware list (so newly plugged devices appear) every 5 s, not
+            // every second: a rebuild holds the device lock an output needs.
+            const bool rebuild_device_list = clock::now() >= next_device_list_rebuild;
+            if (rebuild_device_list) next_device_list_rebuild = clock::now() + std::chrono::seconds(5);
+            for (const auto& device : engine_.enumerate_devices(rebuild_device_list)) {
                 const auto signature = DeviceStateSignature{
                     device.runtime_state,
                     device.is_clock_master,

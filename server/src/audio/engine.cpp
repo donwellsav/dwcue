@@ -443,7 +443,7 @@ void AudioEngine::refresh_device_catalog(const std::shared_ptr<DeviceCatalog>& c
     catalog->ready.notify_all();
 }
 
-std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
+std::vector<DeviceInfo> AudioEngine::enumerate_devices(bool refresh_catalog) const {
     std::vector<NativeDeviceInfo> hardware;
     bool refresh = false;
     bool has_snapshot;
@@ -451,7 +451,8 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
         std::lock_guard lock{device_catalog_->mutex};
         hardware = device_catalog_->devices;
         has_snapshot = device_catalog_->has_snapshot;
-        if (!device_catalog_->refreshing && std::chrono::steady_clock::now() >= device_catalog_->next_refresh) {
+        if (refresh_catalog && !device_catalog_->refreshing &&
+            std::chrono::steady_clock::now() >= device_catalog_->next_refresh) {
             device_catalog_->refreshing = refresh = true;
             device_catalog_->next_refresh = std::chrono::steady_clock::now() + std::chrono::seconds{1};
         }
