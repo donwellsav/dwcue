@@ -79,6 +79,24 @@ std::filesystem::path wav(const std::filesystem::path& dir,
     return path;
 }
 
+// One second of a 441 Hz tone at 44.1 kHz: exactly 441 cycles, so it loops
+// seamlessly at its own rate. The engine mixes at 48 kHz and resamples it.
+std::filesystem::path seamless_44k(const std::filesystem::path& dir) {
+    const auto path = dir / "seamless-44k.wav";
+    std::ofstream out(path, std::ios::binary);
+    constexpr std::uint32_t frames = 44'100;
+    const auto bytes = frames * 4;
+    out.write("RIFF", 4); u32(out, 36 + bytes); out.write("WAVEfmt ", 8);
+    u32(out, 16); u16(out, 3); u16(out, 1); u32(out, 44'100);
+    u32(out, 44'100 * 4); u16(out, 4); u16(out, 32);
+    out.write("data", 4); u32(out, bytes);
+    for (std::uint32_t i = 0; i < frames; ++i) {
+        const float sample = 0.5f * static_cast<float>(std::sin(2.0 * 3.14159265358979323846 * 441.0 * i / 44'100.0));
+        out.write(reinterpret_cast<const char*>(&sample), sizeof(sample));
+    }
+    return path;
+}
+
 // Intercept the real null backend, so native device waits need no hardware.
 struct NativeDeviceGate {
     ma_context context{};
@@ -858,6 +876,78 @@ void test_output_delay(const std::filesystem::path& tone) {
     check(f.engine.output_delay_seconds() == 0.0, "output delay: none without a main output");
 }
 
+// A loop seam in a file at another sample rate must be as smooth as the rest
+// of the file: the resampler carries on across it instead of starting cold.
+void test_resampled_loop_seam(const std::filesystem::path& seamless) {
+    Fixture f(seamless);
+    f.item->set_loop(true, 0.0);
+    f.render(3);
+    float previous = 0.0f, largest_step = 0.0f;
+    std::size_t heard = 0;
+    for (std::size_t i = 0; i < (48'000 * 13 / 10) / block; ++i) {
+        f.render();
+        const auto out = f.drain();
+        for (std::size_t n = 0; n < block; ++n) {
+            const float sample = out[n * 2];
+            if (i * block + n > 2'400) {
+                largest_step = std::max(largest_step, std::fabs(sample - previous));
+                heard += std::fabs(sample) > 0.1f;
+            }
+            previous = sample;
+        }
+    }
+    // A 441 Hz tone at amplitude 0.5 moves at most 0.029 per 48 kHz sample.
+    std::printf("resampled loop seam: largest step %.4f\n", largest_step);
+    check(heard > 48'000 / 2 && largest_step < 0.04f, "loop seam: a resampled loop wraps without a tick");
+}
+
+// A file that plays to its end has nothing left to fade: the next cue (Cue to
+// Continue, a QuickPlay's Play Next) must not wait a fade-out of silence.
+void test_file_end_reports_at_once(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.item->set_fade_out(std::chrono::milliseconds{1000});
+    f.render(3);
+    std::size_t blocks = 0, last_audio = 0;
+    bool ended = false;
+    while (!ended && blocks < (48'000 * 3) / block) {
+        f.render();
+        const auto out = f.drain();
+        ++blocks;
+        for (std::size_t n = 0; n < block; ++n) if (std::fabs(out[n * 2]) > 0.001f) last_audio = blocks;
+        ended = f.item->take_natural_end();
+    }
+    const double wait_ms = (blocks - last_audio) * block * 1000.0 / 48'000.0;
+    std::printf("file end: natural end %.1f ms after the last audio\n", wait_ms);
+    check(ended && wait_ms < 50.0, "file end: the end is reported with the last audio, not a fade later");
+}
+
+// Stop (or Stop All) on a cue that is already fading out finishes it within a
+// short ramp from where it is: never a cut mid-waveform.
+void test_stop_during_fade_ramps(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.item->set_fade_out(std::chrono::milliseconds{1000});
+    f.render(3);
+    for (int i = 0; i < 10; ++i) { f.render(); (void)f.drain(); }
+    f.item->stop();  // starts the 1 s fade
+    for (int i = 0; i < 20; ++i) { f.render(); (void)f.drain(); }
+    // Blocks already queued play out first; the next one is the first after the stop.
+    const std::size_t queued = ma_pcm_rb_available_read(f.device->ring.get()) / block + 1;
+    f.item->stop();  // Stop All during that fade
+    std::vector<float> peaks;
+    for (int i = 0; i < 12; ++i) {
+        f.render();
+        const auto out = f.drain();
+        float peak = 0.0f;
+        for (std::size_t n = 0; n < block; ++n) peak = std::max(peak, std::fabs(out[n * 2]));
+        peaks.push_back(peak);
+    }
+    std::printf("stop during fade: queued %zu, block peaks %.3f %.3f | %.3f %.3f %.3f %.3f\n", queued,
+                peaks[queued - 2], peaks[queued - 1], peaks[queued], peaks[queued + 1], peaks[queued + 2], peaks[queued + 3]);
+    check(peaks[queued] > 0.05f && peaks[queued] < 0.95f * peaks[queued - 1] && peaks[queued + 3] < 0.001f &&
+              f.item->stats().transport == liveplay::audio::TransportState::Stopped,
+          "stop during a fade: a short ramp to silence, no cut");
+}
+
 void test_clock_zero_crossing(const std::filesystem::path& ramp) {
     for (const int direction : {-1, 1}) {
         Fixture f(ramp, false, true);
@@ -1313,6 +1403,9 @@ int main() {
     test_stalled_clock_failover(quiet);
     test_single_output_underrun(quiet);
     test_output_delay(quiet);
+    test_resampled_loop_seam(seamless_44k(dir));
+    test_file_end_reports_at_once(quiet);
+    test_stop_during_fade_ramps(tone);
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);

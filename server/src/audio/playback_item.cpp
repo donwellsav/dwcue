@@ -21,6 +21,28 @@ namespace liveplay::audio {
 
 namespace {
 
+// Wrap a loop without restarting the resampler. ma_decoder_seek_to_pcm_frame
+// resets the sample-rate converter, so a file at another rate than the mix
+// starts its loop from silence in the filter: a tick at every pass. Seeking
+// the file itself keeps the converter's history, as if the loop's end and
+// start were one recording. Input already read past the loop end is dropped.
+ma_result seek_loop_start(ma_decoder* decoder, ma_uint64 frame) {
+    if (decoder->pBackend == nullptr) return ma_decoder_seek_to_pcm_frame(decoder, frame);
+    ma_uint32 file_rate = 0;
+    const ma_result format = ma_data_source_get_data_format(
+        decoder->pBackend, nullptr, nullptr, &file_rate, nullptr, 0);
+    if (format != MA_SUCCESS) return format;
+    if (file_rate == decoder->outputSampleRate) return ma_decoder_seek_to_pcm_frame(decoder, frame);
+    const ma_uint64 file_frame = frame * file_rate / decoder->outputSampleRate;
+    const ma_result result = ma_data_source_seek_to_pcm_frame(decoder->pBackend, file_frame);
+    if (result != MA_SUCCESS) return result;
+    decoder->readPointerInPCMFrames = frame;
+    decoder->inputCacheConsumed = 0;
+    decoder->inputCacheRemaining = 0;
+    return MA_SUCCESS;
+}
+
+
 inline float db_to_lin(float db) noexcept {
     if (db <= -120.0f) return 0.0f;
     return std::pow(10.0f, db * 0.05f);
@@ -415,12 +437,24 @@ void PlaybackItem::stop() {
         end_render_exclusion();
         return;
     }
-    if (st == TransportState::FadingOut || st == TransportState::Paused) {
-        // Honour an explicit stop even when the item is already fading naturally
-        // (e.g. reached its out-point). Cutting it immediately prevents audible
-        // overlap with the next item that is about to start.
+    if (st == TransportState::Paused) {
         end_render_exclusion();
         stop_now();
+        return;
+    }
+    if (st == TransportState::FadingOut) {
+        // An explicit stop (Stop All, GO with stop-all) ends a fade now, over
+        // a short ramp from where it is: a cut mid-waveform clicks. It also
+        // cancels any natural-end advance, as a stop always has.
+        fading_out_naturally_.store(false, std::memory_order_release);
+        constexpr long long kDeclickMs = 10;
+        const long long declick = static_cast<long long>(desc_.mix_sample_rate) * kDeclickMs / 1000;
+        const long long remaining = fade_duration_samples_.load(std::memory_order_relaxed) -
+            fade_elapsed_samples_.load(std::memory_order_relaxed);
+        if (remaining > declick)
+            start_fade(gain_current_linear_.load(), 0.0f, std::chrono::milliseconds{kDeclickMs},
+                       TransportState::FadingOut, TransportState::Stopped);
+        end_render_exclusion();
         return;
     }
 
@@ -948,7 +982,7 @@ bool PlaybackItem::fill_read_ahead_block_locked() noexcept {
         slot.loop_end_frame = decode_cursor_frame_;
         auto in_frame = loop_in_frames_.load(std::memory_order_acquire);
         if (out_point > 0 && in_frame >= out_point) in_frame = 0;
-        const ma_result seek_r = ma_decoder_seek_to_pcm_frame(
+        const ma_result seek_r = seek_loop_start(
             decoder_.get(), static_cast<ma_uint64>(in_frame));
         if (seek_r != MA_SUCCESS) {
             slot.decoder_result = static_cast<int>(seek_r);
@@ -1022,7 +1056,13 @@ void PlaybackItem::handle_natural_end() noexcept {
     fading_out_naturally_.store(true, std::memory_order_release);
     const auto fade = std::chrono::milliseconds{
         fade_out_ms_.load(std::memory_order_acquire)};
-    if (fade.count() > 0) {
+    // At the file's end nothing is left to fade: report the end with the last
+    // audio, so a following cue does not wait a fade-out of silence. (Past a
+    // soft out-point the tail audio is still there and is faded.)
+    const bool file_end = decode_terminal_.load(std::memory_order_acquire) &&
+        read_ahead_read_.load(std::memory_order_relaxed) ==
+            read_ahead_write_.load(std::memory_order_acquire);
+    if (fade.count() > 0 && !file_end) {
         start_fade(gain_current_linear_.load(), 0.0f, fade,
                    TransportState::FadingOut, TransportState::Stopped);
     } else {
