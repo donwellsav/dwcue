@@ -56,6 +56,15 @@ public:
     // Convenience: advance by the configured render block size.
     void  advance_block() noexcept { advance(render_block_); }
 
+    // Render thread only: hand over the gain this block ends at and get the
+    // one the last block ended at (negative before the first block), so a
+    // change ramps across the block instead of jumping at its edge.
+    float exchange_applied_gain(float next) noexcept {
+        const float last = applied_gain_;
+        applied_gain_ = next;
+        return last;
+    }
+
     bool  is_muted() const noexcept           { return muted_.load(std::memory_order_relaxed); }
     bool  is_soloed() const noexcept          { return soloed_.load(std::memory_order_relaxed); }
 
@@ -98,6 +107,7 @@ private:
 
     // Atomically-updated target gain (linear).
     std::atomic<float> target_gain_linear_{1.0f};
+    float applied_gain_ = -1.0f; // render thread only
     std::atomic<bool>  muted_{false};
     std::atomic<bool>  soloed_{false};
 

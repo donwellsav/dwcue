@@ -529,6 +529,8 @@ private:
     // Per-output-channel gains (index matches master channel index). Fixed-size
     // atomics let the render thread read without copying or taking mutex_.
     std::unique_ptr<std::atomic<float>[]>         output_channel_gains_;
+    // Render thread only: each master's gain at the end of the last block.
+    std::vector<float>                            master_applied_gains_;
     // miniaudio device init/uninit mutates backend-global state on some
     // platforms. Retained across engine lifetimes by unfinished native jobs.
     std::shared_ptr<std::timed_mutex>             device_lifecycle_mutex_;
