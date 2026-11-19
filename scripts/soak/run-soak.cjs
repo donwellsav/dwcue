@@ -681,6 +681,7 @@ async function runSoak({ minutes, seed, probe = false }) {
         await inVideo(`(() => { window.__trace.frames = []; window.__trace.events = []; return true; })()`);
         meters.state.log = [];
         const before = await quality();
+        const outputsBefore = await engine.get('/api/devices').catch(() => []);
         const pressedAt = Date.now();
         await page.evaluate(`(() => { document.querySelector('.play-next-btn').click(); return true; })()`);
         const dropsBySecond = [];
@@ -692,6 +693,13 @@ async function runSoak({ minutes, seed, probe = false }) {
           last = now;
         }
         const after = last;
+        const outputsAfter = await engine.get('/api/devices').catch(() => []);
+        const underruns = outputsAfter.filter(d => d.is_open).map(d => {
+          const was = outputsBefore.find(b => b.display_name === d.display_name);
+          return `${d.display_name}: ${(d.underrun_count ?? 0) - (was?.underrun_count ?? 0)}`;
+        });
+        const cues = await engine.get('/api/cues').catch(() => []);
+        const misses = cues.reduce((sum, cue) => sum + (cue.read_ahead_underruns || 0), 0);
         const trace = await inVideo('window.__trace');
         const log = meters.state.log; meters.state.log = null;
         await actions.stopAll();
@@ -713,6 +721,7 @@ async function runSoak({ minutes, seed, probe = false }) {
           offsetMs: Object.fromEntries([0, 500, 1000, 2000, 4000, 8000].map(ms => [ms, offset(at(ms))])),
           frames: after.total - before.total, dropped: after.dropped - before.dropped,
           seeks: after.seeks - before.seeks, speedChanges: after.rates - before.rates, dropsBySecond,
+          outputUnderruns: underruns, readAheadMisses: misses,
           events: trace.events.filter(e => e.t >= pressedAt && e.t < pressedAt + 6000 && e.e !== 'play')
             .map(e => `${e.t - pressedAt}ms ${e.e}${e.e === 'ratechange' ? ' ' + e.rate : ''}`),
         };
