@@ -1014,6 +1014,36 @@ void test_rego_during_fade_ramps(const std::filesystem::path& tone) {
           "re-GO during a fade-out: a short rise to full level, no pop");
 }
 
+// Restarting a playing cue (a QuickPlay set to Restart, or a seek while it
+// plays) ramps out, seeks and ramps back in: no cut mid-waveform and no
+// read-ahead miss while the new position is decoded.
+void test_restart_while_playing_declicks(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.render(3);
+    for (int i = 0; i < 40; ++i) { f.render(); (void)f.drain(); }
+    const auto misses = f.item->stats().read_ahead_underruns;
+    auto restart = std::async(std::launch::async, [&] { f.item->seek_seconds(0.0); });
+    float previous = 0.0f, largest_step = 0.0f;
+    bool first = true;
+    for (int i = 0; i < 40 || restart.wait_for(std::chrono::seconds{0}) != std::future_status::ready; ++i) {
+        f.render();
+        const auto out = f.drain();
+        for (std::size_t n = 0; n < block; ++n) {
+            if (!first) largest_step = std::max(largest_step, std::fabs(out[n * 2] - previous));
+            previous = out[n * 2];
+            first = false;
+        }
+        if (i > 4000) break;
+    }
+    restart.get();
+    // A 1 kHz tone at amplitude 0.7 moves at most 0.092 per 48 kHz sample.
+    std::printf("restart while playing: largest step %.3f, read-ahead misses %llu\n", largest_step,
+                static_cast<unsigned long long>(f.item->stats().read_ahead_underruns - misses));
+    check(largest_step < 0.12f && f.item->stats().read_ahead_underruns == misses &&
+              f.item->stats().transport == liveplay::audio::TransportState::Playing,
+          "restart while playing: ramps out and back in, with no miss");
+}
+
 void test_clock_zero_crossing(const std::filesystem::path& ramp) {
     for (const int direction : {-1, 1}) {
         Fixture f(ramp, false, true);
@@ -1474,6 +1504,7 @@ int main() {
     test_stop_during_fade_ramps(tone);
     test_pause_resume_ramps(tone);
     test_rego_during_fade_ramps(tone);
+    test_restart_while_playing_declicks(tone);
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);

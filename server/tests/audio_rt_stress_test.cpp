@@ -1134,12 +1134,15 @@ void test_queued_seek_intents(const std::filesystem::path& wav) {
                       item.render_block(output.channels, 2, kBlock) == 0,
                   "queued seek: a later Stop cancels both pending destinations");
         } else {
-            item.service_read_ahead(1);
+            item.service_read_ahead(3);
+            // The jump ramps in over 10 ms; two blocks on, the PCM is exact.
             const float expected = static_cast<std::int16_t>(
-                std::sin(2.0 * 3.14159265358979323846 * 997.0 * 36'000 / kRate) * 20'000.0) / 32768.0f;
-            check(item.stats().playhead_frame == 36'000 &&
-                      item.render_block(output.channels, 2, kBlock) == kBlock &&
-                      std::abs(output.left[0] - expected) < 0.00001f,
+                std::sin(2.0 * 3.14159265358979323846 * 997.0 * (36'000 + 2 * kBlock) / kRate) * 20'000.0) / 32768.0f;
+            const bool at_destination = item.stats().playhead_frame == 36'000;
+            const bool rendered = item.render_block(output.channels, 2, kBlock) == kBlock &&
+                item.render_block(output.channels, 2, kBlock) == kBlock &&
+                item.render_block(output.channels, 2, kBlock) == kBlock;
+            check(at_destination && rendered && std::abs(output.left[0] - expected) < 0.00001f,
                   "queued seek: the last requested destination supplies the resumed PCM");
         }
         item.stop_now();
