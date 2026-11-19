@@ -452,6 +452,7 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
         // enumeration-only hardware-name id.
         info.id = dev.id;
         info.is_open = true;
+        info.follows_default = dev.follows_default;
         info.recovery_request_id = dev.recovery_request.request_id();
         info.recovery_status = device_recovery_status_name(
             dev.recovery_request.status());
@@ -492,8 +493,12 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
 
     for (const auto& entry : hardware) {
         auto info = entry.info;
+        // A chosen output's stream goes last so its id wins over a System
+        // Default stream on the same hardware; health adds up from both.
+        for (const bool default_pass : {true, false})
         if (opened) for (std::size_t i = 0; i < opened->size(); ++i) {
             const auto& dev = (*opened)[i];
+            if (dev->follows_default != default_pass) continue;
             if (dev->closing.load(std::memory_order_acquire) || !dev->ma_dev) continue;
             std::unique_lock native_lock{dev->native_mutex, std::try_to_lock};
             if (!native_lock.owns_lock() ||
@@ -783,6 +788,7 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     dev->channels     = output_channels;
     dev->sample_rate  = cfg_.mix_sample_rate;
     dev->display_name = name_substring.empty() ? "Default Output" : name_substring;
+    dev->follows_default = name_substring.empty();
     dev->ma_dev       = std::make_unique<ma_device>();
     dev->ring         = std::make_unique<ma_pcm_rb>();
     dev->callback_state = callback_state_;
@@ -892,53 +898,79 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         dev->display_name = dev->ma_dev->playback.name;
     }
 
-    // Resolve the native device first: "default" and an explicit device name
-    // can address the same hardware, which a request-string comparison misses.
-    // Opening it twice produces doubled/echoing audio.
+    // Share an open stream of the same kind. A chosen output and System
+    // Default never share, even on the same hardware: the OS moves the System
+    // Default stream when the computer's default output changes (a projector
+    // plugged in at the venue), and a chosen output must stay where it is.
+    // Program reaches only Main, so two streams on one device carry
+    // different audio, never the same audio twice.
     const auto backend = dev->ma_dev->pContext->backend;
     const auto native_id = dev->ma_dev->playback.id;
-    const auto matches_start = [&](const auto& start) {
-        return start.first == backend && ma_device_id_equal(&start.second, &native_id);
+    const bool follows_default = dev->follows_default;
+    // Every System Default stream follows the same default, wherever the OS
+    // has moved it, so only a chosen output compares hardware ids.
+    const auto same_stream = [&](const StartingDevice& start) {
+        return start.backend == backend && start.follows_default == follows_default &&
+            (follows_default || ma_device_id_equal(&start.id, &native_id));
+    };
+    const auto same_hardware = [&](const StartingDevice& start) {
+        return start.backend == backend && ma_device_id_equal(&start.id, &native_id);
     };
     bool identity_pending = false;
     const auto acquire_duplicate_locked = [&]() -> DeviceId {
         const auto existing = std::find_if(devices_.begin(), devices_.end(), [&](const auto& candidate) {
             if (candidate->closing.load(std::memory_order_acquire) || !candidate->ma_dev) return false;
+            if (candidate->follows_default != follows_default) return false;
             std::unique_lock native_lock{candidate->native_mutex, std::try_to_lock};
             if (!native_lock.owns_lock()) { identity_pending = true; return false; }
             return candidate->ma_dev->pContext->backend == backend &&
-                ma_device_id_equal(&candidate->ma_dev->playback.id, &native_id) != MA_FALSE;
+                (follows_default || ma_device_id_equal(&candidate->ma_dev->playback.id, &native_id) != MA_FALSE);
         });
         if (existing == devices_.end()) return {};
         (*existing)->open_references.acquire();
         return (*existing)->id;
     };
-    const auto starting_locked = [&] {
-        return std::any_of(starting_devices_.begin(), starting_devices_.end(), matches_start);
+    const auto starting_locked = [&](const auto& matches) {
+        return std::any_of(starting_devices_.begin(), starting_devices_.end(), matches);
     };
     {
         std::unique_lock lock{mutex_};
-        const auto duplicate = acquire_duplicate_locked();
-        if (!duplicate.empty() || identity_pending || starting_locked()) {
-            lock.unlock();
-            lifecycle_lock.unlock();
-            retire_device(dev);
-            if (!duplicate.empty() || identity_pending) return duplicate;
-            lock.lock();
-            if (device_started_.wait_for(lock, kDeviceBusyWait, [&] { return !starting_locked(); }))
-                return acquire_duplicate_locked();
-            return {};
+        const auto deadline = std::chrono::steady_clock::now() + kDeviceBusyWait;
+        for (;;) {
+            const auto duplicate = acquire_duplicate_locked();
+            if (!duplicate.empty() || identity_pending || starting_locked(same_stream)) {
+                lock.unlock();
+                if (lifecycle_lock.owns_lock()) lifecycle_lock.unlock();
+                retire_device(dev);
+                if (!duplicate.empty() || identity_pending) return duplicate;
+                lock.lock();
+                if (device_started_.wait_until(lock, deadline, [&] { return !starting_locked(same_stream); }))
+                    return acquire_duplicate_locked();
+                return {};
+            }
+            if (!starting_locked(same_hardware)) break;
+            // The other kind is starting on this hardware. A driver stuck in
+            // its start must not take a second stream down with it: wait a
+            // moment, then give up instead of piling in.
+            if (lifecycle_lock.owns_lock()) lifecycle_lock.unlock();
+            if (!device_started_.wait_until(lock, deadline, [&] { return !starting_locked(same_hardware); })) {
+                lock.unlock();
+                retire_device(dev);
+                return {};
+            }
         }
-        starting_devices_.emplace_back(backend, native_id);
+        starting_devices_.push_back({backend, native_id, follows_default});
     }
     const auto finish_start = [&](const ma_device_id*) {
         std::lock_guard lock{mutex_};
-        std::erase_if(starting_devices_, matches_start);
+        std::erase_if(starting_devices_, [&](const StartingDevice& start) {
+            return same_hardware(start) && start.follows_default == follows_default;
+        });
         device_started_.notify_all();
     };
     const std::unique_ptr<const ma_device_id, decltype(finish_start)> reservation{&native_id, finish_start};
     // Release the lifecycle lock before entering the device's own start call.
-    lifecycle_lock.unlock();
+    if (lifecycle_lock.owns_lock()) lifecycle_lock.unlock();
 
     dev->scratch.assign(cfg_.render_block * output_channels, 0.0f);
     dev->output_mono.assign(cfg_.render_block, 0.0f);

@@ -1746,8 +1746,8 @@ DiagnosticCueResult ProjectState::add_av_sync_diagnostic_cue(
             const auto selected = detail::resolve_output_device(selection, devices);
             if (!selected) return reject("output_device_id must exactly match an available, unambiguous device; reselect an output device");
             route_device_name = selected->display_name;
-            route_key = selected->is_open ? "opened:" + selected->id.value : selected->display_name;
-            if (selected->is_open) required_open_device = selected->id;
+            required_open_device = detail::reusable_open_output(*selected);
+            route_key = required_open_device ? "opened:" + required_open_device->value : selected->display_name;
         }
         cue_id = engine_.load_cue_no_route(file);
         if (cue_id.empty()) return reject("file could not be decoded");
@@ -2862,7 +2862,7 @@ bool ProjectState::update_item(const std::string& uuid, const json& patch_in,
                 return generation == document_generation_ && stopped == stop_revision() &&
                     session == project_session_id() && item() == previous;
             };
-            const auto opened = selected->is_open ? std::optional{selected->id} : std::nullopt;
+            const auto opened = detail::reusable_open_output(*selected);
             const auto mixer = ensure_device_routing_impl(selected->display_name, selected->display_name,
                 opened, nullptr, [&] {
                     return open_output_for_edit(opened ? opened->value : selected->display_name,
@@ -5193,7 +5193,7 @@ ProjectState::ensure_device_routing(const std::string& device_name,
         return {};
     }
     return ensure_device_routing_impl(selected->display_name, selected->display_name,
-        selected->is_open ? std::optional{selected->id} : std::nullopt, lifecycle_lock);
+        detail::reusable_open_output(*selected), lifecycle_lock);
 }
 
 bool ProjectState::reject_output_selection(const std::string& selection,
@@ -5224,9 +5224,10 @@ audio::DeviceId ProjectState::open_program_output(const std::string& selection) 
         Logger::warn("Output '{}' is unavailable or ambiguous; reselect an output device", selection);
         return {};
     }
-    const auto device = engine_.open_device_by_name(selected->is_open ? selected->id.value : selected->display_name, 2);
+    const auto opened = detail::reusable_open_output(*selected);
+    const auto device = engine_.open_device_by_name(opened ? opened->value : selected->display_name, 2);
     // An open device that closed in the meantime must not resolve to another.
-    if (selected->is_open && !device.empty() && device != selected->id) {
+    if (opened && !device.empty() && device != *opened) {
         engine_.close_device(device);
         return {};
     }
@@ -5535,8 +5536,7 @@ bool ProjectState::start_preview(const std::string& item_uuid, json* result) {
     const auto devices = engine_.enumerate_devices();
     const auto selected = detail::resolve_output_device(preview_device_name, devices);
     if (!selected) return reject_output_selection(preview_device_name, item_uuid);
-    const auto required_open_device = selected->is_open
-        ? std::optional{selected->id} : std::nullopt;
+    const auto required_open_device = detail::reusable_open_output(*selected);
     preview_device_name = selected->display_name;
 
     // 2. Tear down any in-flight preview cleanly. Keep the mixer + device
@@ -5796,7 +5796,7 @@ bool ProjectState::patch_settings(
         const auto selected = detail::resolve_output_device(requested, devices);
         if (!selected || !detail::resolve_output_device(selected->display_name, devices))
             return reject_output_selection(requested);
-        const auto opened = selected->is_open ? std::optional{selected->id} : std::nullopt;
+        const auto opened = detail::reusable_open_output(*selected);
         if (program) {
             program_device = open_output_for_edit(opened ? opened->value : selected->display_name,
                 lifecycle_lock, project_lock, current);

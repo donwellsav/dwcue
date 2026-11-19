@@ -426,10 +426,19 @@ void test_stop_all_during_system_default_open() {
         check(failed && warned.load() && state.next_item_override() == target &&
                   on_air(state, engine, "main-test-backup") && !on_air(state, engine, "named-first"),
               "Main open: failed default warns and preserves backup and armed target");
+        // System Default is a stream of its own beside the chosen output on
+        // the same hardware, so the computer's default can move it alone.
+        const auto main_follows_default = [&] {
+            const auto& dest = engine.pending_.master_destinations[0];
+            return dest && std::any_of(engine.devices_.begin(), engine.devices_.end(), [&](const auto& device) {
+                return device->id == dest->device && device->follows_default;
+            });
+        };
         check(state.set_next_item_override(target) && state.go() == target && on_air(state, engine, "cold-main") &&
-                  !engine.main_mixer_.empty() && engine.devices_.size() == 1 &&
-                  engine.devices_.front()->open_references.value() == 2,
-              "Main open: retry shares hardware and acquires one Main reference");
+                  !engine.main_mixer_.empty() && engine.devices_.size() == 2 && main_follows_default() &&
+                  std::all_of(engine.devices_.begin(), engine.devices_.end(),
+                              [](const auto& device) { return device->open_references.value() == 1; }),
+              "Main open: retry opens System Default as its own stream, one reference each");
         state.set_ui_state_broadcaster({});
         state.stop_all_cues(0);
     }
@@ -964,6 +973,65 @@ void test_program_switches_outputs() {
         check(settings.value("autoSave", false), "Program switch: the unrelated setting was saved");
     }
     state.stop_all_cues(0);
+}
+
+// A chosen output is its own stream, even when it is the computer's current
+// default. The System Default stream moves when the computer's default
+// changes (a projector plugged in at the venue); a chosen output must not.
+void test_chosen_output_has_its_own_stream() {
+    using namespace std::chrono_literals;
+    const auto wav = make_wav(8'192, 480'000);
+    liveplay::audio::AudioEngine engine;
+    engine.device_test_context_ = two_output_context();
+    liveplay::core::ProjectState state(engine);
+    state.test_program_main_routing_ = true;
+    check(engine.start(false), "Own stream: headless engine started");
+    (void)engine.enumerate_devices();
+    {
+        auto& catalog = *engine.device_catalog_;
+        std::unique_lock catalog_lock{catalog.mutex};
+        catalog.ready.wait_for(catalog_lock, 2s, [&] { return catalog.has_snapshot; });
+    }
+    check(state.replace_full_document(document(json::array({
+              audio("own", wav),
+              audio("own-override", wav, {{"deviceOverride", "Main Output"}}),
+          }))) && wait_ready(state) && state.trigger_item("own"),
+          "Own stream: plays on the system default");
+    const auto main_device = [&] {
+        std::lock_guard lock{engine.mutex_};
+        const auto& dest = engine.pending_.master_destinations[0];
+        return dest ? dest->device : liveplay::audio::DeviceId{};
+    };
+    const auto open_count = [&] {
+        std::lock_guard lock{engine.mutex_};
+        return engine.devices_.size();
+    };
+    const auto follows_default = [&](const liveplay::audio::DeviceId& id) {
+        std::lock_guard lock{engine.mutex_};
+        for (const auto& device : engine.devices_)
+            if (device->id == id) return device->follows_default;
+        return false;
+    };
+    const auto system_default = main_device();
+    check(!system_default.empty() && follows_default(system_default) && open_count() == 1,
+          "Own stream: Main starts on the stream that follows the system default");
+
+    check(state.patch_settings({{"defaultOutputDevice", "Main Output"}}), "Own stream: Main Output chosen");
+    const auto chosen = main_device();
+    check(on_air(state, engine, "own") && !chosen.empty() && chosen != system_default &&
+              !follows_default(chosen) && open_count() == 1,
+          "Own stream: the chosen output gets its own stream though it is the default, and the old one goes");
+
+    check(state.patch_settings({{"defaultOutputDevice", nullptr}}), "Own stream: System Default chosen again");
+    const auto back = main_device();
+    check(on_air(state, engine, "own") && !back.empty() && back != chosen && follows_default(back) &&
+              open_count() == 1,
+          "Own stream: System Default gets a stream that follows the computer again");
+
+    check(state.trigger_item("own-override") && open_count() == 2,
+          "Own stream: a cue's own output does not share the System Default stream");
+    state.stop_all_cues(0);
+    state.release_device_routings();
 }
 
 void test_stop_all_during_diagnostic_output_start() {
@@ -3937,6 +4005,7 @@ int main() try {
     test_program_reroute_preserves_ltc();
     test_program_plays_through_main();
     test_program_switches_outputs();
+    test_chosen_output_has_its_own_stream();
     test_stop_all_during_diagnostic_output_start();
     test_stop_all_during_output_settings_open();
     test_stop_all_during_preview_retirement();

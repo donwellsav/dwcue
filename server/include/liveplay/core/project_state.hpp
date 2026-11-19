@@ -64,6 +64,13 @@ inline const audio::DeviceInfo* resolve_output_device(
     return opened_id ? opened_id : ambiguous_name ? nullptr : named;
 }
 
+// The open stream a chosen output may reuse. Never the System Default one:
+// the OS moves that stream when the computer's default output changes.
+inline std::optional<audio::DeviceId> reusable_open_output(const audio::DeviceInfo& device) {
+    if (!device.is_open || device.follows_default) return std::nullopt;
+    return device.id;
+}
+
 // Generation tokens fence sequencer work copied for unlocked dispatch from a
 // later replay/cancellation of the same logical cue. Guarded by the owning
 // ProjectState's sequencer mutex.

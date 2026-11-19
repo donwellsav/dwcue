@@ -150,6 +150,9 @@ struct DeviceInfo {
     SampleRate   sample_rate = 0;
     bool         is_default = false;
     bool         is_open = false;
+    // The open stream behind `id` is the System Default one, which the OS
+    // moves when the computer's default output changes.
+    bool         follows_default = false;
     bool         is_available = true;
     bool         is_clock_master = false;
     std::string  runtime_state = "available";
@@ -474,6 +477,9 @@ private:
         std::string                 display_name;
         ChannelCount                channels = 2;
         SampleRate                  sample_rate = kDefaultMixSampleRate;
+        // Opened as "System Default": the OS moves this stream when the
+        // computer's default output changes. Set before the device is shared.
+        bool                        follows_default = false;
         std::unique_ptr<ma_device>  ma_dev;
         std::mutex                  native_mutex; // One stop/start/uninit per device.
         mutable std::mutex          state_mutex;  // Short recovery/watchdog publication only.
@@ -555,7 +561,12 @@ private:
     // on RT; rebuilds reclaim completed records after all readers let go.
     std::vector<std::shared_ptr<PreparedFollow>> prepared_follows_;
     DeviceList                                   devices_;
-    std::vector<std::pair<ma_backend, ma_device_id>> starting_devices_; // Guarded by mutex_.
+    struct StartingDevice {
+        ma_backend   backend;
+        ma_device_id id;
+        bool         follows_default;
+    };
+    std::vector<StartingDevice> starting_devices_; // Guarded by mutex_.
     std::condition_variable                      device_started_;
     // Closed devices remain owned until all snapshot readers have drained.
     DeviceList                                   retired_devices_;
