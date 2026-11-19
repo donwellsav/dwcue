@@ -499,9 +499,18 @@ void test_unchanged_boundaries_preserve_audio(PlaybackItem& item) {
               item.stats().read_ahead_blocks == queued &&
               item.render_block(output.channels, 2, kBlock) == kBlock,
           "unchanged boundaries: equivalent clamped loop-in preserves PCM");
+    const auto still_queued = item.stats().read_ahead_blocks;
     item.set_loop(false, 0.0);
-    check(item.playback_revision() != loop_revision && item.stats().read_ahead_blocks == 0,
-          "changed boundary: loop disable still invalidates old metadata");
+    // Nothing queued has wrapped yet: the queue stays, and the cue now ends at
+    // its out-point instead of looping.
+    check(item.playback_revision() != loop_revision && item.stats().read_ahead_blocks == still_queued,
+          "changed boundary: loop disable before the seam keeps the queued PCM");
+    for (int i = 0; i < 40 && item.stats().transport != TransportState::Stopped; ++i) {
+        item.service_read_ahead(16);
+        item.render_block(output.channels, 2, kBlock);
+    }
+    check(item.stats().playhead_frame == 4'800 && item.take_natural_end(),
+          "changed boundary: loop disable ends at the out-point instead of wrapping");
     item.stop_now();
     item.set_out_point_seconds(0.0);
 }
@@ -1007,6 +1016,9 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
         PlaybackItem item{std::move(desc)};
         check(item.load() && item.prime(2.0), "live edit stall: real PCM primes");
         item.play(); Output output; item.render_block(output.channels, 2, kBlock);
+        // A loop change only touches storage when the queued audio already
+        // reaches a boundary: queue the out-point so this one does.
+        if (operation == 2) { item.set_out_point_seconds(0.05); item.service_read_ahead(16); }
         if (mode == 1) item.pause();
         if (mode == 2) item.stop_with_fade(std::chrono::milliseconds{500});
         if (operation >= 3) item.stop_now();
@@ -1094,6 +1106,7 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
             check(item.stats().transport == TransportState::Stopped &&
                       (mode == 4 || item.stats().playhead_frame == 0),
                   "live edit stall: cancelled I/O cannot restore transport or stopped playhead");
+            if (operation == 2) item.set_out_point_seconds(0.0);  // the out-point queued above
             check(item.prime(2.0, 0.125), "live edit stall: deliberate retry prepares fresh audio");
             item.play(); item.service_read_ahead(1);
             const float expected = static_cast<std::int16_t>(

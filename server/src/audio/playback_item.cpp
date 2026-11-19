@@ -775,6 +775,21 @@ void PlaybackItem::set_loop(bool enabled, double in_seconds) noexcept {
         end_render_exclusion();
         return;
     }
+    // Arming Cue to Continue on a playing loop: unless the queued audio
+    // already wraps or ends, nothing queued changes, only what the decoder
+    // does at the next boundary. Keep the queue: flushing it and seeking back
+    // left a hole mid-music, and a tick wherever the file is resampled.
+    bool queue_affected = false;
+    for (auto r = read_ahead_read_.load(std::memory_order_acquire),
+              w = read_ahead_write_.load(std::memory_order_acquire); r != w && !read_ahead_.empty(); ++r) {
+        const auto& queued = read_ahead_[r % read_ahead_.size()];
+        if (queued.loop_end_frame != 0 || queued.natural_end) { queue_affected = true; break; }
+    }
+    if (!queue_affected && !decode_out_point_passed_ &&
+        !decode_terminal_.load(std::memory_order_acquire)) {
+        end_render_exclusion();
+        return;
+    }
 
     // Drop blocks carrying the previous loop/end metadata and refill them from
     // the currently audible position.

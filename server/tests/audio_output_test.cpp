@@ -1044,6 +1044,34 @@ void test_restart_while_playing_declicks(const std::filesystem::path& tone) {
           "restart while playing: ramps out and back in, with no miss");
 }
 
+// Arming Cue to Continue (loop off) on a playing loop, away from its seam,
+// keeps the audio already queued and plays on without a gap or a tick.
+void test_cue_to_continue_keeps_playing(const std::filesystem::path& seamless) {
+    Fixture f(seamless);
+    f.item->set_loop(true, 0.0);
+    f.render(3);
+    for (int i = 0; i < 40; ++i) { f.render(); (void)f.drain(); }
+    float previous = 0.0f, largest_step = 0.0f;
+    f.item->service_read_ahead(16);  // the decode worker keeps the queue full
+    const auto queued_before = f.item->read_ahead_write_.load() - f.item->read_ahead_read_.load();
+    f.item->set_loop(false);
+    const auto queued_after = f.item->read_ahead_write_.load() - f.item->read_ahead_read_.load();
+    bool first = true;
+    for (int i = 0; i < 40; ++i) {
+        f.render();
+        const auto out = f.drain();
+        for (std::size_t n = 0; n < block; ++n) {
+            if (!first) largest_step = std::max(largest_step, std::fabs(out[n * 2] - previous));
+            previous = out[n * 2];
+            first = false;
+        }
+    }
+    std::printf("cue to continue: queued %llu then %llu blocks, largest step %.4f\n",
+                static_cast<unsigned long long>(queued_before), static_cast<unsigned long long>(queued_after), largest_step);
+    check(queued_after == queued_before && largest_step < 0.04f,
+          "cue to continue: arming keeps the queued audio and plays on without a tick");
+}
+
 void test_clock_zero_crossing(const std::filesystem::path& ramp) {
     for (const int direction : {-1, 1}) {
         Fixture f(ramp, false, true);
@@ -1505,6 +1533,7 @@ int main() {
     test_pause_resume_ramps(tone);
     test_rego_during_fade_ramps(tone);
     test_restart_while_playing_declicks(tone);
+    test_cue_to_continue_keeps_playing(seamless_44k(dir));
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);

@@ -1363,6 +1363,11 @@ void test_stop_all_during_live_edits() {
                 std::this_thread::sleep_for(1ms);
             check(source->stats().transport == liveplay::audio::TransportState::Stopped,
                   "live document edit: old media stops before decoder teardown");
+        } else if (mode == 1 || mode == 3) {
+            // A loop change (or Continue) on a playing cue keeps its queued
+            // audio: unless that audio already wraps or ends, no storage I/O.
+            check(edit.wait_for(1s) == std::future_status::ready && !signalled.load(),
+                  "live document edit: a loop change on a playing cue needs no storage");
         } else {
             check(entered.get_future().wait_for(2s) == std::future_status::ready,
                   "live document edit: actual seek reaches storage gate");
