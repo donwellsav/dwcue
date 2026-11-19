@@ -1,6 +1,6 @@
 {
   "name": "donwells-cue-monorepo",
-  "version": "2.7.1",
+  "version": "2.8.0",
   "private": true,
   "description": "DonWells Cue — open-source audio playback for live sound operators. Monorepo root: client (Vue/Electron) + server (C++ audio engine).",
   "license": "AGPL-3.0-only",
