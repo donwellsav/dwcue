@@ -892,6 +892,8 @@ void ControlServer::broadcast_loop() {
         payload["stop_revision"] = state_.stop_revision();
 
         json item_meters = json::array();
+        // What is heard trails the render position by the main output's queue.
+        const double heard_delay = engine_.output_delay_seconds();
         // Helper: append a meter frame for an arbitrary engine cue. Used for
         // both project cues and the preview cue (which is engine-only, not in
         // state_.list_cues()).
@@ -904,6 +906,7 @@ void ControlServer::broadcast_loop() {
             m["cue_id"]            = cue_id.value;
             m["transport"]         = static_cast<int>(stats.transport);
             m["playhead_seconds"]  = stats.playhead_seconds;
+            m["audible_seconds"]   = std::max(0.0, stats.playhead_seconds - heard_delay);
             json srcs = json::array();
             for (audio::ChannelIndex c = 0; c < item->source_channel_count(); ++c) {
                 auto snap = item->source_meter_consume(c);

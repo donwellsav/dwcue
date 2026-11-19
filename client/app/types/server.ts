@@ -153,6 +153,8 @@ export interface ItemMeterFrame {
   cue_id: CueId;
   transport: TransportState;
   playhead_seconds: number;
+  // Where the cue is as heard: the render position less the output queue.
+  audible_seconds?: number;
   sources: MeterSnapshot[];
 }
 

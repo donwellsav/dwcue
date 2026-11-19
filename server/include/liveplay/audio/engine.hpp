@@ -424,6 +424,9 @@ public:
 
     // ---- Introspection ---------------------------------------------------
     const EngineConfig& config() const noexcept { return cfg_; }
+    // How far what is heard trails the render position: the audio queued for
+    // the clock-master output plus the period its device is playing.
+    double output_delay_seconds() const noexcept;
 
 #ifndef LIVEPLAY_TEST_ACCESS
 private:
