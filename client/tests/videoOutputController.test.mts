@@ -136,7 +136,9 @@ async function flush() {
   await nextTick();
 }
 
-function createHarness(initialProject: unknown, connected = true, captureApi = {}) {
+// Timing aside, tests see a start land on the playhead: no learned start lead.
+function createHarness(initialProject: unknown, connected = true, captureApi = {}, startLead: string | null = '0') {
+  const stored = new Map<string, string>(startLead === null ? [] : [['dwcue.videoStartLead', startLead]]);
   const cueStateHandlers = new Set<(value: unknown) => void>();
   const meterHandlers = new Set<(value: any) => void>();
   const snapshotHandlers = new Set<(value: unknown) => void>();
@@ -177,6 +179,7 @@ function createHarness(initialProject: unknown, connected = true, captureApi = {
   Object.assign(globalThis, {
     window: {
       setTimeout,
+      localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => { stored.set(key, value); } },
       electronAPI: {
         videoOutput: {
           ...captureApi,
@@ -618,11 +621,11 @@ test('paused native seeks show the requested absolute frame and out-point loopin
   assert.equal(harness.element.currentTime, 5.25, 'loop reset seeks to the absolute in-point region');
   assert.equal(harness.element.paused, false);
   // A lasting 50 ms lead: several readings, as the engine reports them.
-  for (const clock of [5.25, 5.283, 5.316]) {
+  for (const clock of [5.25, 5.283, 5.316, 5.35]) {
     harness.element.currentTime = clock + 0.05;
     harness.emitMeters({ items: [{ cue_id: 'loop-cue', transport: 1, playhead_seconds: clock }] });
   }
-  assert.ok(harness.element.currentTime > 5.316, 'soft drift remains rate-corrected instead of seeking every meter');
+  assert.ok(harness.element.currentTime > 5.35, 'soft drift remains rate-corrected instead of seeking every meter');
   assert.ok(harness.element.playbackRate < 1);
   harness.stop();
 });
@@ -634,13 +637,13 @@ test('repeated canplay keeps soft drift rate-corrected instead of starting anoth
     h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
     h.controller.onVideoCanPlay();
     await flush();
-    for (const clock of [1, 1.033, 1.066]) {
+    for (const [i, clock] of [1, 1.033, 1.066, 1.1, 1.133].entries()) {
       h.element.currentTime = clock + .05;
       h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
       const before = h.element.currentTime;
       h.controller.onVideoCanPlay();
       assert.equal(h.element.currentTime, before, 'readiness restoration must not bypass soft drift correction');
-      assert.ok(h.element.playbackRate < 1);
+      if (i >= 3) assert.ok(h.element.playbackRate < 1, 'a lasting drift is rate-corrected');
       assert.equal(h.element.paused, false);
     }
     h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 2 }] });
@@ -684,6 +687,69 @@ test('playhead jitter leaves the speed alone; real drift corrects at one steady 
     }
     assert.equal(rate, 1, 'back in step, normal speed');
     assert.equal(writes, 2);
+  } finally { h.stop(); }
+});
+
+test('the picture follows the cue as heard, not the render position ahead of it', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    // The engine renders 60 ms ahead of what is heard; the picture is with the sound.
+    for (let i = 0; i < 16; i++) {
+      const rendered = 1 + i / 30;
+      h.element.currentTime = rendered - 0.06;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: rendered, audible_seconds: rendered - 0.06 }] });
+    }
+    assert.equal(h.element.playbackRate, 1, 'in step with the sound needs no correction');
+  } finally { h.stop(); }
+});
+
+test('one stray reading cannot make the picture jump; a lasting gap or a real jump does', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    const at = (clock: number, behind: number) => {
+      h.element.currentTime = clock - behind;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+    };
+    for (let i = 0; i < 6; i++) at(1 + i / 30, 0.005);
+    at(1.2, 0.09);
+    assert.equal(h.element.currentTime, 1.2 - 0.09, 'a single 90 ms reading does not seek');
+    at(1.233, 0.005);
+    for (let i = 0; i < 8; i++) at(1.3 + i / 30, 0.1);
+    assert.ok(Math.abs(h.element.currentTime - (1.3 + 7 / 30)) < 1e-9, 'a lasting 100 ms gap seeks');
+    at(3, 0.9);
+    assert.equal(h.element.currentTime, 3, 'a real jump seeks at once');
+  } finally { h.stop(); }
+});
+
+test('a start lands in step: the picture starts ahead by a lead it learns from each start', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, null);
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'cue-1', 1, 0.03));
+    h.controller.onVideoCanPlay();
+    await flush();
+    const firstLead = h.element.currentTime - 0.03;
+    assert.ok(firstLead > 0.02 && firstLead < 0.2, `the first start seeks ahead of the sound (${firstLead})`);
+    // This start still landed 30 ms behind what is heard.
+    for (let i = 0; i < 10; i++) {
+      const heard = 0.1 + i / 30;
+      h.element.currentTime = heard - 0.03;
+      h.emitMeters({ items: [{ cue_id: 'cue-1', transport: 1, playhead_seconds: heard + 0.02, audible_seconds: heard }] });
+    }
+    h.emitMeters({ items: [{ cue_id: 'cue-1', transport: 0, playhead_seconds: 0.5 }] });
+    await flush();
+    h.emitCue(snapshotCue('video', 'cue-2', 2, 0.03));
+    await flush();
+    const secondLead = h.element.currentTime - 0.03;
+    assert.ok(secondLead > firstLead + 0.015, `the next start leads by more (${firstLead} then ${secondLead})`);
   } finally { h.stop(); }
 });
 

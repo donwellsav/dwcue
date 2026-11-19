@@ -843,6 +843,21 @@ void test_single_output_underrun(const std::filesystem::path& tone) {
           "output underrun: the next callback plays newly queued PCM without a reset");
 }
 
+// What is heard trails what is rendered by the audio queued for the main
+// output plus the period its device is playing. The video output follows
+// what is heard; following the render position puts the picture early.
+void test_output_delay(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.render(3);
+    f.drain();
+    const auto queued = f.device->ring_occupancy_frames.load();
+    const double expected = static_cast<double>(queued + block) / 48'000.0;
+    check(queued > 0 && std::abs(f.engine.output_delay_seconds() - expected) < 1e-9,
+          "output delay: the main output's queued audio plus one device period");
+    f.device->clock_master.store(false);
+    check(f.engine.output_delay_seconds() == 0.0, "output delay: none without a main output");
+}
+
 void test_clock_zero_crossing(const std::filesystem::path& ramp) {
     for (const int direction : {-1, 1}) {
         Fixture f(ramp, false, true);
@@ -1297,6 +1312,7 @@ int main() {
     test_bursty_secondary_output(quiet);
     test_stalled_clock_failover(quiet);
     test_single_output_underrun(quiet);
+    test_output_delay(quiet);
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);

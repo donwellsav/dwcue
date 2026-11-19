@@ -769,6 +769,16 @@ void AudioEngine::ma_data_callback(ma_device* dev,
     wake_render();
 }
 
+double AudioEngine::output_delay_seconds() const noexcept {
+    const auto devices = snapshot_devices();
+    if (devices) for (const auto& device : *devices) {
+        if (!device->clock_master.load(std::memory_order_acquire)) continue;
+        const auto frames = device->ring_occupancy_frames.load(std::memory_order_relaxed) + cfg_.render_block;
+        return static_cast<double>(frames) / static_cast<double>(cfg_.mix_sample_rate);
+    }
+    return 0.0;
+}
+
 DeviceId AudioEngine::open_default_device(ChannelCount output_channels) {
     return open_device_by_name("", output_channels);
 }

@@ -18,8 +18,21 @@ const TRANSPORT_PAUSED = 4;
 const CHASE_START_S = 0.04;
 const CHASE_SETTLE_S = 0.01;
 const CHASE_HARD_SEEK_S = 0.08;
+// A gap this large is a real jump (loop, seek, a seek that landed off), not
+// drift or a late reading (the soak saw 110 ms at worst): follow it at once.
+const CHASE_JUMP_S = 0.2;
 const CHASE_RATE_STEP = 0.02;
+// A start lands late by however long the output takes to hear of the cue,
+// seek, play and show a first frame. Starting ahead by that much lands the
+// picture in step instead of catching up, which costs frames. The lead is
+// learned from each start.
+const START_LEAD_KEY = 'dwcue.videoStartLead';
+const START_LEAD_DEFAULT_S = 0.06;
+const START_LEAD_MAX_S = 0.25;
 const CHASE_WINDOW = 8;
+// Readings needed before a correction starts: the first after a start or seek
+// are the noisiest.
+const CHASE_MIN_SAMPLES = 4;
 // Close enough for a seek to count as landed.
 const CHASE_DEADBAND_S = 0.015;
 const NATIVE_CLOCK_STALE_MS = 250;
@@ -411,6 +424,18 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   let chaseSamples: number[] = [];
   let chaseCorrecting = false;
   let chaseCueId: string | null = null;
+  let startLead = START_LEAD_DEFAULT_S;
+  try {
+    const raw = window.localStorage?.getItem(START_LEAD_KEY);
+    const saved = raw == null ? NaN : Number(raw);
+    if (Number.isFinite(saved) && saved >= 0) startLead = Math.min(START_LEAD_MAX_S, saved);
+  } catch { /* storage unavailable: use the default */ }
+  let startPending = false;
+  function learnStartLead(steady: number) {
+    startPending = false;
+    startLead = Math.min(START_LEAD_MAX_S, Math.max(0, startLead - 0.7 * steady));
+    try { window.localStorage?.setItem(START_LEAD_KEY, startLead.toFixed(4)); } catch { /* keep it for this session */ }
+  }
   function resetChase(cueId: string | null = null) {
     chaseSamples = [];
     chaseCorrecting = false;
@@ -488,7 +513,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
       return;
     }
 
-    pendingSeekSeconds = playheadSeconds;
+    pendingSeekSeconds = playheadSeconds + (startPending ? startLead : 0);
     const url = itemMediaUrl(item);
     if (url !== videoSrc.value) {
       pauseVideo();
@@ -505,14 +530,15 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     showVideo.value = !atOutPoint && !videoFailed.value;
     const element = videoEl.value;
     if (element && videoReady.value && seekImmediately
-      && Math.abs(element.currentTime - playheadSeconds) > CHASE_DEADBAND_S) {
-      element.currentTime = playheadSeconds;
+      && Math.abs(element.currentTime - pendingSeekSeconds) > CHASE_DEADBAND_S) {
+      element.currentTime = pendingSeekSeconds;
     }
     if (atOutPoint) pauseVideo();
   }
 
   function applyTransport(transport: number) {
     activeTransport.value = transport;
+    if (transport === TRANSPORT_STOPPED || transport === TRANSPORT_PAUSED) startPending = false;
     if (transport === TRANSPORT_STOPPED || transport === TRANSPORT_PAUSED
       || !showVideo.value || !hasHealthyClock.value || waitingForHealthyClockSample
       || waitingForNativeProgress) {
@@ -548,6 +574,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     activeCueId.value = null;
     activeTransport.value = TRANSPORT_STOPPED;
     activeTriggerSeq = -1;
+    startPending = false;
     showVideo.value = false;
     assignedCueImageSrc.value = null;
     pauseVideo();
@@ -584,6 +611,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
       activeCueId.value = active.cueId;
       activeTriggerSeq = active.triggerSeq;
       beginNativeClockGrace(active.cueId, active.playheadSeconds);
+      startPending = active.transport !== TRANSPORT_PAUSED;
       applyItem(item, active.playheadSeconds);
       if (active !== diagnosticCue && item.hasVideo && !isAtOutPoint(item, active.playheadSeconds)
         && (videoSrc.value !== previousSource || showHeldFrame.value || !videoReady.value)) {
@@ -766,16 +794,25 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
       return;
     }
     if (chaseCueId !== active.cueId) resetChase(active.cueId);
-    const drift = element.currentTime - meter.playhead_seconds;
-    if (Math.abs(drift) > CHASE_HARD_SEEK_S) {
-      element.currentTime = meter.playhead_seconds;
+    // Follow the cue as heard: the render position runs ahead of the sound by
+    // the output's queue, and following it would put the picture early.
+    const heard = meter.audible_seconds ?? meter.playhead_seconds;
+    const drift = element.currentTime - heard;
+    chaseSamples.push(drift);
+    if (chaseSamples.length > CHASE_WINDOW) chaseSamples.shift();
+    const steady = steadyDrift();
+    // Seek only for a real jump or a gap two readings agree on: one stray
+    // reading must not make the picture jump.
+    if (Math.abs(drift) > CHASE_JUMP_S || (Math.abs(drift) > CHASE_HARD_SEEK_S
+      && chaseSamples.length >= 2 && Math.abs(steady) > CHASE_HARD_SEEK_S)) {
+      element.currentTime = heard;
       element.playbackRate = 1;
       resetChase(active.cueId);
+      startPending = false;
     } else {
-      chaseSamples.push(drift);
-      if (chaseSamples.length > CHASE_WINDOW) chaseSamples.shift();
-      const steady = steadyDrift();
-      if (!chaseCorrecting && Math.abs(steady) > CHASE_START_S) chaseCorrecting = true;
+      // How far this start landed from the sound sets the next start's lead.
+      if (startPending && chaseSamples.length === CHASE_WINDOW) learnStartLead(steady);
+      if (!chaseCorrecting && chaseSamples.length >= CHASE_MIN_SAMPLES && Math.abs(steady) > CHASE_START_S) chaseCorrecting = true;
       else if (chaseCorrecting && Math.abs(steady) < CHASE_SETTLE_S) chaseCorrecting = false;
       const rate = chaseCorrecting ? (steady < 0 ? 1 + CHASE_RATE_STEP : 1 - CHASE_RATE_STEP) : 1;
       if (element.playbackRate !== rate) element.playbackRate = rate;
