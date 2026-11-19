@@ -613,13 +613,24 @@ void test_pause_preserves_envelope(PlaybackItem& item) {
         Output output, expected;
         prepare();
         item.render_block(output.channels, 2, kBlock);
-        item.render_block(expected.channels, 2, kBlock);
+        // Uninterrupted, the third block after this point (resume ramps in
+        // over the first two) is what a resumed cue must match exactly.
+        for (int i = 0; i < 3; ++i) item.render_block(expected.channels, 2, kBlock);
 
         prepare();
         item.render_block(output.channels, 2, kBlock);
         item.pause();
         item.pause();
         const auto paused = item.stats();
+        // The pause ramps out over 10 ms without moving the playhead.
+        bool ramped = true;
+        float last = 1.0f;
+        for (int i = 0; i < 2; ++i) {
+            item.render_block(output.channels, 2, kBlock);
+            ramped &= item.stats().playhead_frame == paused.playhead_frame && !item.take_natural_end();
+            last = std::fabs(output.left.back());
+        }
+        check(ramped && last < 0.05f, "pause: ramps out over 10 ms with the playhead frozen");
         bool frozen = paused.transport == TransportState::Paused;
         for (int i = 0; i < 4; ++i) {
             frozen &= item.render_block(output.channels, 2, kBlock) == 0;
@@ -643,8 +654,10 @@ void test_pause_preserves_envelope(PlaybackItem& item) {
         check(item.stats().transport == state,
               "pause: resume restores the preceding transport state");
         item.render_block(output.channels, 2, kBlock);
+        check(std::fabs(output.left.front()) < 0.05f, "pause: resume ramps in from silence");
+        for (int i = 0; i < 2; ++i) item.render_block(output.channels, 2, kBlock);
         check(output.left == expected.left && output.right == expected.right,
-              "pause: resumed waveform matches uninterrupted envelope exactly");
+              "pause: past the resume ramp the waveform matches uninterrupted exactly");
     }
 
     item.stop_now();
@@ -1067,12 +1080,15 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
         if (mode == 3) {
             check(item.stats().transport == TransportState::Paused,
                   "live edit stall: successful edit preserves a later Pause");
-            item.resume(); item.service_read_ahead(1);
-            const auto frame = operation == 0 ? 24'000 : kBlock;
+            item.resume(); item.service_read_ahead(3);
+            // Resume ramps in over 10 ms; two blocks on, the PCM is exact.
+            const auto frame = (operation == 0 ? 24'000 : kBlock) + 2 * kBlock;
             const float expected = static_cast<std::int16_t>(
                 std::sin(2.0 * 3.14159265358979323846 * 997.0 * frame / kRate) * 20'000.0) / 32768.0f;
-            check(item.render_block(output.channels, 2, kBlock) == kBlock &&
-                      std::abs(output.left[0] - expected) < 0.00001f,
+            const bool rendered = item.render_block(output.channels, 2, kBlock) == kBlock &&
+                item.render_block(output.channels, 2, kBlock) == kBlock &&
+                item.render_block(output.channels, 2, kBlock) == kBlock;
+            check(rendered && std::abs(output.left[0] - expected) < 0.00001f,
                   "live edit stall: resume starts at the correct edited PCM frame");
         } else {
             check(item.stats().transport == TransportState::Stopped &&

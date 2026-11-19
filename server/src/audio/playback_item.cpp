@@ -21,6 +21,10 @@ namespace liveplay::audio {
 
 namespace {
 
+// Edges that would otherwise click (a stop during a fade, pause, resume, a
+// re-GO during a fade-out) ramp over this long.
+constexpr long long kDeclickMs = 10;
+
 // Wrap a loop without restarting the resampler. ma_decoder_seek_to_pcm_frame
 // resets the sample-rate converter, so a file at another rate than the mix
 // starts its loop from silence in the filter: a tick at every pass. Seeking
@@ -422,6 +426,11 @@ void PlaybackItem::play() {
                    fade,
                    TransportState::FadingIn,
                    TransportState::Playing);
+    } else if (st == TransportState::FadingOut) {
+        // GO on a cue that is fading out, with no fade-in: rise back to full
+        // level over a short ramp, not in one sample.
+        start_fade(from, gain_target_linear_.load(), std::chrono::milliseconds{kDeclickMs},
+                   TransportState::FadingIn, TransportState::Playing);
     } else {
         gain_current_linear_.store(gain_target_linear_.load(), std::memory_order_release);
         transport_.store(TransportState::Playing, std::memory_order_release);
@@ -447,7 +456,6 @@ void PlaybackItem::stop() {
         // a short ramp from where it is: a cut mid-waveform clicks. It also
         // cancels any natural-end advance, as a stop always has.
         fading_out_naturally_.store(false, std::memory_order_release);
-        constexpr long long kDeclickMs = 10;
         const long long declick = static_cast<long long>(desc_.mix_sample_rate) * kDeclickMs / 1000;
         const long long remaining = fade_duration_samples_.load(std::memory_order_relaxed) -
             fade_elapsed_samples_.load(std::memory_order_relaxed);
@@ -486,6 +494,8 @@ void PlaybackItem::stop_now() {
     gain_current_linear_.store(gain_target_linear_.load(), std::memory_order_release);
     fade_duration_samples_.store(0, std::memory_order_relaxed);
     fade_elapsed_samples_.store(0, std::memory_order_relaxed);
+    declick_remaining_ = 0;
+    pause_peek_frames_ = 0;
     playhead_frames_.store(0, std::memory_order_relaxed);
     // Rewind on deliberate replay; stopping must never wait for storage.
     rewind_on_play_.store(true, std::memory_order_release);
@@ -493,12 +503,20 @@ void PlaybackItem::stop_now() {
     end_render_exclusion();
 }
 
+// Pause and resume ramp over 10 ms instead of cutting to silence and jumping
+// back: both edges click otherwise. The cue reads Paused at once and its
+// playhead stays exactly where the pause landed; render plays the ramp from
+// audio it does not consume, and resume carries on from that same frame.
+
 void PlaybackItem::pause() {
     begin_render_exclusion();
     const TransportState st = transport_.load(std::memory_order_acquire);
     if (st == TransportState::Playing || st == TransportState::FadingIn ||
         st == TransportState::FadingOut) {
         paused_transport_ = st;
+        declick_remaining_ = static_cast<long long>(desc_.mix_sample_rate) * kDeclickMs / 1000;
+        declick_rising_ = false;
+        pause_peek_frames_ = 0;
         transport_.store(TransportState::Paused, std::memory_order_release);
     }
     end_render_exclusion();
@@ -508,6 +526,9 @@ void PlaybackItem::resume() {
     begin_render_exclusion();
     if (transport_.load(std::memory_order_acquire) == TransportState::Paused) {
         transport_.store(paused_transport_, std::memory_order_release);
+        declick_remaining_ = static_cast<long long>(desc_.mix_sample_rate) * kDeclickMs / 1000;
+        declick_rising_ = true;
+        pause_peek_frames_ = 0;
     }
     end_render_exclusion();
 }
@@ -1156,7 +1177,9 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     if (render_exclusion_.test_and_set(std::memory_order_acquire)) return 0;
     RenderActiveGuard render_guard{render_exclusion_};
     const TransportState st = transport_.load(std::memory_order_acquire);
-    if (st == TransportState::Stopped || st == TransportState::Paused) return 0;
+    if (st == TransportState::Stopped) return 0;
+    if (st == TransportState::Paused && declick_remaining_ == 0) return 0;
+    const bool pause_ramp = st == TransportState::Paused;
     if (!decoder_ready_) return 0;
     const auto file_channels =
         file_channels_.load(std::memory_order_acquire);
@@ -1167,68 +1190,96 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     bool natural_end = false;
     std::uint64_t playhead_after =
         playhead_frames_.load(std::memory_order_relaxed);
-    while (frames_read < frame_count && read != write && !read_ahead_.empty()) {
-        const auto& slot = read_ahead_[read % read_ahead_.size()];
-        const int decoder_result = slot.decoder_result;
-
-        // A decoder failure is not EOF. Stop this cue immediately and return
-        // before natural-end/follow logic; the sequencer broadcasts the pending
-        // edge off the audio thread.
-        if (decoder_result != 0) {
-            read_ahead_read_.store(read + 1, std::memory_order_release);
-            stop_for_decode_error(decoder_result);
-            for (ChannelCount c = 0; c < out_channel_count; ++c)
-                std::memset(out_channel_buffers[c], 0, frame_count * sizeof(Sample));
+    if (pause_ramp) {
+        // Just paused: play the next few milliseconds without consuming them,
+        // so the playhead stays where the pause landed.
+        auto peek = read;
+        std::size_t offset = read_ahead_offset_ + pause_peek_frames_;
+        while (frames_read < frame_count && peek != write && !read_ahead_.empty()) {
+            const auto& slot = read_ahead_[peek % read_ahead_.size()];
+            if (slot.decoder_result != 0) break;
+            if (offset >= slot.frames) {
+                if (slot.natural_end) break;
+                offset -= slot.frames;
+                ++peek;
+                continue;
+            }
+            const auto take = std::min<std::size_t>(slot.frames - offset, frame_count - frames_read);
+            deinterleave_to(slot.samples.data() + offset * file_channels, take, file_channels,
+                            out_channel_buffers, std::min<ChannelCount>(out_channel_count, file_channels),
+                            frames_read);
+            frames_read += take;
+            offset += take;
+        }
+        pause_peek_frames_ += frames_read;
+        if (frames_read == 0) {
+            declick_remaining_ = 0;
             return 0;
         }
+    } else {
+        while (frames_read < frame_count && read != write && !read_ahead_.empty()) {
+            const auto& slot = read_ahead_[read % read_ahead_.size()];
+            const int decoder_result = slot.decoder_result;
 
-        const auto take = std::min<std::size_t>(
-            slot.frames - read_ahead_offset_, frame_count - frames_read);
-        deinterleave_to(slot.samples.data() + read_ahead_offset_ * file_channels,
-                        take,
-                        file_channels,
-                        out_channel_buffers,
-                        std::min<ChannelCount>(out_channel_count, file_channels),
-                        frames_read);
-        frames_read += take;
-        read_ahead_offset_ += take;
-        if (read_ahead_offset_ == slot.frames) {
-            playhead_after = slot.playhead_after;
-            natural_end = slot.natural_end;
-            read_ahead_offset_ = 0;
-            read_ahead_read_.store(++read, std::memory_order_release);
-            if (natural_end) break;
-        } else {
-            playhead_after = slot.playhead_before + read_ahead_offset_;
-            const auto loop_in = loop_in_frames_.load(std::memory_order_acquire);
-            if (slot.loop_end_frame > loop_in && playhead_after >= slot.loop_end_frame)
-                playhead_after = loop_in + (playhead_after - slot.loop_end_frame) %
-                    (slot.loop_end_frame - loop_in);
-        }
-    }
-    if (frames_read < frame_count && !natural_end &&
-        (seek_pending_ || !rewind_on_play_.load(std::memory_order_acquire)) &&
-        !decode_terminal_.load(std::memory_order_acquire)) {
-        read_ahead_underruns_.fetch_add(1, std::memory_order_relaxed);
-        // Let brief gaps recover; a sustained 250 ms gap must never re-enter late.
-        if (st != TransportState::FadingOut) {
-            starved_frames_ += frame_count - frames_read;
-            if (starved_frames_ >= std::max<std::uint64_t>(1, desc_.mix_sample_rate / 4)) {
-                if (seek_pending_) playback_revision_.fetch_add(1, std::memory_order_acq_rel);
-                stop_for_decode_error(MA_TIMEOUT);
+            // A decoder failure is not EOF. Stop this cue immediately and return
+            // before natural-end/follow logic; the sequencer broadcasts the pending
+            // edge off the audio thread.
+            if (decoder_result != 0) {
+                read_ahead_read_.store(read + 1, std::memory_order_release);
+                stop_for_decode_error(decoder_result);
                 for (ChannelCount c = 0; c < out_channel_count; ++c)
                     std::memset(out_channel_buffers[c], 0, frame_count * sizeof(Sample));
                 return 0;
             }
-        } else starved_frames_ = 0;
-    } else {
-        starved_frames_ = 0;
+
+            const auto take = std::min<std::size_t>(
+                slot.frames - read_ahead_offset_, frame_count - frames_read);
+            deinterleave_to(slot.samples.data() + read_ahead_offset_ * file_channels,
+                            take,
+                            file_channels,
+                            out_channel_buffers,
+                            std::min<ChannelCount>(out_channel_count, file_channels),
+                            frames_read);
+            frames_read += take;
+            read_ahead_offset_ += take;
+            if (read_ahead_offset_ == slot.frames) {
+                playhead_after = slot.playhead_after;
+                natural_end = slot.natural_end;
+                read_ahead_offset_ = 0;
+                read_ahead_read_.store(++read, std::memory_order_release);
+                if (natural_end) break;
+            } else {
+                playhead_after = slot.playhead_before + read_ahead_offset_;
+                const auto loop_in = loop_in_frames_.load(std::memory_order_acquire);
+                if (slot.loop_end_frame > loop_in && playhead_after >= slot.loop_end_frame)
+                    playhead_after = loop_in + (playhead_after - slot.loop_end_frame) %
+                        (slot.loop_end_frame - loop_in);
+            }
+        }
+        if (frames_read < frame_count && !natural_end &&
+            (seek_pending_ || !rewind_on_play_.load(std::memory_order_acquire)) &&
+            !decode_terminal_.load(std::memory_order_acquire)) {
+            read_ahead_underruns_.fetch_add(1, std::memory_order_relaxed);
+            // Let brief gaps recover; a sustained 250 ms gap must never re-enter late.
+            if (st != TransportState::FadingOut) {
+                starved_frames_ += frame_count - frames_read;
+                if (starved_frames_ >= std::max<std::uint64_t>(1, desc_.mix_sample_rate / 4)) {
+                    if (seek_pending_) playback_revision_.fetch_add(1, std::memory_order_acq_rel);
+                    stop_for_decode_error(MA_TIMEOUT);
+                    for (ChannelCount c = 0; c < out_channel_count; ++c)
+                        std::memset(out_channel_buffers[c], 0, frame_count * sizeof(Sample));
+                    return 0;
+                }
+            } else starved_frames_ = 0;
+        } else {
+            starved_frames_ = 0;
+        }
     }
     // Stop fades advance across unavailable PCM so they still settle to Stopped.
     if (frames_read == 0 && !natural_end && st != TransportState::FadingOut) return 0;
 
     // ---- LTC virtual channel ----
-    const bool ltc_on = ltc_enabled_atomic_.load(std::memory_order_acquire) &&
+    const bool ltc_on = !pause_ramp && ltc_enabled_atomic_.load(std::memory_order_acquire) &&
         !rewind_on_play_.load(std::memory_order_acquire);
     if (ltc_on && ltc_ && out_channel_count > file_channels) {
         const auto frames = playhead_frames_.load(std::memory_order_relaxed);
@@ -1284,6 +1335,8 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
         } else {
             gain_current_linear_.store(gain_end, std::memory_order_release);
         }
+    } else if (pause_ramp) {
+        // Hold the gain where the pause found it; the declick ramps it out.
     } else {
         // No fade active — but if set_gain_db() changed the *target* while we
         // were playing (e.g. auto-duck "duck-others", or a UI fader move), the
@@ -1352,10 +1405,19 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     }
     // Duck Level is an absolute ceiling, not a ratio derived from the saved
     // fader. This remains safe while the base fader itself is still slewing.
-    const float output_gain_now = duck_limited ? std::min(gain_now, duck_now) : gain_now;
-    const float output_gain_end = duck_active_ ||
+    float output_gain_now = duck_limited ? std::min(gain_now, duck_now) : gain_now;
+    float output_gain_end = duck_active_ ||
         duck_elapsed_samples_ < duck_duration_samples_
             ? std::min(gain_end, duck_end) : gain_end;
+    if (declick_remaining_ > 0) {
+        const float total = static_cast<float>(desc_.mix_sample_rate) * kDeclickMs / 1000.0f;
+        const long long advance = std::min<long long>(frame_count, declick_remaining_);
+        const float left_before = static_cast<float>(declick_remaining_) / total;
+        const float left_after = static_cast<float>(declick_remaining_ - advance) / total;
+        output_gain_now *= declick_rising_ ? 1.0f - left_before : left_before;
+        output_gain_end *= declick_rising_ ? 1.0f - left_after : left_after;
+        declick_remaining_ -= advance;
+    }
 
     // Apply linear gain ramp across the block. Per-sample cosine would be
     // smoother but per-block linear is inaudible at the fade durations we use

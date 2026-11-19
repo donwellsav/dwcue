@@ -320,6 +320,11 @@ private:
     std::atomic<std::uint64_t>  prepared_revision_{0};
     std::atomic<bool>           rewind_on_play_{false};
     TransportState             paused_transport_ = TransportState::Playing; // render_exclusion_
+    // Declick (render_exclusion_): a 10 ms ramp on the output after a pause
+    // (down, playing the next audio without consuming it) and a resume (up).
+    long long                  declick_remaining_ = 0;
+    bool                       declick_rising_ = false;
+    std::size_t                pause_peek_frames_ = 0;
     std::atomic<float>          gain_target_linear_{1.0f};
     std::atomic<float>          gain_current_linear_{1.0f};     // smoothed
     std::atomic<float>          group_gain_target_{1.0f};
