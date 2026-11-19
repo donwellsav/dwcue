@@ -9,6 +9,7 @@ import {
   ref,
   shallowRef,
   watch,
+  toRaw,
 } from 'vue';
 
 import { useVideoOutput } from '../app/composables/useVideoOutput.ts';
@@ -823,6 +824,36 @@ test('a playback error mid-cue retries the same source instead of staying black'
     await new Promise(resolve => setTimeout(resolve, 650));
     assert.notEqual(h.controller.videoSrc.value, failedSource, 'the same file is requested again');
     assert.equal(h.controller.showVideo.value, true, 'the picture comes back for the cue still on air');
+  } finally { h.stop(); }
+});
+
+test('the next video cue waits ready in the spare and the cut swaps to it without a reload', async () => {
+  const h = createHarness(project([audioItem('first', { hasVideo: true }), audioItem('second', { hasVideo: true })]));
+  try {
+    const live = h.element;
+    const spare = videoElement();
+    h.controller.registerVideoElement(0, live as unknown as HTMLVideoElement);
+    h.controller.registerVideoElement(1, spare as unknown as HTMLVideoElement);
+    await flush();
+    h.emitCue(snapshotCue('first', 'first-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    h.emitPatch({ op: 'next_item_set', itemUuid: 'second' });
+    await flush();
+    const spareSource = h.controller.slotSources.value[1];
+    assert.ok(spareSource, 'the next video cue loads into the spare while the first plays');
+    assert.equal(h.controller.slotSources.value[0], h.controller.videoSrc.value, 'the live picture keeps its source');
+    // The spare reaches its first frame at the In point.
+    spare.readyState = 4;
+    spare.videoWidth = 640;
+    spare.currentTime = 0;
+    h.controller.onSpareEvent();
+    h.emitCue(snapshotCue('second', 'second-cue', 2, 0.02));
+    await flush();
+    assert.equal(h.controller.liveSlot.value, 1, 'the spare is now the live picture');
+    assert.equal(toRaw(h.controller.videoEl.value), spare as unknown as HTMLVideoElement);
+    assert.equal(h.controller.videoSrc.value, spareSource, 'no reload: the same source carries on');
+    assert.equal(live.paused, true, 'the outgoing picture stops');
   } finally { h.stop(); }
 });
 

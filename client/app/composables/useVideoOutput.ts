@@ -158,7 +158,20 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   const server = useLiveplayServer();
 
   const videoEl = ref<HTMLVideoElement | null>(null);
-  const videoSrc = ref<string | null>(null);
+  // Two <video> elements: the live one and a spare. While a video cue plays,
+  // the next video cue loads into the spare and settles on its first frame;
+  // at the cut they swap roles, so the incoming picture starts without a
+  // reload or a cold seek. videoEl/videoSrc always mean the live element.
+  const liveSlot = ref(0);
+  const slotSources = ref<Array<string | null>>([null, null]);
+  const slotElements: Array<HTMLVideoElement | null> = [null, null];
+  const videoSrc = computed<string | null>({
+    get: () => slotSources.value[liveSlot.value] ?? null,
+    set: (value) => { slotSources.value[liveSlot.value] = value; },
+  });
+  let spare: { itemUuid: string; signature: string; version: number; fileRevision: string | null;
+    inPoint: number; ready: boolean } | null = null;
+  let mediaVersionCounter = 0;
   const videoReady = ref(false);
   const videoFailed = ref(false);
   const showVideo = ref(false);
@@ -316,19 +329,27 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     return `${base}/api/media?${params}`;
   }
 
+  function sourceSignatureOf(item: OutputItem): string {
+    return `${doc.value?.sessionId ?? ''}\u0000${item.fileRevision ?? ''}\u0000${item.mediaServerPath ?? ''}\u0000${item.mediaPath ?? ''}`;
+  }
+
   function itemMediaUrl(item: OutputItem): string {
-    const signature = `${doc.value?.sessionId ?? ''}\u0000${item.fileRevision ?? ''}\u0000${item.mediaServerPath ?? ''}\u0000${item.mediaPath ?? ''}`;
+    const signature = sourceSignatureOf(item);
     if (sourceItemUuid !== item.uuid || sourceSignature !== signature) {
-      sourceVersion += 1;
+      sourceVersion = ++mediaVersionCounter;
     }
     sourceItemUuid = item.uuid;
     sourceSignature = signature;
     sourceFileRevision = item.fileRevision;
+    return mediaUrlFor(item, sourceVersion);
+  }
+
+  function mediaUrlFor(item: OutputItem, version: number): string {
     const base = String(server.serverUrl || '').replace(/\/+$/, '');
     const params = new URLSearchParams(diagnosticItem === item
       ? { path: item.mediaServerPath ?? '' }
       : { item_uuid: item.uuid });
-    params.set('source_revision', String(sourceVersion));
+    params.set('source_revision', String(version));
     if (item.fileRevision) params.set('file_revision', item.fileRevision);
     if (doc.value?.sessionId) params.set('project_session_id', doc.value.sessionId);
     const token = String(server.effectiveAccessToken || '');
@@ -646,6 +667,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
       activeTriggerSeq = active.triggerSeq;
       beginNativeClockGrace(active.cueId, active.playheadSeconds);
       startPending = active.transport !== TRANSPORT_PAUSED;
+      if (item.hasVideo && active !== diagnosticCue) adoptSpare(item);
       applyItem(item, active.playheadSeconds);
       if (active !== diagnosticCue && item.hasVideo && !isAtOutPoint(item, active.playheadSeconds)
         && (videoSrc.value !== previousSource || showHeldFrame.value || !videoReady.value)) {
@@ -859,15 +881,85 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     applyTransport(meter.transport);
   });
 
-  // shortcut: one decoder; measure show-media contention before adding a standby slot.
+  function registerVideoElement(slot: number, element: HTMLVideoElement | null) {
+    slotElements[slot] = element;
+    if (slot === liveSlot.value) videoEl.value = element;
+  }
+
+  function spareElement(): HTMLVideoElement | null {
+    return slotElements[1 - liveSlot.value] ?? null;
+  }
+
+  function dropSpare() {
+    spare = null;
+    slotSources.value[1 - liveSlot.value] = null;
+  }
+
+  // Load the next video cue into the spare while the live element plays.
+  function preloadSpare(item: OutputItem) {
+    if (!spareElement() || diagnosticCue) return;
+    const signature = sourceSignatureOf(item);
+    if (spare && spare.itemUuid === item.uuid && spare.signature === signature) return;
+    const version = ++mediaVersionCounter;
+    spare = { itemUuid: item.uuid, signature, version, fileRevision: item.fileRevision, inPoint: item.inPoint, ready: false };
+    slotSources.value[1 - liveSlot.value] = mediaUrlFor(item, version);
+  }
+
+  // The spare is ready once it has its first frame at the cue's In point.
+  function onSpareEvent() {
+    const element = spareElement();
+    if (!spare || !element || element.readyState < 1) return;
+    if (!element.seeking && Math.abs(element.currentTime - spare.inPoint) > CHASE_DEADBAND_S) {
+      element.currentTime = spare.inPoint;
+      return;
+    }
+    if (element.readyState >= 2 && !element.seeking && element.videoWidth > 0) spare.ready = true;
+  }
+
+  function onSpareError() {
+    dropSpare();
+  }
+
+  // At the cut, take the spare if it holds this cue ready: the elements swap
+  // roles and the spare's source becomes the live one, unchanged.
+  function adoptSpare(item: OutputItem): boolean {
+    const incoming = spareElement();
+    if (!spare || spare.itemUuid !== item.uuid) return false;
+    if (!spare.ready || !incoming || spare.signature !== sourceSignatureOf(item)) {
+      dropSpare();
+      return false;
+    }
+    const outgoing = videoEl.value;
+    liveSlot.value = 1 - liveSlot.value;
+    videoEl.value = incoming;
+    sourceItemUuid = item.uuid;
+    sourceSignature = spare.signature;
+    sourceFileRevision = spare.fileRevision;
+    sourceVersion = spare.version;
+    spare = null;
+    videoReady.value = true;
+    videoFailed.value = false;
+    playAttemptFailed = false;
+    noDecodableVideoTrack = false;
+    if (outgoing && !outgoing.paused) outgoing.pause();
+    return true;
+  }
+
   function preloadNextItem() {
     const uuid = nextItemUuid.value;
-    if (!uuid || (activeItemUuid.value && doc.value?.items.get(activeItemUuid.value)?.hasVideo !== false)) return;
+    const nextItem = uuid ? doc.value?.items.get(uuid) : undefined;
+    let liveBusy = !!activeItemUuid.value && doc.value?.items.get(activeItemUuid.value)?.hasVideo !== false;
     for (const active of activeCues.values()) {
-      // A retained video still owns this element for immediate fallback.
-      if (doc.value?.items.get(active.itemUuid)?.hasVideo !== false) return;
+      // A retained video still owns the live element for immediate fallback.
+      if (doc.value?.items.get(active.itemUuid)?.hasVideo !== false) liveBusy = true;
     }
-    const item = doc.value?.items.get(uuid);
+    if (liveBusy) {
+      // The live element is showing a picture: the next video cue goes to the spare.
+      if (nextItem?.hasVideo && uuid !== activeItemUuid.value) preloadSpare(nextItem);
+      return;
+    }
+    if (!uuid) return;
+    const item = nextItem;
     if (!item?.hasVideo) return;
     const url = itemMediaUrl(item);
     const sourceChanged = url !== videoSrc.value;
@@ -1107,6 +1199,11 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
   return {
     videoEl,
+    liveSlot,
+    slotSources,
+    registerVideoElement,
+    onSpareEvent,
+    onSpareError,
     heldFrameEl,
     showHeldFrame,
     getPictureHealth,

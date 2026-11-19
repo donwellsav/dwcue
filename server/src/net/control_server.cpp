@@ -3443,7 +3443,12 @@ void ControlServer::install_routes() {
                 // WebSocket control channels sharing it (observed as EPIPE
                 // write errors coinciding with WS disconnects). A shortened
                 // 206 is legal — the client re-requests the next window.
-                constexpr std::uint64_t kMaxRangeWindow = 16ull * 1024 * 1024;
+                // The window is read whole before the first byte goes out,
+                // so it sets the wait for every video start and seek: 4 MB is
+                // tens of milliseconds even from a USB disk or network share
+                // (16 MB was up to half a second), and even 100 Mb/s video
+                // needs only about three windows a second.
+                constexpr std::uint64_t kMaxRangeWindow = 4ull * 1024 * 1024;
                 const bool hasRange = range.rfind("bytes=", 0) == 0 && size > 0;
                 if (hasRange && end - begin + 1 > kMaxRangeWindow) {
                     end = begin + kMaxRangeWindow - 1;
