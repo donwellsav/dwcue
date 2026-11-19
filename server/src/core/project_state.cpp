@@ -5755,6 +5755,13 @@ bool ProjectState::patch_settings(
         const auto slots = count->get<std::int64_t>();
         if (slots < 1 || slots > 64) return false;
     }
+    // The client sends every setting on any change (Auto-save, a standby
+    // picture). An output that stays as chosen must not reopen or move Main.
+    if (auto output = patch.find("defaultOutputDevice");
+        output != patch.end() && (output->is_null() || output->is_string())) {
+        const auto requested = output->is_string() ? output->get<std::string>() : std::string{};
+        if (requested == program_output_selection()) patch.erase(output);
+    }
     const auto edit = ++settings_intent_revision_;
     const auto generation = document_generation_;
     const auto stopped = stop_revision();
