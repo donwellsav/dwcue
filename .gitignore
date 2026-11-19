@@ -43,3 +43,6 @@ server/CMakeCache.txt
 server/CMakeFiles/
 server/compile_commands.json
 server/.vs/
+
+# Soak test and benchmark results (scripts/soak)
+soak-results/

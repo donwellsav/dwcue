@@ -77,6 +77,32 @@ Add the string to `client/locales/en.json`, run `sync-locale-keys.js` to copy it
 
 ---
 
+## Soak test and benchmarks (macOS)
+
+[`soak/run-soak.cjs`](soak/run-soak.cjs) runs the packaged app for hours as an operator would, with nothing shown on screen and nothing audible, and records what the engine, the app and macOS report. Use it to get a baseline before a change to playback, routing or the interface, and again after it.
+
+Build the packaged app first (`npm run server:build`, then in `client/`: `npx cross-env NODE_ENV=production nuxt generate && npx electron-builder --dir`). The run needs `ffmpeg` on the PATH and one output device that makes no sound in the room, such as a virtual audio device. Name it with `--output`; the run refuses the system default output and stops at once if sound ever reaches it.
+
+```sh
+node scripts/soak/run-soak.cjs soak  --output "<silent output>" --minutes 240
+node scripts/soak/run-soak.cjs bench --output "<silent output>"
+node scripts/soak/run-soak.cjs summarize --results soak-results/<run>
+```
+
+- **`soak`** opens a generated show (24 cues in WAV, FLAC, MP3, M4A and four videos, plus six QuickPlays) and presses GO, QuickPlays, Stop All, Up Next, Properties, Show Mode and Video Output in a seeded random order, by button and by key. After each press it checks that the engine did it and that the screen shows it. `--seed` repeats the same order.
+- **`bench`** times app start (first launch apart, then warm launches) and opening a large show (`--cues`, 300 by default): until the playlist appears, until the engine has every cue loaded, and until the engine goes idle.
+- Results land in `soak-results/<run>/` (not in git): `summary.json`, and the raw `samples.jsonl` (every 15 seconds), `steps.jsonl`, `events.jsonl` and `engine.log`.
+
+What the summary reports, and what it cannot:
+
+- **Failures**: a press the engine did not carry out, a state the screen did not show, the screen disagreeing with the engine, an error on the page, a native dialog, a process that died.
+- **GO start**: the time from the press to the engine reporting the cue as playing. The sound then waits in the engine's output buffer (`ringFrames`, at 48 kHz) and in the device's own buffer; that part is reported, not measured at a speaker.
+- **Audio**: dropouts (`underruns`), device losses and recoveries per open output, decoder starvation (`readAheadUnderruns`), and how regularly the engine's meter broadcast arrives.
+- **Memory and CPU** per process, with a per-hour trend after the first tenth of the run. The page's heap is read after a forced collection every five minutes.
+- Because no window is drawn to a display, the drawing cost of the windows and the video frame counts understate a real show. All sound in the generated show is a tone between 20 and 35 Hz at about -24 dBFS, which a laptop's speakers cannot reproduce.
+
+The app is hidden by starting it paused under the Node inspector and replacing the window `show` calls before its first line runs; that is macOS-only as written.
+
 ## Conventions
 
 - **Working directory**: every script resolves paths from `path.resolve(__dirname, '..')` and is safe to invoke from anywhere — never `cd` first.
