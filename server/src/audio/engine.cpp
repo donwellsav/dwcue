@@ -1240,7 +1240,10 @@ void AudioEngine::play(const CueId& id) {
 
 void AudioEngine::stop(const CueId& id) {
     if (auto item = find_cue(id)) {
-        Logger::info("stop() cue='{}'", id.value);
+        // A GO with stop-all stops every other cue in the show; logging the
+        // ones already stopped flushed a line per cue ahead of every start.
+        if (item->stats().transport != TransportState::Stopped)
+            Logger::info("stop() cue='{}'", id.value);
         item->stop();
     }
 }
