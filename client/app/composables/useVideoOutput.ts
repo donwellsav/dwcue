@@ -457,6 +457,35 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     if (element.playbackRate !== 1) element.playbackRate = 1;
   }
 
+  // A playback error mid-cue (a GPU reset, a refused or interrupted media
+  // request) is retried with a fresh request for the same file while the cue
+  // is on air, instead of leaving the audience black for the rest of the cue.
+  const RETRY_DELAYS_MS = [500, 1500, 3000];
+  let retryTimer: number | undefined;
+  let retryTrigger = -1;
+  let retryAttempts = 0;
+  function scheduleRetry() {
+    if (diagnosticCue || noDecodableVideoTrack || !activeItemUuid.value) return;
+    if (retryTrigger !== activeTriggerSeq) {
+      retryTrigger = activeTriggerSeq;
+      retryAttempts = 0;
+    }
+    if (retryAttempts >= RETRY_DELAYS_MS.length) return;
+    const delay = RETRY_DELAYS_MS[retryAttempts++]!;
+    const trigger = activeTriggerSeq;
+    const uuid = activeItemUuid.value;
+    clearTimeout(retryTimer);
+    retryTimer = window.setTimeout(() => {
+      const active = newestActiveCue();
+      const item = doc.value?.items.get(uuid);
+      if (activeTriggerSeq !== trigger || activeItemUuid.value !== uuid || !active || !item?.hasVideo) return;
+      sourceSignature = null;
+      startPending = active.transport !== TRANSPORT_PAUSED;
+      applyItem(item, active.playheadSeconds);
+      applyTransport(active.transport);
+    }, delay);
+  }
+
   function markPlaybackFailure(itemUuid: string | null, message: string) {
     clearHeldFrame();
     playAttemptFailed = true;
@@ -465,6 +494,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     showVideo.value = false;
     pauseVideo();
     reportPlaybackError({ itemUuid, message });
+    scheduleRetry();
   }
 
   function playVideo() {
@@ -477,6 +507,10 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
       scheduleFrameClockCheck();
       return;
     }
+    // Played to its end while the engine still plays (audio longer than the
+    // picture, or the picture slightly ahead): hold the last frame. play()
+    // would restart it at frame 0, a flash of the first frame.
+    if (element.ended) return;
     const generation = ++playAttemptGeneration;
     const playResult = element.play();
     scheduleFrameClockCheck();
@@ -727,7 +761,10 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     activeCues.set(activeCueKey(state), state);
     const ownsPicture = newestActiveCue()?.itemUuid === state.itemUuid;
     if (ownsPicture) recordNativePosition(state.cueId ?? state.itemUuid, state.playheadSeconds, false);
-    renderNewestActive(ownsPicture);
+    // A fade starting or ending, or a resume, keeps the picture playing: the
+    // chase handles any drift. Seeking here froze and jumped the picture to
+    // a render position ahead of the sound. Paused, show the exact frame.
+    renderNewestActive(ownsPicture && state.transport === TRANSPORT_PAUSED);
     if (metadataCueKey) void refetchDoc();
   });
 
@@ -805,10 +842,12 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     // reading must not make the picture jump.
     if (Math.abs(drift) > CHASE_JUMP_S || (Math.abs(drift) > CHASE_HARD_SEEK_S
       && chaseSamples.length >= 2 && Math.abs(steady) > CHASE_HARD_SEEK_S)) {
-      element.currentTime = heard;
+      // Aim ahead by the learned lead: a seek takes time, and landing late
+      // by that much would set off another seek. Its landing teaches the lead.
+      element.currentTime = heard + startLead;
       element.playbackRate = 1;
       resetChase(active.cueId);
-      startPending = false;
+      startPending = true;
     } else {
       // How far this start landed from the sound sets the next start's lead.
       if (startPending && chaseSamples.length === CHASE_WINDOW) learnStartLead(steady);
@@ -1050,6 +1089,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
   }, { immediate: true });
 
   onScopeDispose(() => {
+    clearTimeout(retryTimer);
     clearTimeout(refetchTimer);
     clearTimeout(metadataRetryTimer);
     docRequest?.controller.abort();

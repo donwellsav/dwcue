@@ -723,9 +723,10 @@ test('one stray reading cannot make the picture jump; a lasting gap or a real ju
     assert.equal(h.element.currentTime, 1.2 - 0.09, 'a single 90 ms reading does not seek');
     at(1.233, 0.005);
     for (let i = 0; i < 8; i++) at(1.3 + i / 30, 0.1);
-    assert.ok(Math.abs(h.element.currentTime - (1.3 + 7 / 30)) < 1e-9, 'a lasting 100 ms gap seeks');
+    // It seeks to the heard position, or ahead of it by what its seeks taught the lead.
+    assert.ok(h.element.currentTime >= 1.3 + 7 / 30 - 1e-9, 'a lasting 100 ms gap seeks');
     at(3, 0.9);
-    assert.equal(h.element.currentTime, 3, 'a real jump seeks at once');
+    assert.ok(h.element.currentTime >= 3 && h.element.currentTime < 3.25, 'a real jump seeks at once');
   } finally { h.stop(); }
 });
 
@@ -750,6 +751,78 @@ test('a start lands in step: the picture starts ahead by a lead it learns from e
     await flush();
     const secondLead = h.element.currentTime - 0.03;
     assert.ok(secondLead > firstLead + 0.015, `the next start leads by more (${firstLead} then ${secondLead})`);
+  } finally { h.stop(); }
+});
+
+test('fades and resume on the cue on screen do not seek the picture', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1, 2));  // starts fading in
+    h.controller.onVideoCanPlay();
+    await flush();
+    let seeks = 0;
+    let position = h.element.currentTime;
+    Object.defineProperty(h.element, 'currentTime', {
+      get: () => position, set: (value: number) => { seeks += 1; position = value; }, configurable: true,
+    });
+    // The engine reports each transport change with its render position,
+    // which runs ahead of what is heard (and of the picture).
+    position = 3;
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 3.04, 1));  // fade-in done
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 5.04, 3));  // fade-out starts
+    assert.equal(seeks, 0, 'a transport change on the playing cue keeps the picture going');
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 6, 4));     // paused: show the exact frame
+    assert.equal(position, 6, 'a pause still lands on its frame');
+  } finally { h.stop(); }
+});
+
+test('a jump while playing lands ahead by the learned lead, so it does not land late and repeat', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, '0.06');
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    for (let i = 0; i < 4; i++) {
+      const clock = 1.2 + i / 30;
+      h.element.currentTime = clock;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+    }
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 4 }] });  // a jump (loop, scrub)
+    assert.ok(Math.abs(h.element.currentTime - 4.06) < 1e-9, `lands ahead by the lead (${h.element.currentTime})`);
+  } finally { h.stop(); }
+});
+
+test('a video that has played to its end holds its last frame instead of restarting', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    const plays = h.element.playCount;
+    // The picture ran out while the engine still plays (audio longer than video).
+    h.element.paused = true;
+    (h.element as any).ended = true;
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 1.05 }] });
+    assert.equal(h.element.playCount, plays, 'no play() on an ended video: Chromium would restart it at frame 0');
+  } finally { h.stop(); }
+});
+
+test('a playback error mid-cue retries the same source instead of staying black', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    const failedSource = h.controller.videoSrc.value;
+    h.controller.onVideoError();
+    assert.equal(h.controller.showVideo.value, false, 'the failed picture is hidden at once');
+    await new Promise(resolve => setTimeout(resolve, 650));
+    assert.notEqual(h.controller.videoSrc.value, failedSource, 'the same file is requested again');
+    assert.equal(h.controller.showVideo.value, true, 'the picture comes back for the cue still on air');
   } finally { h.stop(); }
 });
 
