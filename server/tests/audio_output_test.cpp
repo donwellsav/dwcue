@@ -200,6 +200,11 @@ void test_held_device_recovery_lifetime() {
     check(engine->start(), "recovery lifetime: real null-backend engine starts");
     auto device = engine->devices_.front();
     const auto id = device->id;
+    {
+        // This test isolates a held recovery; keep the automatic retry out of it.
+        std::lock_guard state_lock{device->state_mutex};
+        device->next_auto_recovery = std::chrono::steady_clock::now() + std::chrono::hours{1};
+    }
     gate.hold_stop.store(!during_start); gate.hold_start.store(during_start); gate.entered.store(false);
     check(engine->request_device_recovery(id).has_value(), "recovery lifetime: explicit recovery accepted");
     check(gate.wait_entered(), "recovery lifetime: actual native stop is held");
@@ -236,6 +241,42 @@ void test_held_device_recovery_lifetime() {
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
     check(weak.expired(), "recovery lifetime: retained native state retires after return without a leaked device");
   }
+}
+
+// An output that is lost (unplugged and back, or cut off by the OS) comes
+// back by itself: the engine retries with a fresh native stream under the
+// same id, so Main and its routes play again without anyone reselecting it.
+void test_lost_output_comes_back() {
+    NativeDeviceGate gate;
+    auto owned = std::make_unique<AudioEngine>();
+    auto& engine = *owned;
+    engine.device_test_context_ = &gate.context;
+    check(engine.start(), "lost output: engine and output running");
+    auto device = engine.devices_.front();
+    const auto id = device->id;
+    const auto reach = [&](DeviceRuntimeState state, std::chrono::milliseconds within) {
+        const auto deadline = std::chrono::steady_clock::now() + within;
+        while (device->runtime_state.load() != state && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds{5});
+        return device->runtime_state.load() == state;
+    };
+    check(reach(DeviceRuntimeState::Running, std::chrono::seconds{3}), "lost output: output reaches Running");
+    gate.fail_start.store(true);   // while it is gone it cannot start
+    ma_device_stop(device->ma_dev.get());
+    check(reach(DeviceRuntimeState::Disconnected, std::chrono::seconds{1}), "lost output: the loss is seen");
+    std::this_thread::sleep_for(std::chrono::milliseconds{2500});
+    check(device->runtime_state.load() != DeviceRuntimeState::Running, "lost output: stays down while the device is gone");
+    gate.fail_start.store(false);  // the device is back
+    check(reach(DeviceRuntimeState::Running, std::chrono::seconds{5}) && device->id == id &&
+              engine.devices_.size() == 1 && device->native_reopens.load() > 0,
+          "lost output: comes back by itself on a fresh stream under the same id");
+    // Native state retires off-thread; let it go before the test context does.
+    std::weak_ptr<AudioEngine::Device> weak = device;
+    device.reset();
+    owned.reset();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{3};
+    while (!weak.expired() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
 }
 
 void test_device_catalog_survives_native_stall() {
@@ -1562,6 +1603,7 @@ int main() {
     const auto ramp = wav(dir, "ramp.wav", 0.125f, true, 1.0f / 131'072.0f);
     test_initial_device_start_keeps_controls();
     test_held_device_recovery_lifetime();
+    test_lost_output_comes_back();
     test_device_catalog_survives_native_stall();
     test_catalog_follows_native_reroute();
     test_stop_before_render_wait_snapshot(quiet);

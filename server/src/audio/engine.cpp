@@ -800,6 +800,8 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     dev->sample_rate  = cfg_.mix_sample_rate;
     dev->display_name = name_substring.empty() ? "Default Output" : name_substring;
     dev->follows_default = name_substring.empty();
+    dev->lifecycle    = device_lifecycle_mutex_;
+    dev->period_frames = static_cast<FrameCount>(cfg_.render_block);
     dev->ma_dev       = std::make_unique<ma_device>();
     dev->ring         = std::make_unique<ma_pcm_rb>();
     dev->callback_state = callback_state_;
@@ -848,6 +850,7 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
 #ifdef LIVEPLAY_TEST_HOOKS
     device_context = device_test_context_;
 #endif
+    dev->native_context = device_context;
 
     std::unique_lock lifecycle_lock{*device_lifecycle_mutex_, std::defer_lock};
     if (!lifecycle_lock.try_lock_for(kDeviceBusyWait)) {
@@ -1758,7 +1761,60 @@ float AudioEngine::read_master_gain_reduction_db(MasterChannelIndex master) cons
     return 0.0f;
 }
 
-void AudioEngine::recover_device(const std::shared_ptr<Device>& owned, std::uint64_t generation) noexcept {
+// A lost output (unplugged and back, or cut off by the OS) cannot be started
+// again: the OS gives the returning device a new identity. Build a fresh
+// native stream for it, found by name (or the system default), and keep
+// everything else: the engine id, ring, routes and owners. Caller holds the
+// device's native mutex with the old stream stopped.
+bool AudioEngine::reopen_native_device(Device& device) noexcept {
+    try {
+        if (!device.lifecycle) return false;
+        std::unique_lock lifecycle{*device.lifecycle, std::defer_lock};
+        if (!lifecycle.try_lock_for(kDeviceBusyWait)) return false;
+        ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
+        cfg.playback.format    = ma_format_f32;
+        cfg.playback.channels  = device.channels;
+        cfg.sampleRate         = device.sample_rate;
+        cfg.dataCallback       = &AudioEngine::ma_data_callback;
+        cfg.notificationCallback = &AudioEngine::ma_notification_callback;
+        cfg.pUserData          = &device;
+        cfg.periodSizeInFrames = static_cast<ma_uint32>(device.period_frames);
+        ma_device_id id{};
+        if (!device.follows_default) {
+            ma_context local{};
+            ma_context* lookup = device.native_context;
+            const bool owns_lookup = lookup == nullptr;
+            if (owns_lookup && ma_context_init(nullptr, 0, nullptr, &local) != MA_SUCCESS) return false;
+            if (owns_lookup) lookup = &local;
+            ma_device_info* infos = nullptr;
+            ma_uint32 count = 0;
+            bool found = false;
+            if (ma_context_get_devices(lookup, &infos, &count, nullptr, nullptr) == MA_SUCCESS) {
+                for (ma_uint32 i = 0; i < count && !found; ++i) {
+                    if (device.display_name == infos[i].name) {
+                        id = infos[i].id;
+                        found = true;
+                    }
+                }
+            }
+            if (owns_lookup) ma_context_uninit(&local);
+            if (!found) return false;
+            cfg.playback.pDeviceID = &id;
+        }
+        auto fresh = std::make_unique<ma_device>();
+        if (ma_device_init(device.native_context, &cfg, fresh.get()) != MA_SUCCESS) return false;
+        ma_device_uninit(device.ma_dev.get());
+        device.ma_dev = std::move(fresh);
+        device.native_reopens.fetch_add(1, std::memory_order_relaxed);
+        Logger::info("Output '{}' reopened after it was lost", device.display_name);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+void AudioEngine::recover_device(const std::shared_ptr<Device>& owned, std::uint64_t generation,
+                                 bool reopen) noexcept {
     auto& device = *owned;
     const auto state = device.callback_state;
     const auto current = [&] {
@@ -1802,7 +1858,12 @@ void AudioEngine::recover_device(const std::shared_ptr<Device>& owned, std::uint
             device.ring_occupancy_frames.store(0, std::memory_order_relaxed);
             device.reset_applied = true;
             device.native_recovery_pending.store(false, std::memory_order_release);
+            // A lost output needs a fresh stream; a stalled one is restarted
+            // first and gets a fresh stream if it will not start.
+            if (reopen && reset_ok && current()) reset_ok = reopen_native_device(device);
             if (reset_ok && current()) started = ma_device_start(device.ma_dev.get()) == MA_SUCCESS;
+            if (!started && !reopen && reset_ok && current() && reopen_native_device(device))
+                started = current() && ma_device_start(device.ma_dev.get()) == MA_SUCCESS;
             if (started && !current()) {
                 ma_device_stop(device.ma_dev.get());
                 started = false;
@@ -1859,6 +1920,25 @@ void AudioEngine::device_watchdog_loop() {
                 catch (const std::system_error& error) {
                     device->recovery_in_progress.store(false, std::memory_order_seq_cst);
                     (void)device->recovery_request.fail(device->recovery_request.request_id());
+                    Logger::error("Device recovery worker failed: {}", error.what());
+                }
+                continue;
+            }
+            // A lost or stalled output is retried by itself every 2 s with a
+            // fresh native stream, one attempt at a time: when the device
+            // comes back, Main and every route on it play again.
+            const auto runtime = device->runtime_state.load(std::memory_order_acquire);
+            const auto now = std::chrono::steady_clock::now();
+            if (!device->closing.load(std::memory_order_acquire) &&
+                !device->recovery_in_progress.load(std::memory_order_acquire) &&
+                (runtime == DeviceRuntimeState::Disconnected || runtime == DeviceRuntimeState::Stalled) &&
+                now >= device->next_auto_recovery) {
+                device->next_auto_recovery = now + std::chrono::seconds{2};
+                device->recovery_in_progress.store(true, std::memory_order_seq_cst);
+                const auto generation = callback_state_->run_generation.load(std::memory_order_acquire);
+                try { std::thread([device, generation] { recover_device(device, generation, true); }).detach(); }
+                catch (const std::system_error& error) {
+                    device->recovery_in_progress.store(false, std::memory_order_seq_cst);
                     Logger::error("Device recovery worker failed: {}", error.what());
                 }
             }

@@ -483,6 +483,15 @@ private:
         // Opened as "System Default": the OS moves this stream when the
         // computer's default output changes. Set before the device is shared.
         bool                        follows_default = false;
+        // What a recovery needs to build a fresh native stream for this
+        // device (set at open): the engine's device lifecycle lock, the
+        // native context (null: miniaudio's own) and the period size.
+        std::shared_ptr<std::timed_mutex> lifecycle;
+        ma_context*                 native_context = nullptr;
+        FrameCount                  period_frames = 0;
+        std::atomic<std::uint64_t>  native_reopens{0};
+        // Watchdog only: when a lost output may next be retried.
+        std::chrono::steady_clock::time_point next_auto_recovery{};
         std::unique_ptr<ma_device>  ma_dev;
         std::mutex                  native_mutex; // One stop/start/uninit per device.
         mutable std::mutex          state_mutex;  // Short recovery/watchdog publication only.
@@ -665,7 +674,9 @@ private:
         const std::shared_ptr<std::timed_mutex>& lifecycle, ma_context* test_context);
     void retire_device(const std::shared_ptr<Device>& device);
     void device_watchdog_loop();
-    static void recover_device(const std::shared_ptr<Device>& device, std::uint64_t generation) noexcept;
+    static void recover_device(const std::shared_ptr<Device>& device, std::uint64_t generation,
+                               bool reopen = false) noexcept;
+    static bool reopen_native_device(Device& device) noexcept;
     bool reset_device_if_requested(Device& device) noexcept;
 
     Device* find_device_locked(const DeviceId& id) const;
