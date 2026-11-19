@@ -672,6 +672,10 @@ async function runSoak({ minutes, seed, probe = false }) {
         const v = [...document.querySelectorAll('video')].find(e => !e.paused) || document.querySelector('video');
         const q = v?.getVideoPlaybackQuality?.();
         return { total: q?.totalVideoFrames ?? 0, dropped: q?.droppedVideoFrames ?? 0, seeks: window.__trace.seeks, rates: window.__trace.rates.length }; })()`);
+      // --picture-offset N: run the check with Picture sync set to N ms.
+      const pictureOffset = Number(option('picture-offset', 0));
+      const setOffset = ms => page.evaluate(`window.electronAPI.videoOutput.setPictureOffset(${ms}).then(() => true)`);
+      if (pictureOffset) await setOffset(pictureOffset);
       const results = [];
       // --then-cue: a cut from one video cue to another. Play the first, set
       // the second as Up Next (so it can load), then GO and time its first frame.
@@ -761,6 +765,7 @@ async function runSoak({ minutes, seed, probe = false }) {
         say('video start', JSON.stringify(result));
       }
       const total = key => results.reduce((sum, r) => sum + r[key], 0);
+      if (pictureOffset) await setOffset(0);
       say('video check', JSON.stringify({ cue: name, starts: results.length, frames: total('frames'), dropped: total('dropped'),
         seeks: total('seeks'), speedChanges: total('speedChanges') }));
       fs.writeFileSync(path.join(RESULTS, 'video-check.json'), JSON.stringify(results, null, 1));
