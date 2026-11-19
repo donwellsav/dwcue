@@ -2777,7 +2777,6 @@ let videoOutputRecoveryRequired = false;
 let videoOutputRestarting = false;
 let videoOutputPictureHealth = null;
 const videoOutputDiagnostics = [];
-let videoOutputFrameTimer = null;
 let capturingVideoStandby = false;
 let displayIdentifierWindows = [];
 let displayIdentifierTimer = null;
@@ -2893,46 +2892,6 @@ function normalizeVideoPlaybackError(payload) {
   const message = sanitizeVideoPlaybackErrorMessage(
     requireIpcString(payload.message, 'message', 2000));
   return { itemUuid, message };
-}
-
-// Confidence monitor: 1 fps JPEG thumbnails of the output window for the
-// operator UI. capturePage renders exactly what the audience sees — video,
-// standby image, test card, or a hung frame (which is itself the alarm).
-// Runs only while the output window exists.
-function startVideoOutputFrames() {
-  if (videoOutputFrameTimer !== null) return;
-  const outputWindow = videoOutputWindow;
-  if (!outputWindow || outputWindow.isDestroyed()) return;
-  let capturePending = false;
-  const timer = setInterval(async () => {
-    if (capturePending || videoOutputFrameTimer !== timer ||
-        videoOutputWindow !== outputWindow || outputWindow.isDestroyed() ||
-        outputWindow.webContents.isDestroyed()) return;
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    capturePending = true;
-    try {
-      const img = await outputWindow.webContents.capturePage();
-      // A native readback can finish after close/recreate or a timer restart.
-      if (videoOutputFrameTimer !== timer || videoOutputWindow !== outputWindow ||
-          outputWindow.isDestroyed() || !mainWindow || mainWindow.isDestroyed() ||
-          mainWindow.webContents.isDestroyed()) return;
-      if (!img || img.isEmpty()) return;
-      const thumb = img.resize({ width: 320, quality: 'good' });
-      mainWindow.webContents.send('video-output:frame', {
-        jpeg: thumb.toJPEG(60).toString('base64'),
-        at: Date.now(),
-      });
-    } catch { /* capture can race native teardown */ }
-    finally { capturePending = false; }
-  }, 1000);
-  videoOutputFrameTimer = timer;
-}
-
-function stopVideoOutputFrames() {
-  if (videoOutputFrameTimer !== null) {
-    clearInterval(videoOutputFrameTimer);
-    videoOutputFrameTimer = null;
-  }
 }
 
 function videoOutputConfigPath() {
@@ -3234,7 +3193,6 @@ function failVideoOutputRenderer(outputWindow, message) {
   videoOutputPlaybackError = { itemUuid: null, message };
   videoOutputDiagnostics.push({ at: Date.now(), error: sanitizeVideoPlaybackErrorMessage(message) });
   if (videoOutputDiagnostics.length > 32) videoOutputDiagnostics.shift();
-  stopVideoOutputFrames();
   const connection = videoOutputTestCardConnection;
   videoOutputTestCardConnection = null;
   void testCardPlayback.update(null, connection);
@@ -3252,7 +3210,6 @@ function markVideoOutputReady(event) {
     videoOutputRendererReady = true;
     videoOutputRendererResponsive = true;
     videoOutputWindow.videoOutputCover.setVisible(false);
-    startVideoOutputFrames();
   }
   return broadcastVideoOutputStatus();
 }
@@ -3496,7 +3453,6 @@ function createVideoOutputWindow() {
   cover.setVisible(true);
   outputWindow.on('resize', resizeCover);
   if (realOutput) seatPhysicalOutput(outputWindow, process.platform, target.bounds);
-  startVideoOutputFrames();
 
   outputWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
     if (videoOutputWindow !== outputWindow) return;
@@ -3599,7 +3555,6 @@ function closeVideoOutputWindow({ preserveSession = false, playbackError = null 
   const connection = videoOutputTestCardConnection;
   videoOutputTestCardConnection = null;
   void testCardPlayback.update(null, connection);
-  stopVideoOutputFrames();
   if (videoOutputPowerSaveId !== null) {
     try { powerSaveBlocker.stop(videoOutputPowerSaveId); } catch { /* already stopped */ }
     videoOutputPowerSaveId = null;

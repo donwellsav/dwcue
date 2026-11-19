@@ -979,7 +979,6 @@
     "frameUnconfirmed": "Quadro não confirmado",
     "prepared": "Vídeo decodificado e posicionado em {seconds}s",
     "frameAge": "Quadro de {seconds}s atrás",
-    "captureAge": "Captura de {seconds}s atrás",
     "dropped": "Quadros perdidos: {count}",
     "states": {
       "idle": "Preto",

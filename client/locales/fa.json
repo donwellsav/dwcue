@@ -979,7 +979,6 @@
     "frameUnconfirmed": "فریم تأیید نشده",
     "prepared": "ویدیو رمزگشایی شد و جست‌وجو در {seconds} ثانیه تثبیت شد",
     "frameAge": "فریم {seconds} ثانیه پیش",
-    "captureAge": "ضبط {seconds} ثانیه پیش",
     "dropped": "فریم‌های ازدست‌رفته: {count}",
     "states": {
       "idle": "سیاه",

@@ -617,9 +617,12 @@ test('paused native seeks show the requested absolute frame and out-point loopin
   assert.equal(harness.controller.showVideo.value, true, 'engine loop reset restores the picture');
   assert.equal(harness.element.currentTime, 5.25, 'loop reset seeks to the absolute in-point region');
   assert.equal(harness.element.paused, false);
-  harness.element.currentTime = 5.28;
-  harness.emitMeters({ items: [{ cue_id: 'loop-cue', transport: 1, playhead_seconds: 5.25 }] });
-  assert.ok(harness.element.currentTime > 5.25, 'soft drift remains rate-corrected instead of seeking every meter');
+  // A lasting 50 ms lead: several readings, as the engine reports them.
+  for (const clock of [5.25, 5.283, 5.316]) {
+    harness.element.currentTime = clock + 0.05;
+    harness.emitMeters({ items: [{ cue_id: 'loop-cue', transport: 1, playhead_seconds: clock }] });
+  }
+  assert.ok(harness.element.currentTime > 5.316, 'soft drift remains rate-corrected instead of seeking every meter');
   assert.ok(harness.element.playbackRate < 1);
   harness.stop();
 });
@@ -632,7 +635,7 @@ test('repeated canplay keeps soft drift rate-corrected instead of starting anoth
     h.controller.onVideoCanPlay();
     await flush();
     for (const clock of [1, 1.033, 1.066]) {
-      h.element.currentTime = clock + .035;
+      h.element.currentTime = clock + .05;
       h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
       const before = h.element.currentTime;
       h.controller.onVideoCanPlay();
@@ -642,6 +645,45 @@ test('repeated canplay keeps soft drift rate-corrected instead of starting anoth
     }
     h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 2 }] });
     assert.equal(h.element.currentTime, 2, 'large drift still uses the existing hard seek');
+  } finally { h.stop(); }
+});
+
+test('playhead jitter leaves the speed alone; real drift corrects at one steady speed', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    let writes = 0;
+    let rate = h.element.playbackRate;
+    Object.defineProperty(h.element, 'playbackRate', {
+      get: () => rate, set: (value: number) => { writes += 1; rate = value; }, configurable: true,
+    });
+    // The engine's playhead moves in render bursts: the measured drift jumps
+    // around by tens of milliseconds while the picture is in step.
+    for (let i = 0; i < 60; i++) {
+      const clock = 1 + i / 30;
+      h.element.currentTime = clock - [0.005, 0.03, 0.012, 0.025][i % 4];
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+    }
+    assert.equal(writes, 0, 'jitter within the band never touches the speed');
+    assert.equal(rate, 1);
+    // A real, lasting lag is corrected at one speed, set once, until back in step.
+    for (let i = 0; i < 12; i++) {
+      const clock = 3 + i / 30;
+      h.element.currentTime = clock - 0.05;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+    }
+    assert.ok(rate > 1, 'a lagging picture speeds up');
+    assert.equal(writes, 1, 'one speed for the whole correction');
+    for (let i = 0; i < 12; i++) {
+      const clock = 4 + i / 30;
+      h.element.currentTime = clock - 0.002;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+    }
+    assert.equal(rate, 1, 'back in step, normal speed');
+    assert.equal(writes, 2);
   } finally { h.stop(); }
 });
 

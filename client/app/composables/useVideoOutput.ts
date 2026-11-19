@@ -11,8 +11,17 @@ import type { MetersBroadcast } from '~/types/server';
 
 const TRANSPORT_STOPPED = 0;
 const TRANSPORT_PAUSED = 4;
-const CHASE_DEADBAND_S = 0.015;
+// The picture follows the engine's playhead, which moves in render bursts:
+// one reading jitters by tens of milliseconds while the picture is in step.
+// Steer by the median of recent readings and change speed only when a
+// correction starts or ends, because each speed change costs dropped frames.
+const CHASE_START_S = 0.04;
+const CHASE_SETTLE_S = 0.01;
 const CHASE_HARD_SEEK_S = 0.08;
+const CHASE_RATE_STEP = 0.02;
+const CHASE_WINDOW = 8;
+// Close enough for a seek to count as landed.
+const CHASE_DEADBAND_S = 0.015;
 const NATIVE_CLOCK_STALE_MS = 250;
 const PINNED_METER_LIMIT = 2;
 const NATIVE_PROGRESS_EPSILON_S = 0.001;
@@ -399,7 +408,22 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     }
     return advanced;
   }
+  let chaseSamples: number[] = [];
+  let chaseCorrecting = false;
+  let chaseCueId: string | null = null;
+  function resetChase(cueId: string | null = null) {
+    chaseSamples = [];
+    chaseCorrecting = false;
+    chaseCueId = cueId;
+  }
+  function steadyDrift() {
+    const sorted = [...chaseSamples].sort((a, b) => a - b);
+    const middle = sorted.length >> 1;
+    return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
+  }
+
   function pauseVideo() {
+    resetChase();
     playAttemptGeneration += 1;
     cancelFrameClockCheck();
     const element = videoEl.value;
@@ -737,18 +761,24 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
 
     // Let a seek land and submit the first frame before chasing the moving clock.
     if (element.seeking || (showHeldFrame.value && awaitingFirstFrame)) {
+      resetChase(active.cueId);
       applyTransport(meter.transport);
       return;
     }
+    if (chaseCueId !== active.cueId) resetChase(active.cueId);
     const drift = element.currentTime - meter.playhead_seconds;
-    const absoluteDrift = Math.abs(drift);
-    if (absoluteDrift > CHASE_HARD_SEEK_S) {
+    if (Math.abs(drift) > CHASE_HARD_SEEK_S) {
       element.currentTime = meter.playhead_seconds;
       element.playbackRate = 1;
-    } else if (absoluteDrift <= CHASE_DEADBAND_S) {
-      if (element.playbackRate !== 1) element.playbackRate = 1;
+      resetChase(active.cueId);
     } else {
-      element.playbackRate = Math.min(1.03, Math.max(0.97, 1 - drift));
+      chaseSamples.push(drift);
+      if (chaseSamples.length > CHASE_WINDOW) chaseSamples.shift();
+      const steady = steadyDrift();
+      if (!chaseCorrecting && Math.abs(steady) > CHASE_START_S) chaseCorrecting = true;
+      else if (chaseCorrecting && Math.abs(steady) < CHASE_SETTLE_S) chaseCorrecting = false;
+      const rate = chaseCorrecting ? (steady < 0 ? 1 + CHASE_RATE_STEP : 1 - CHASE_RATE_STEP) : 1;
+      if (element.playbackRate !== rate) element.playbackRate = rate;
     }
     applyTransport(meter.transport);
   });

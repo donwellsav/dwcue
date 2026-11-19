@@ -979,7 +979,6 @@
     "frameUnconfirmed": "帧未确认",
     "prepared": "视频已解码，定位已在 {seconds} 秒稳定",
     "frameAge": "{seconds} 秒前的帧",
-    "captureAge": "{seconds} 秒前截取",
     "dropped": "丢帧：{count}",
     "states": {
       "idle": "黑场",

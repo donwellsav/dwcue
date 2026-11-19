@@ -979,7 +979,6 @@
     "frameUnconfirmed": "Cadru neconfirmat",
     "prepared": "Video decodat și poziționare stabilizată la {seconds}s",
     "frameAge": "Cadru de acum {seconds}s",
-    "captureAge": "Captură de acum {seconds}s",
     "dropped": "Cadre pierdute: {count}",
     "states": {
       "idle": "Negru",

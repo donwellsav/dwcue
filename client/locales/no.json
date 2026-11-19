@@ -979,7 +979,6 @@
     "frameUnconfirmed": "Ramme ubekreftet",
     "prepared": "Video dekodet og søk fullført ved {seconds} s",
     "frameAge": "Ramme for {seconds} s siden",
-    "captureAge": "Opptak for {seconds} s siden",
     "dropped": "Tapte rammer: {count}",
     "states": {
       "idle": "Svart",

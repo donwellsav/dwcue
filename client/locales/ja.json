@@ -979,7 +979,6 @@
     "frameUnconfirmed": "フレーム未確認",
     "prepared": "ビデオをデコードし、{seconds}秒でシークが完了しました",
     "frameAge": "{seconds}秒前のフレーム",
-    "captureAge": "{seconds}秒前にキャプチャ",
     "dropped": "ドロップフレーム: {count}",
     "states": {
       "idle": "黒",

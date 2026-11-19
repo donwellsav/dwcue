@@ -979,7 +979,6 @@
     "frameUnconfirmed": "Fotogramma non confermato",
     "prepared": "Video decodificato e posizione raggiunta a {seconds}s",
     "frameAge": "Fotogramma di {seconds}s fa",
-    "captureAge": "Cattura di {seconds}s fa",
     "dropped": "Fotogrammi persi: {count}",
     "states": {
       "idle": "Nero",

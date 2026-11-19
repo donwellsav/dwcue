@@ -979,7 +979,6 @@
     "frameUnconfirmed": "프레임 미확인",
     "prepared": "비디오 디코딩 및 {seconds}초 탐색 완료",
     "frameAge": "{seconds}초 전 프레임",
-    "captureAge": "{seconds}초 전 캡처",
     "dropped": "누락된 프레임: {count}",
     "states": {
       "idle": "검은 화면",

@@ -979,7 +979,6 @@
     "frameUnconfirmed": "Ruta obekräftad",
     "prepared": "Video avkodad och sökning klar vid {seconds} s",
     "frameAge": "Ruta för {seconds} s sedan",
-    "captureAge": "Fångst för {seconds} s sedan",
     "dropped": "Tappade rutor: {count}",
     "states": {
       "idle": "Svart",

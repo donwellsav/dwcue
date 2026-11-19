@@ -979,7 +979,6 @@
     "frameUnconfirmed": "Kuadri i pakonfirmuar",
     "prepared": "Videoja u dekodua dhe kërkimi u stabilizua te {seconds}s",
     "frameAge": "Kuadri {seconds}s më parë",
-    "captureAge": "Kapja {seconds}s më parë",
     "dropped": "Kuadro të humbura: {count}",
     "states": {
       "idle": "E zezë",
