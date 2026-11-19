@@ -641,6 +641,47 @@ async function runSoak({ minutes, seed, probe = false }) {
     const totalWeight = weighted.reduce((sum, [, weight]) => sum + weight, 0);
     const choose = () => { let roll = rng() * totalWeight; for (const [name, weight] of weighted) { roll -= weight; if (roll < 0) return name; } return 'go'; };
 
+    if (probe && option('video-cue')) {
+      // One video cue played through, uninterrupted, with the output open:
+      // dropped frames each second, and every seek and speed change the
+      // output makes to stay with the audio clock.
+      const name = option('video-cue');
+      const seconds = Number(option('seconds', 50));
+      await actions.videoOutput();
+      if (!videoPage) throw new Error('the video output page did not open');
+      await videoPage.send('Runtime.evaluate', { expression: `(() => {
+        window.__check = { seeks: 0, rates: [] };
+        document.addEventListener('seeking', () => { window.__check.seeks += 1; }, true);
+        document.addEventListener('ratechange', e => { window.__check.rates.push(+e.target.playbackRate.toFixed(3)); }, true);
+        return true; })()`, returnByValue: true });
+      await page.evaluate(`(${ROW})(${JSON.stringify(name)})?.querySelector(':scope > .item-content .set-next-action')?.click()`);
+      if (!await waitFor(async () => (await ui()).upNext.includes(name), 3000)) throw new Error(`could not queue "${name}"`);
+      await page.evaluate(`(() => { document.querySelector('.play-next-btn').click(); return true; })()`);
+      const read = async () => (await videoPage.send('Runtime.evaluate', { returnByValue: true, expression: `(() => {
+        const v = [...document.querySelectorAll('video')].find(e => !e.paused) || document.querySelector('video');
+        const q = v?.getVideoPlaybackQuality?.();
+        return { total: q?.totalVideoFrames ?? 0, dropped: q?.droppedVideoFrames ?? 0, time: v?.currentTime ?? 0,
+          seeks: window.__check.seeks, rates: window.__check.rates.length }; })()` })).result.result.value;
+      const timeline = [];
+      let previous = await read();
+      for (let i = 0; i < seconds && !fatal; i++) {
+        await delay(1000);
+        await guard();
+        const next = await read();
+        timeline.push({ s: i + 1, frames: next.total - previous.total, dropped: next.dropped - previous.dropped,
+          seeks: next.seeks - previous.seeks, rates: next.rates - previous.rates });
+        previous = next;
+      }
+      const final = (await videoPage.send('Runtime.evaluate', { returnByValue: true, expression: 'window.__check' })).result.result.value;
+      await actions.stopAll();
+      const sum = key => timeline.reduce((total, row) => total + row[key], 0);
+      say('video check', JSON.stringify({ cue: name, seconds: timeline.length, frames: sum('frames'), dropped: sum('dropped'),
+        seeks: sum('seeks'), speedChanges: sum('rates'), speeds: [...new Set(final.rates)].sort() }));
+      say('seconds with drops', JSON.stringify(timeline.filter(row => row.dropped || row.seeks)));
+      fs.writeFileSync(path.join(RESULTS, 'video-check.json'), JSON.stringify({ timeline, final }, null, 1));
+      say('probe finished');
+      return;
+    }
     if (probe) {
       // MIDI allowed; Main on the chosen output with its meter and fader live.
       say('midi', await page.evaluate(`navigator.requestMIDIAccess().then(() => 'granted', error => error.name)`));
