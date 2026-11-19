@@ -325,6 +325,9 @@ private:
     long long                  declick_remaining_ = 0;
     bool                       declick_rising_ = false;
     std::size_t                pause_peek_frames_ = 0;
+    // A playing cue about to jump plays its ramp out, then holds silent until
+    // the jump flushes its queue. Tagged with that seek's revision.
+    std::uint64_t              seek_hold_revision_ = 0;
     std::atomic<float>          gain_target_linear_{1.0f};
     std::atomic<float>          gain_current_linear_{1.0f};     // smoothed
     std::atomic<float>          group_gain_target_{1.0f};

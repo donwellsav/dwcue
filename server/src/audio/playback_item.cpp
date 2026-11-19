@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <thread>
 #include <vector>
 
@@ -496,6 +497,7 @@ void PlaybackItem::stop_now() {
     fade_elapsed_samples_.store(0, std::memory_order_relaxed);
     declick_remaining_ = 0;
     pause_peek_frames_ = 0;
+    seek_hold_revision_ = 0;
     playhead_frames_.store(0, std::memory_order_relaxed);
     // Rewind on deliberate replay; stopping must never wait for storage.
     rewind_on_play_.store(true, std::memory_order_release);
@@ -538,9 +540,47 @@ void PlaybackItem::seek_seconds(double seconds) {
         seconds >= static_cast<double>(UINT64_MAX) / desc_.mix_sample_rate) return;
     if (seconds < 0) seconds = 0;
     ma_uint64 frame = static_cast<ma_uint64>(seconds * desc_.mix_sample_rate);
+    const long long declick = static_cast<long long>(desc_.mix_sample_rate) * kDeclickMs / 1000;
     begin_render_exclusion();
     const auto revision = playback_revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
+    // A playing cue (a QuickPlay restarted, a seek while it plays) ramps out
+    // from audio it does not consume, holds silent while the file seeks, and
+    // ramps back in at the new position: a cut mid-waveform clicks.
+    const auto before = transport_.load(std::memory_order_acquire);
+    const bool audible = before == TransportState::Playing || before == TransportState::FadingIn ||
+        before == TransportState::FadingOut;
+    if (audible) {
+        seek_hold_revision_ = revision;
+        declick_remaining_ = declick;
+        declick_rising_ = false;
+        pause_peek_frames_ = 0;
+    }
     end_render_exclusion();
+    // The hold ends when this seek flushes the queue (from there on the seek
+    // behaves exactly as before), or whenever it gives up.
+    const auto release_hold = [&] {
+        if (seek_hold_revision_ == revision) seek_hold_revision_ = 0;
+    };
+    struct HoldRelease {
+        PlaybackItem& item;
+        const std::function<void()>& release;
+        ~HoldRelease() {
+            item.begin_render_exclusion();
+            release();
+            item.end_render_exclusion();
+        }
+    } hold_release{*this, release_hold};
+    if (audible) {
+        // The ramp plays on the audio thread; allow it 10 ms and a block, no more.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{16};
+        while (std::chrono::steady_clock::now() < deadline) {
+            begin_render_exclusion();
+            const bool ramped = declick_remaining_ == 0 || seek_hold_revision_ != revision;
+            end_render_exclusion();
+            if (ramped) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+    }
     {
         std::lock_guard lock{decoder_mutex_};
         bool was_stopped;
@@ -549,6 +589,7 @@ void PlaybackItem::seek_seconds(double seconds) {
             RenderActiveGuard guard{render_exclusion_};
             if (playback_revision() != revision) return;
             was_stopped = transport_.load(std::memory_order_acquire) == TransportState::Stopped;
+            release_hold();
             reset_read_ahead_locked(playhead_frames_.load(std::memory_order_acquire));
             seek_pending_ = true;
             rewind_on_play_.store(true, std::memory_order_release);
@@ -580,6 +621,19 @@ void PlaybackItem::seek_seconds(double seconds) {
             ltc_->reset(std::chrono::nanoseconds{ltc_offset_ns_.load()});
         }
     }
+    if (!audible) return;
+    // Decode the first blocks at the new position now, not on the worker's
+    // next 2 ms poll, then ramp back in.
+    service_read_ahead(4);
+    begin_render_exclusion();
+    const auto now = transport_.load(std::memory_order_acquire);
+    if (playback_revision() == revision && (now == TransportState::Playing ||
+        now == TransportState::FadingIn || now == TransportState::FadingOut)) {
+        declick_remaining_ = declick;
+        declick_rising_ = true;
+        pause_peek_frames_ = 0;
+    }
+    end_render_exclusion();
 }
 
 void PlaybackItem::set_gain_db(float db) noexcept {
@@ -1178,8 +1232,9 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     RenderActiveGuard render_guard{render_exclusion_};
     const TransportState st = transport_.load(std::memory_order_acquire);
     if (st == TransportState::Stopped) return 0;
-    if (st == TransportState::Paused && declick_remaining_ == 0) return 0;
-    const bool pause_ramp = st == TransportState::Paused;
+    // Paused, or a playing cue held while it jumps: ramp out, then silence.
+    const bool pause_ramp = st == TransportState::Paused || seek_hold_revision_ != 0;
+    if (pause_ramp && declick_remaining_ == 0) return 0;
     if (!decoder_ready_) return 0;
     const auto file_channels =
         file_channels_.load(std::memory_order_acquire);
@@ -1310,7 +1365,7 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     const float fade_from  = fade_start_linear_.load(std::memory_order_relaxed);
     const float fade_to    = fade_end_linear_.load(std::memory_order_relaxed);
 
-    if (fade_active && fade_total > 0) {
+    if (fade_active && fade_total > 0 && !pause_ramp) {
         const long long advance = static_cast<long long>(frame_count);
         const long long new_elapsed = std::min<long long>(fade_elapsed + advance, fade_total);
         const float t_start = static_cast<float>(fade_elapsed) / static_cast<float>(fade_total);
