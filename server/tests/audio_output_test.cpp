@@ -948,6 +948,72 @@ void test_stop_during_fade_ramps(const std::filesystem::path& tone) {
           "stop during a fade: a short ramp to silence, no cut");
 }
 
+// Pause ramps out over 10 ms and resume ramps back in: neither edge clicks.
+void test_pause_resume_ramps(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.render(3);
+    for (int i = 0; i < 10; ++i) { f.render(); (void)f.drain(); }
+    const std::size_t queued = ma_pcm_rb_available_read(f.device->ring.get()) / block + 1;
+    f.item->pause();
+    std::vector<float> peaks;
+    for (std::size_t i = 0; i < queued + 6; ++i) {
+        f.render();
+        const auto out = f.drain();
+        float peak = 0.0f;
+        for (std::size_t n = 0; n < block; ++n) peak = std::max(peak, std::fabs(out[n * 2]));
+        peaks.push_back(peak);
+    }
+    f.item->resume();
+    float first_sample = -1.0f, first_peak = 0.0f, steady = 0.0f;
+    std::vector<float> resumed;
+    for (int i = 0; i < 12; ++i) {
+        f.render();
+        const auto out = f.drain();
+        float peak = 0.0f;
+        for (std::size_t n = 0; n < block; ++n) {
+            if (first_sample < 0.0f && std::fabs(out[n * 2]) > 1e-6f) first_sample = std::fabs(out[n * 2]);
+            peak = std::max(peak, std::fabs(out[n * 2]));
+        }
+        if (first_peak == 0.0f && peak > 0.0f) first_peak = peak;
+        if (peak > 0.0f) resumed.push_back(peak);
+        if (i == 11) steady = peak;
+    }
+    std::printf("pause/resume: pause block peaks %.3f | %.3f %.3f %.3f; resume first sample %.4f, first block %.3f, steady %.3f\n",
+                peaks[queued - 1], peaks[queued], peaks[queued + 1], peaks[queued + 2], first_sample, first_peak, steady);
+    check(peaks[queued] > 0.05f && peaks[queued] < peaks[queued - 1] &&
+              peaks[queued + 1] < 0.5f * peaks[queued - 1] && peaks[queued + 3] < 0.001f,
+          "pause: a short ramp to silence, no cut");
+    std::printf("resume block peaks %.3f %.3f %.3f %.3f\n", resumed[0], resumed[1], resumed[2], resumed[3]);
+    check(first_sample >= 0.0f && first_sample < 0.05f && first_peak < 0.9f * steady && steady > 0.6f &&
+              resumed[3] > 0.95f * steady,
+          "resume: a short ramp up from silence, no pop");
+}
+
+// GO on a cue that is fading out, with no fade-in, rises back to full level
+// over a short ramp instead of jumping there in one sample.
+void test_rego_during_fade_ramps(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.item->set_fade_out(std::chrono::milliseconds{1000});
+    f.render(3);
+    for (int i = 0; i < 10; ++i) { f.render(); (void)f.drain(); }
+    f.item->stop();
+    for (int i = 0; i < 60; ++i) { f.render(); (void)f.drain(); }  // about half way down
+    const std::size_t queued = ma_pcm_rb_available_read(f.device->ring.get()) / block + 1;
+    f.item->play();
+    std::vector<float> peaks;
+    for (std::size_t i = 0; i < queued + 4; ++i) {
+        f.render();
+        const auto out = f.drain();
+        float peak = 0.0f;
+        for (std::size_t n = 0; n < block; ++n) peak = std::max(peak, std::fabs(out[n * 2]));
+        peaks.push_back(peak);
+    }
+    std::printf("re-GO during fade: block peaks %.3f | %.3f %.3f %.3f\n",
+                peaks[queued - 1], peaks[queued], peaks[queued + 1], peaks[queued + 2]);
+    check(peaks[queued] < 0.95f * 0.7f && peaks[queued + 2] > 0.68f,
+          "re-GO during a fade-out: a short rise to full level, no pop");
+}
+
 void test_clock_zero_crossing(const std::filesystem::path& ramp) {
     for (const int direction : {-1, 1}) {
         Fixture f(ramp, false, true);
@@ -1406,6 +1472,8 @@ int main() {
     test_resampled_loop_seam(seamless_44k(dir));
     test_file_end_reports_at_once(quiet);
     test_stop_during_fade_ramps(tone);
+    test_pause_resume_ramps(tone);
+    test_rego_during_fade_ramps(tone);
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);
