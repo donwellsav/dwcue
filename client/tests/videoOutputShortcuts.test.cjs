@@ -333,7 +333,7 @@ function createVideoWindowHarness() {
     videoOutputPlaybackError: null, videoOutputTestCardConnection: null,
     videoOutputRendererReady: false, videoOutputRendererResponsive: true,
     videoOutputRecoveryRequired: false, videoOutputRestarting: false, videoOutputDiagnostics: [], URL,
-    videoOutputPowerSaveId: null, videoOutputFrameTimer: null,
+    videoOutputPowerSaveId: null,
     videoOutputWindowsPreservingSession: new WeakSet(),
     readVideoOutputConfig: () => ({}), resolveVideoOutputDisplay: () => null,
     screen: { getAllDisplays: () => [{}] }, BrowserWindow: OutputWindow,
@@ -376,8 +376,6 @@ function createVideoWindowHarness() {
     productionFunctionSource('resetVideoOutputGeometry'),
     ...['sanitizeVideoPlaybackErrorMessage', 'loadVideoOutputWindow', 'failVideoOutputRenderer', 'markVideoOutputReady', 'restartVideoOutputWindow', 'requireVideoOutputIpc']
       .filter(name => mainSource.includes('function ' + name + '(')).map(productionFunctionSource),
-    productionFunctionSource('startVideoOutputFrames'),
-    productionFunctionSource('stopVideoOutputFrames'),
     productionFunctionSource('createVideoOutputWindow'),
     mainSource.slice(closeStart, closeEnd),
   ].join('\n'), context);
@@ -388,13 +386,7 @@ function createVideoWindowHarness() {
       context.createVideoOutputWindow();
       return context.videoOutputWindow;
     },
-    tick() { return timers.get(context.videoOutputFrameTimer)(); },
-    finishCapture(index, label) {
-      captures[index].resolve({
-        isEmpty: () => false, resize() { return this; },
-        toJPEG: () => Buffer.from(label),
-      });
-    },
+    timerCount() { return timers.size; },
   };
 }
 
@@ -406,53 +398,14 @@ test('a preview opened while its assigned display is missing waits for that disp
   assert.notEqual(unassigned.open().videoOutputWaitingForDisplay, true, 'no display assigned: nothing to wait for');
 });
 
-test('video confidence capture waits for its current readback before starting another', async () => {
+test('the operator view never copies the audience output', () => {
   const h = createVideoWindowHarness();
-  h.open();
-  const first = h.tick();
-  void h.tick();
-  void h.tick();
-  assert.equal(h.captures.length, 1);
-  h.finishCapture(0, 'first');
-  await first;
-  const next = h.tick();
-  assert.equal(h.captures.length, 2);
-  h.finishCapture(1, 'next');
-  await next;
-  assert.equal(h.frames.length, 2);
-  const rejected = h.tick();
-  h.captures[2].reject(new Error('readback cancelled'));
-  await rejected;
-  const retry = h.tick();
-  assert.equal(h.captures.length, 4);
-  h.finishCapture(3, 'retry');
-  await retry;
-  assert.equal(h.frames.length, 3);
-});
-
-test('stopped and replaced output capture completions cannot publish stale frames', async () => {
-  const h = createVideoWindowHarness();
-  h.open();
-  const stopped = h.tick();
-  h.context.stopVideoOutputFrames();
-  h.finishCapture(0, 'stopped');
-  await stopped;
-  assert.equal(h.frames.length, 0);
-
-  h.context.startVideoOutputFrames();
-  const retired = h.tick();
-  h.context.closeVideoOutputWindow({ preserveSession: true });
-  h.open();
-  const current = h.tick();
-  h.finishCapture(1, 'retired');
-  await retired;
-  assert.equal(h.frames.length, 0);
-  void h.tick();
-  assert.equal(h.captures.length, 3, 'old completion must not clear the new capture gate');
-  h.finishCapture(2, 'current');
-  await current;
-  assert.equal(h.frames.length, 1);
-  assert.equal(Buffer.from(h.frames[0].jpeg, 'base64').toString(), 'current');
+  const output = h.open();
+  output.webContents.mainFrame = {};
+  h.context.markVideoOutputReady({ sender: output.webContents, senderFrame: output.webContents.mainFrame });
+  assert.equal(h.captures.length, 0);
+  assert.equal(h.timerCount(), 0, 'no timer runs for the output');
+  assert.doesNotMatch(mainSource, /video-output:frame/);
 });
 
 test('renderer loss retains native black coverage, session and power while restoring the operator', () => {
@@ -473,7 +426,6 @@ test('renderer loss retains native black coverage, session and power while resto
   assert.equal(output.videoOutputCover.visible, true);
   assert.equal(output.videoOutputCover.color, '#000000');
   assert.equal(h.context.videoOutputRecoveryRequired, true);
-  assert.equal(h.context.videoOutputFrameTimer, null);
   assert.match(h.context.videoOutputPlaybackError.message, /oom/);
   assert.match(h.context.videoOutputPlaybackError.message, /139/);
   assert.equal(h.statuses.at(-1).error, h.context.videoOutputPlaybackError);
@@ -548,14 +500,12 @@ test('retired output close and load events cannot release a replacement diagnost
   const replacement = h.open();
   const newConnection = { accessToken: 'new' };
   h.context.videoOutputTestCardConnection = newConnection;
-  const timer = h.context.videoOutputFrameTimer;
   const power = h.context.videoOutputPowerSaveId;
   old.emit('closed');
   old.webContents.emit('did-fail-load', {}, -2, 'old failure', '', true);
   old.webContents.emit('did-finish-load');
   assert.equal(h.context.videoOutputWindow, replacement);
   assert.equal(h.context.videoOutputTestCardConnection, newConnection);
-  assert.equal(h.context.videoOutputFrameTimer, timer);
   assert.equal(h.context.videoOutputPowerSaveId, power);
   assert.deepEqual(h.cleanup, [oldConnection]);
   assert.deepEqual(h.operator, [], 'normal recreation must not focus the operator');
@@ -571,7 +521,6 @@ test('native operator close releases its own output without stealing focus', () 
   assert.equal(h.context.videoOutputWindow, null);
   assert.equal(h.context.videoOutputSessionEnabled, false);
   assert.equal(h.context.videoOutputPlaybackError, null);
-  assert.equal(h.context.videoOutputFrameTimer, null);
   assert.deepEqual(h.cleanup, [connection]);
   assert.deepEqual(h.powerStops, [1]);
   assert.deepEqual(h.operator, []);

@@ -979,7 +979,6 @@
     "frameUnconfirmed": "الإطار غير مؤكد",
     "prepared": "فُكّ ترميز الفيديو واستقر البحث عند {seconds}s",
     "frameAge": "الإطار قبل {seconds}s",
-    "captureAge": "الالتقاط قبل {seconds}s",
     "dropped": "إطارات مفقودة: {count}",
     "states": {
       "idle": "أسود",

@@ -979,7 +979,6 @@
     "frameUnconfirmed": "Frame nicht bestätigt",
     "prepared": "Video decodiert und Suche bei {seconds} s abgeschlossen",
     "frameAge": "Frame vor {seconds} s",
-    "captureAge": "Aufnahme vor {seconds} s",
     "dropped": "Verlorene Frames: {count}",
     "states": {
       "idle": "Schwarz",

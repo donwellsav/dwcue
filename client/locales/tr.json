@@ -979,7 +979,6 @@
     "frameUnconfirmed": "Kare doğrulanmadı",
     "prepared": "Video çözüldü ve konum {seconds} sn'de oturdu",
     "frameAge": "Kare {seconds} sn önce",
-    "captureAge": "Yakalama {seconds} sn önce",
     "dropped": "Atlanan kareler: {count}",
     "states": {
       "idle": "Siyah",

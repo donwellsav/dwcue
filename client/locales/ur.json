@@ -979,7 +979,6 @@
     "frameUnconfirmed": "فریم کی تصدیق نہیں",
     "prepared": "ویڈیو ڈی کوڈ ہو گئی اور سیک {seconds}s پر مستحکم",
     "frameAge": "فریم {seconds}s پہلے",
-    "captureAge": "کیپچر {seconds}s پہلے",
     "dropped": "ڈراپ شدہ فریمز: {count}",
     "states": {
       "idle": "سیاہ",

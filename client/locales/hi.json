@@ -979,7 +979,6 @@
     "frameUnconfirmed": "फ़्रेम की पुष्टि नहीं",
     "prepared": "वीडियो डिकोड हुआ और {seconds}s पर सीक स्थिर हुआ",
     "frameAge": "फ़्रेम {seconds}s पहले",
-    "captureAge": "कैप्चर {seconds}s पहले",
     "dropped": "छूटे फ़्रेम: {count}",
     "states": {
       "idle": "काला",

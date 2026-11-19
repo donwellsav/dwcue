@@ -322,10 +322,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('video-output:status-changed', listener);
       return () => ipcRenderer.removeListener('video-output:status-changed', listener);
     },
-    onFrame: (callback) => {
-      const listener = (_e, frame) => callback(frame);
-      ipcRenderer.on('video-output:frame', listener);
-      return () => ipcRenderer.removeListener('video-output:frame', listener);
-    },
   },
 });

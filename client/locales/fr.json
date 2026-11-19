@@ -979,7 +979,6 @@
     "frameUnconfirmed": "Trame non confirmée",
     "prepared": "Vidéo décodée et positionnement stabilisé à {seconds} s",
     "frameAge": "Trame il y a {seconds} s",
-    "captureAge": "Capture il y a {seconds} s",
     "dropped": "Trames perdues : {count}",
     "states": {
       "idle": "Noir",

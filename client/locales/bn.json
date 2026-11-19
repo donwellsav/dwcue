@@ -979,7 +979,6 @@
     "frameUnconfirmed": "ফ্রেম নিশ্চিত নয়",
     "prepared": "ভিডিও ডিকোড হয়েছে এবং {seconds}s-এ সিক স্থির হয়েছে",
     "frameAge": "ফ্রেম {seconds}s আগের",
-    "captureAge": "ক্যাপচার {seconds}s আগের",
     "dropped": "বাদ পড়া ফ্রেম: {count}",
     "states": {
       "idle": "কালো",

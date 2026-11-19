@@ -979,7 +979,6 @@
     "frameUnconfirmed": "Frame unconfirmed",
     "prepared": "Video decoded and seek settled at {seconds}s",
     "frameAge": "Frame {seconds}s ago",
-    "captureAge": "Capture {seconds}s ago",
     "dropped": "Dropped frames: {count}",
     "states": {
       "idle": "Black",

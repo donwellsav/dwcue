@@ -733,7 +733,7 @@ Use **Settings → Video Output** to read output status. Renderer crashes and ha
 
 Keep the audience output open during this recovery. Closing the output window removes that surface and can expose the desktop. A lost display connection, a system/GPU failure or a downstream switcher fault may require the venue's separate standby/black source. Restart Output does not repair the physical chain.
 
-The confidence display uses presented-frame and native-audio-clock progress as well as thumbnail delivery. A fresh thumbnail by itself does not prove a moving decoded picture. Paused cues and authored still images are valid still states. Rehearse the transitions between audio, video and standby with the actual show media.
+The video status in the header comes from the output itself: the frames it presents and the native audio clock. It shows no picture of the output, because copying the output once a second cost the audience dropped frames. Paused cues and authored still images are valid still states. Rehearse the transitions between audio, video and standby with the actual show media.
 
 ### Fullscreen, keyboard focus, and blackout
 

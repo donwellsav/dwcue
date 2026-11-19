@@ -979,7 +979,6 @@
     "frameUnconfirmed": "Το καρέ δεν επιβεβαιώθηκε",
     "prepared": "Το βίντεο αποκωδικοποιήθηκε και η αναζήτηση ολοκληρώθηκε στα {seconds}δ",
     "frameAge": "Καρέ πριν {seconds}δ",
-    "captureAge": "Λήψη πριν {seconds}δ",
     "dropped": "Χαμένα καρέ: {count}",
     "states": {
       "idle": "Μαύρο",

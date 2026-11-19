@@ -979,7 +979,6 @@
     "frameUnconfirmed": "Кадр не подтверждён",
     "prepared": "Видео декодировано, позиция установлена на {seconds} с",
     "frameAge": "Кадр {seconds} с назад",
-    "captureAge": "Захват {seconds} с назад",
     "dropped": "Пропущено кадров: {count}",
     "states": {
       "idle": "Чёрный",

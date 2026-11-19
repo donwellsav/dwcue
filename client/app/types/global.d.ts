@@ -255,7 +255,6 @@ declare global {
           innerWidth: number; innerHeight: number; screenWidth: number; screenHeight: number; pixelScale: number;
         }) => Promise<boolean>;
         diagnostics: () => Promise<unknown>;
-        onFrame: (callback: (frame: { jpeg: string; at: number }) => void) => () => void;
         listDisplays: () => Promise<VideoOutputDisplay[]>;
         identifyDisplays: () => Promise<VideoOutputDisplay[]>;
         setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
