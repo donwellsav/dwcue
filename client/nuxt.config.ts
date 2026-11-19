@@ -14,7 +14,14 @@ export default defineNuxtConfig({
     }
   },
   ssr: false,
-  
+
+  experimental: {
+    // No timed checks: Nuxt's hourly "new build deployed" poll has nothing to
+    // fetch in the packaged app and threw an error an hour into a show. The
+    // app checks for updates once, at launch.
+    checkOutdatedBuildInterval: false,
+  },
+
   app: {
     head: {
       title: 'DonWells Cue',
