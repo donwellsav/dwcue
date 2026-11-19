@@ -673,6 +673,38 @@ async function runSoak({ minutes, seed, probe = false }) {
         const q = v?.getVideoPlaybackQuality?.();
         return { total: q?.totalVideoFrames ?? 0, dropped: q?.droppedVideoFrames ?? 0, seeks: window.__trace.seeks, rates: window.__trace.rates.length }; })()`);
       const results = [];
+      // --then-cue: a cut from one video cue to another. Play the first, set
+      // the second as Up Next (so it can load), then GO and time its first frame.
+      const thenCue = option('then-cue');
+      if (thenCue) {
+        const queue = async cue => {
+          await page.evaluate(`(${ROW})(${JSON.stringify(cue)})?.querySelector(':scope > .item-content .set-next-action')?.click()`);
+          if (!await waitFor(async () => (await ui()).upNext.includes(cue), 3000)) throw new Error(`could not queue "${cue}"`);
+        };
+        const go = () => page.evaluate(`(() => { document.querySelector('.play-next-btn').click(); return true; })()`);
+        for (let n = 1; n <= starts && !fatal; n++) {
+          await queue(name); await delay(2000); await go(); await delay(5000);
+          await queue(thenCue); await delay(3000);
+          await inVideo(`(() => { window.__trace.frames = []; window.__trace.events = []; return true; })()`);
+          const before = await quality();
+          const pressedAt = Date.now();
+          await go();
+          await delay(Number(option('seconds', 10)) * 1000);
+          const after = await quality();
+          const trace = await inVideo('window.__trace');
+          await actions.stopAll(); await delay(1500);
+          const incoming = trace.frames.filter(f => f.t >= pressedAt && f.media < 0.5);
+          const result = { cut: n, from: name, to: thenCue,
+            firstFrameMs: incoming[0] ? round(incoming[0].t - pressedAt) : null,
+            dropped: after.dropped - before.dropped, seeks: after.seeks - before.seeks,
+            events: trace.events.filter(e => e.t >= pressedAt && e.t < pressedAt + 3000 && e.e !== 'play').map(e => `${e.t - pressedAt}ms ${e.e}`) };
+          results.push(result);
+          say('video cut', JSON.stringify(result));
+        }
+        fs.writeFileSync(path.join(RESULTS, 'video-check.json'), JSON.stringify(results, null, 1));
+        say('probe finished');
+        return;
+      }
       for (let n = 1; n <= starts && !fatal; n++) {
         await page.evaluate(`(${ROW})(${JSON.stringify(name)})?.querySelector(':scope > .item-content .set-next-action')?.click()`);
         if (!await waitFor(async () => (await ui()).upNext.includes(name), 3000)) throw new Error(`could not queue "${name}"`);
