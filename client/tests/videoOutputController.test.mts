@@ -857,6 +857,28 @@ test('the next video cue waits ready in the spare and the cut swaps to it withou
   } finally { h.stop(); }
 });
 
+test('a cut from video to a still holds the last frame until the still has loaded', async () => {
+  const h = createHarness(project([
+    audioItem('clip', { hasVideo: true }),
+    audioItem('slide', { imagePath: 'images/slide.png' }),
+  ]));
+  const canvas = { width: 0, height: 0, getContext: () => ({ drawImage: () => {} }) } as unknown as HTMLCanvasElement;
+  try {
+    await flush();
+    h.controller.heldFrameEl.value = canvas;
+    h.emitCue(snapshotCue('clip', 'clip-cue', 1, 2));
+    h.element.currentSrc = h.controller.videoSrc.value!;
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 2, presentedFrames: 60 });
+    h.emitCue(snapshotCue('slide', 'slide-cue', 2, 0));
+    await flush();
+    assert.ok(h.controller.cueImageSrc.value, 'the still is assigned');
+    assert.equal(h.controller.showHeldFrame.value, true, 'the last video frame stays up while the still loads');
+    h.controller.onCueImageLoaded();
+    assert.equal(h.controller.showHeldFrame.value, false, 'the loaded still replaces it');
+  } finally { h.stop(); }
+});
+
 test('a selection refresh preserves a playing video and its soft drift correction', async () => {
   const doc = project([audioItem('video', { hasVideo: true }), audioItem('audio')]);
   const h = createHarness(doc);

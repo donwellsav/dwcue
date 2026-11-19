@@ -279,7 +279,10 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     }
   }
 
+  let imageHoldTimer: number | undefined;
   function clearHeldFrame() {
+    clearTimeout(imageHoldTimer);
+    imageHoldTimer = undefined;
     clearTimeout(pictureTimer);
     showHeldFrame.value = false;
     awaitingFirstFrame = false;
@@ -561,7 +564,15 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     assignedCueImageSrc.value = pathMediaUrl(item.imagePath);
 
     if (!item.hasVideo) {
-      clearHeldFrame();
+      if (assignedCueImageSrc.value && showHeldFrame.value) {
+        // A still replacing a video: hold the last frame until the still has
+        // loaded (onCueImageLoaded), never longer than two seconds.
+        if (imageHoldTimer === undefined) {
+          imageHoldTimer = window.setTimeout(() => { imageHoldTimer = undefined; clearHeldFrame(); }, 2000);
+        }
+      } else {
+        clearHeldFrame();
+      }
       showVideo.value = false;
       pauseVideo();
       preloadNextItem();
@@ -654,7 +665,9 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     const sourceChanged = active.itemUuid !== activeItemUuid.value
       || active.triggerSeq !== activeTriggerSeq;
     if (sourceChanged) {
-      if (item.hasVideo && active !== diagnosticCue && active.itemUuid !== activeItemUuid.value) {
+      // Keep the outgoing frame up until the incoming picture (a video's
+      // first frame, or a still once it has loaded) can replace it.
+      if ((item.hasVideo || item.imagePath) && active !== diagnosticCue && active.itemUuid !== activeItemUuid.value) {
         holdCurrentFrame();
       }
       if (active === diagnosticCue) clearHeldFrame();
@@ -945,9 +958,26 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     return true;
   }
 
+  // The cue's still has loaded: it replaces the held video frame.
+  function onCueImageLoaded() {
+    const item = doc.value?.items.get(activeItemUuid.value ?? '');
+    if (item && !item.hasVideo) clearHeldFrame();
+  }
+
+  // Load the next cue's still ahead, so its cut is not a load.
+  let nextStill: HTMLImageElement | null = null;
+  function preloadStill(item: OutputItem | undefined) {
+    const url = item && !item.hasVideo ? pathMediaUrl(item.imagePath) : null;
+    if (!url || typeof Image === 'undefined' || nextStill?.src === url) return;
+    nextStill = new Image();
+    nextStill.decoding = 'async';
+    nextStill.src = url;
+  }
+
   function preloadNextItem() {
     const uuid = nextItemUuid.value;
     const nextItem = uuid ? doc.value?.items.get(uuid) : undefined;
+    preloadStill(nextItem);
     let liveBusy = !!activeItemUuid.value && doc.value?.items.get(activeItemUuid.value)?.hasVideo !== false;
     for (const active of activeCues.values()) {
       // A retained video still owns the live element for immediate fallback.
@@ -1204,6 +1234,7 @@ export function useVideoOutput(diagnosticSource?: Readonly<Ref<VideoTestCardPlay
     registerVideoElement,
     onSpareEvent,
     onSpareError,
+    onCueImageLoaded,
     heldFrameEl,
     showHeldFrame,
     getPictureHealth,

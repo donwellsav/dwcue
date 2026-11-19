@@ -4,8 +4,10 @@
   <div class="video-output" aria-hidden="true">
     <div class="video-output-frame" :style="frameStyle">
       <img v-if="standbySrc" class="layer layer-media" :src="standbySrc" alt="" draggable="false">
-      <img v-if="cueImageSrc" :key="cueImageSrc" class="layer layer-media" :src="cueImageSrc" alt="" draggable="false"
-        @load="($event.currentTarget as HTMLImageElement).classList.add('layer-opaque')">
+      <!-- One element for every still: a new src keeps the old picture until
+           the new one has loaded, so slides cut without a flash of standby. -->
+      <img v-if="cueImageSrc" class="layer layer-media" :src="cueImageSrc" alt="" draggable="false"
+        @load="($event.currentTarget as HTMLImageElement).classList.add('layer-opaque'); onCueImageLoaded()">
 
       <!-- The target must exist before Teleport resolves an updated destination. -->
       <KardsTestCard
@@ -70,7 +72,7 @@ const showAudioSyncCard = computed(() => testCard.value && config.value.cardType
 const diagnosticSource = computed(() => showAudioSyncCard.value ? status.value?.testCardPlayback ?? null : null);
 const {
   videoReady, showVideo, heldFrameEl, showHeldFrame, cueImageSrc, standbySrc,
-  liveSlot, slotSources, registerVideoElement, onSpareEvent, onSpareError,
+  liveSlot, slotSources, registerVideoElement, onSpareEvent, onSpareError, onCueImageLoaded,
   onVideoLoadedMetadata, onVideoCanPlay, onVideoError,
   getPictureHealth,
 } = useVideoOutput(diagnosticSource);
