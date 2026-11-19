@@ -490,9 +490,18 @@ async function runSoak({ minutes, seed, probe = false }) {
     const latencies = [];
     const count = name => { counts[name] = (counts[name] || 0) + 1; };
 
-    // Sound on master channels 0/1 is sound on the system default output.
-    const guard = () => {
-      if (meters.level(0) > -100 || meters.level(1) > -100) {
+    // Sound reaches the room only through the system default output. Main
+    // (masters 0/1) plays there while it is open: 2.7.1 keeps it open as Main
+    // all the time; later builds put Main on the chosen output and close it.
+    // Until the engine says otherwise, assume it is open.
+    let defaultOpen = true;
+    let defaultCheckedAt = -Infinity;
+    const guard = async () => {
+      if (now() - defaultCheckedAt >= 1000) {
+        const devices = await engine.get('/api/devices').catch(() => null);
+        if (devices) { defaultOpen = devices.some(device => device.is_default && device.is_open); defaultCheckedAt = now(); }
+      }
+      if (defaultOpen && (meters.level(0) > -100 || meters.level(1) > -100)) {
         fatal = `sound reached the system default output (master 0/1 at ${round(Math.max(meters.level(0), meters.level(1)))} dB)`;
       }
     };
@@ -555,7 +564,7 @@ async function runSoak({ minutes, seed, probe = false }) {
         const shown = await waitFor(async () => (await ui()).playing.includes(target.name), 3000);
         if (!shown) fail('playing-not-shown', { cue: target.name, ui: await ui() });
         if (!target.silent) {
-          const heard = await waitFor(async () => [...meters.state.masters].some(([index, db]) => index >= 2 && index < 30 && db > -80), 3000, 50);
+          const heard = await waitFor(async () => [...meters.state.masters].some(([index, db]) => index < 30 && db > -80), 3000, 50);
           if (!heard) fail('no-level-on-output', { cue: target.name });
         }
         return { cue: target.name, startMs: round(startMs), byKey };
@@ -632,7 +641,42 @@ async function runSoak({ minutes, seed, probe = false }) {
     const totalWeight = weighted.reduce((sum, [, weight]) => sum + weight, 0);
     const choose = () => { let roll = rng() * totalWeight; for (const [name, weight] of weighted) { roll -= weight; if (roll < 0) return name; } return 'go'; };
 
-    if (probe) { say('probe finished'); return; }
+    if (probe) {
+      // MIDI allowed; Main on the chosen output with its meter and fader live.
+      say('midi', await page.evaluate(`navigator.requestMIDIAccess().then(() => 'granted', error => error.name)`));
+      const open = (await engine.get('/api/devices')).filter(device => device.is_open);
+      say('open outputs', JSON.stringify(open.map(device => ({ name: device.display_name, systemDefault: device.is_default }))));
+      await guard();
+      if (defaultOpen) { say('the system default output is open, so the probe plays nothing'); say('probe finished'); return; }
+      const strip = `[...document.querySelectorAll('.output-console .output-pair')].find(s => s.getAttribute('aria-label') === ${JSON.stringify(OUTPUT)})`;
+      const mainLevel = () => round(Math.max(meters.level(0), meters.level(1)));
+      // Type a level into the strip's fader, as an operator does.
+      const setMain = db => page.evaluate(`(async () => {
+        const s = ${strip}; if (!s) return 'no strip';
+        s.querySelector('.volume-slider__value')?.click();
+        await new Promise(r => setTimeout(r, 150));
+        const input = s.querySelector('.volume-slider__input'); if (!input) return 'no fader input';
+        input.value = '${db}'; input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+        return 'set';
+      })()`);
+      const went = await actions.go();
+      await delay(1500);
+      await guard();
+      say('go', JSON.stringify(went), 'masters', JSON.stringify([...meters.state.masters].map(([i, db]) => [i, round(db)])));
+      say('Main strip', await page.evaluate(`(() => { const s = ${strip}; return s ? s.innerText.replace(/\\s+/g, ' ') : 'missing'; })()`));
+      const before = mainLevel();
+      say('Main fader to -20 dB:', await setMain(-20));
+      await delay(1500);
+      const after = mainLevel();
+      say('Main level', before, 'dB, then', after, 'dB with the fader at -20');
+      say('Main fader back to 0 dB:', await setMain(0));
+      await delay(1500);
+      say('Main level', mainLevel(), 'dB with the fader at 0');
+      await actions.stopAll();
+      say('probe finished');
+      return;
+    }
 
     // The picture needs its window; open it first, as an operator would.
     await actions.videoOutput();
@@ -663,7 +707,7 @@ async function runSoak({ minutes, seed, probe = false }) {
       // automatic follows happen; otherwise move on as a busy operator would.
       const hold = rng() < 0.2 ? between(20000, 70000) : between(2000, 16000);
       for (const until = now() + hold; now() < until && !fatal;) {
-        guard();
+        await guard();
         if (now() >= nextSampleAt) { await sample().catch(error => record.event({ type: 'sample-error', at: Date.now(), error: String(error.message) })); nextSampleAt += 15000; }
         await delay(250);
       }
