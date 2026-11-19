@@ -3566,13 +3566,40 @@ function closeVideoOutputWindow({ preserveSession = false, playbackError = null 
   outputWindow.destroy();
 }
 
+// macOS: a physical output whose display drops out (a switcher or extender
+// re-syncing, an input change, a cable knock) is hidden at once and kept,
+// still playing in step, instead of being torn down: when the display
+// returns it is seated and shown with the picture live, not after seconds of
+// black while a new window boots. Elsewhere it is still closed and recreated.
+function parkVideoOutputWindow(outputWindow) {
+  if (outputWindow.videoOutputDisplayLost) return;
+  outputWindow.videoOutputDisplayLost = true;
+  outputWindow.hide();
+}
+
+function restoreVideoOutputWindow(outputWindow, target) {
+  outputWindow.videoOutputDisplayLost = false;
+  outputWindow.videoOutputTargetDisplayId = target.id;
+  resetVideoOutputGeometry(true);
+  seatPhysicalOutput(outputWindow, process.platform, target.bounds);
+  outputWindow.show();
+}
+
 // Watchdog: when the display topology changes (switcher EDID renegotiation,
 // cable replug, OS reshuffle), keep the output on its assigned display or take
 // it down cleanly — it must never silently settle onto the control screen.
 function installVideoOutputWatchdog() {
   if (videoOutputWatchdogInstalled) return;
   videoOutputWatchdogInstalled = true;
+  const keepsLostOutput = process.platform === 'darwin';
   const onDisplayChange = () => {
+    // Hide a lost output at once: the OS moves windows off a vanished
+    // display, and the output must not cover the operator screen meanwhile.
+    if (keepsLostOutput && videoOutputSessionEnabled && videoOutputWindow &&
+        !videoOutputWindow.isDestroyed() && videoOutputWindow.videoOutputTargetDisplayId != null &&
+        !resolveVideoOutputDisplay(readVideoOutputConfig())) {
+      parkVideoOutputWindow(videoOutputWindow);
+    }
     // Display events arrive in bursts; settle before reacting.
     clearTimeout(videoOutputWatchdogTimer);
     videoOutputWatchdogTimer = setTimeout(() => {
@@ -3581,12 +3608,18 @@ function installVideoOutputWatchdog() {
       if (!videoOutputSessionEnabled) { broadcastVideoOutputStatus(); return; }
       const target = resolveVideoOutputDisplay(cfg);
       if (videoOutputWindow && videoOutputWindow.videoOutputTargetDisplayId != null && !target) {
-        // The physical output's display is gone: close rather than let the OS
-        // park the window on the operator's control display. The preview
-        // window has no display to lose and lives on the control screen, so
-        // metrics events there (e.g. entering fullscreen) never close it,
-        // even when an assigned display is not connected.
-        closeVideoOutputWindow({ preserveSession: true });
+        // The physical output's display is gone: keep it hidden (macOS) or
+        // close it, never let the OS park it on the operator's control
+        // display. The preview window has no display to lose and lives on
+        // the control screen, so metrics events there (e.g. entering
+        // fullscreen) never close it, even when an assigned display is not
+        // connected.
+        if (keepsLostOutput) parkVideoOutputWindow(videoOutputWindow);
+        else closeVideoOutputWindow({ preserveSession: true });
+      } else if (videoOutputWindow && !videoOutputWindow.isDestroyed() &&
+                 videoOutputWindow.videoOutputDisplayLost && target && screen.getAllDisplays().length > 1) {
+        // Its display is back: seat the kept output there and show it, live.
+        restoreVideoOutputWindow(videoOutputWindow, target);
       } else if (!videoOutputWindow && target) {
         // Display (re)appeared while armed: re-acquire it.
         createVideoOutputWindow();

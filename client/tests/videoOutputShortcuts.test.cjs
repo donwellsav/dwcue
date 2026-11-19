@@ -319,10 +319,13 @@ function createVideoWindowHarness() {
     setAlwaysOnTop() {}
     loadURL() { return Promise.resolve(); }
     loadFile() { return Promise.resolve(); }
-    show() {}
+    show() { this.visible = true; }
     isFullScreen() { return false; }
     isSimpleFullScreen() { return false; }
-    hide() {}
+    hide() { this.visible = false; }
+    setBounds(bounds) { this.bounds = bounds; }
+    getBounds() { return this.bounds ?? { x: 0, y: 0, width: 960, height: 540 }; }
+    setVisibleOnAllWorkspaces() {}
     destroy() {
       this.destroyed = true;
       if (!this.delayClosed) this.emit('closed');
@@ -336,7 +339,9 @@ function createVideoWindowHarness() {
     videoOutputPowerSaveId: null,
     videoOutputWindowsPreservingSession: new WeakSet(),
     readVideoOutputConfig: () => ({}), resolveVideoOutputDisplay: () => null,
-    screen: { getAllDisplays: () => [{}] }, BrowserWindow: OutputWindow,
+    screen: { getAllDisplays: () => [{}], listeners: {}, on(event, listener) { (this.listeners[event] ??= []).push(listener); } },
+    BrowserWindow: OutputWindow,
+    videoOutputWatchdogInstalled: false, videoOutputWatchdogTimer: null,
     View: class {
       setBackgroundColor(color) { this.color = color; }
       setBounds(bounds) { this.bounds = bounds; }
@@ -377,6 +382,8 @@ function createVideoWindowHarness() {
     ...['sanitizeVideoPlaybackErrorMessage', 'loadVideoOutputWindow', 'failVideoOutputRenderer', 'markVideoOutputReady', 'restartVideoOutputWindow', 'requireVideoOutputIpc']
       .filter(name => mainSource.includes('function ' + name + '(')).map(productionFunctionSource),
     productionFunctionSource('createVideoOutputWindow'),
+    ...['parkVideoOutputWindow', 'restoreVideoOutputWindow', 'installVideoOutputWatchdog']
+      .filter(name => mainSource.includes('function ' + name + '(')).map(productionFunctionSource),
     mainSource.slice(closeStart, closeEnd),
   ].join('\n'), context);
   return {
@@ -406,6 +413,29 @@ test('the operator view never copies the audience output', () => {
   assert.equal(h.captures.length, 0);
   assert.equal(h.timerCount(), 0, 'no timer runs for the output');
   assert.doesNotMatch(mainSource, /video-output:frame/);
+});
+
+test('an output whose display drops out is hidden and kept, then shown live when it returns', async () => {
+  const h = createVideoWindowHarness();
+  const display = { id: 7, bounds: { x: 1920, y: 0, width: 1920, height: 1080 }, label: 'Projector' };
+  let present = true;
+  h.context.resolveVideoOutputDisplay = () => (present ? display : null);
+  h.context.screen.getAllDisplays = () => (present ? [{ id: 1 }, display] : [{ id: 1 }]);
+  const output = h.open();
+  h.context.installVideoOutputWatchdog();
+  const emit = event => h.context.screen.listeners[event].forEach(listener => listener());
+  present = false;  // a switcher re-syncs: the display goes away
+  emit('display-removed');
+  assert.equal(output.visible, false, 'hidden at once, so it cannot land on the operator screen');
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(output.isDestroyed(), false, 'kept, still playing, while the display is gone');
+  assert.equal(h.context.videoOutputWindow, output);
+  present = true;   // the display is back
+  emit('display-added');
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(h.context.videoOutputWindow, output, 'the same window, picture live: no new window to boot');
+  assert.equal(output.visible, true);
+  assert.deepEqual(output.bounds, display.bounds, 'seated on its display again');
 });
 
 test('renderer loss retains native black coverage, session and power while restoring the operator', () => {
