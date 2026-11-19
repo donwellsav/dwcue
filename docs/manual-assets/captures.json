@@ -1,8 +1,8 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
-  "packageVersion": "2.7.1",
-  "edition": "17 November 2026, 2.7.1: the five figures that show the attached QuickPlay panel, the playlist bar or the version number, retaken from the packaged 2.7.1 app after the panel's default width grew to 336 pixels",
+  "sourceRevision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
+  "packageVersion": "2.8.0",
+  "edition": "19 November 2026, 2.8.0: the welcome screen (version number) and the docked Video Output settings (the new Picture sync setting), retaken from the packaged 2.8.0 app",
   "images": [
     {
       "file": "music-continuity-current.png",
@@ -23,17 +23,17 @@
     },
     {
       "file": "welcome-current.png",
-      "view": "Welcome screen using the audio engine on this computer, showing version 2.7.1.",
-      "version": "2.7.1",
-      "sourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
-      "nativeSourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
-      "capturedOn": "2026-11-17",
+      "view": "Welcome screen using the audio engine on this computer, showing version 2.8.0.",
+      "version": "2.8.0",
+      "sourceRevision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
+      "nativeSourceRevision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
+      "capturedOn": "2026-11-19",
       "surface": "DonWells Cue desktop app (packaged build on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
       "dimensions": [
         768,
         378
       ],
-      "sha256": "c0db9062fb49354dec153ca3013ce799e1aec895dc3cf4d48e78f7a7c72eb1c0",
+      "sha256": "eadd201682512596ddf2d26a69c6752abf82544e74ba531ff8a839e633247f1b",
       "fixture": "No show open; a disposable practice folder. Local audio engine on the capture computer.",
       "captureMethod": "Chrome DevTools Protocol screenshot of the running app window, clipped to the panel or control.",
       "presentation": "Unaltered crop of the panel or control."
@@ -346,18 +346,18 @@
     },
     {
       "file": "video-settings-current.png",
-      "view": "Docked Video Output with the pre-show video check, picture framing, standby and capture, and test card controls.",
-      "version": "2.6.24 development",
-      "sourceRevision": "ac0650e367eb1a24ebae88edc3a1a9fe5ed50103",
-      "nativeSourceRevision": "73f6ef4f623c88bc928182d82444c01d22e490df",
-      "capturedOn": "2026-11-16",
-      "surface": "DonWells Cue desktop app (development build in Electron on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
+      "view": "Docked Video Output with the pre-show video check, picture framing, Picture sync, standby and capture, and test card controls.",
+      "version": "2.8.0",
+      "sourceRevision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
+      "nativeSourceRevision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
+      "capturedOn": "2026-11-19",
+      "surface": "DonWells Cue desktop app (packaged build on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
       "dimensions": [
         1400,
-        354
+        465
       ],
-      "sha256": "a0461d377f87a030986b672eaeae802aa29d5aff6e08f7680d9128310380ddf3",
-      "fixture": "Disposable Conference rehearsal show with generated WAV files; every cue that was played is silent. Local audio engine on the capture computer.",
+      "sha256": "0dd9b870408934ef88591c70908c56ed0e295114de8a8f6ba0dbcab1b574bdc1",
+      "fixture": "Disposable Conference rehearsal show with generated WAV files; nothing was played. Local audio engine on the capture computer.",
       "captureMethod": "Chrome DevTools Protocol screenshot of the running app window, clipped to the panel or control.",
       "presentation": "Unaltered crop of the panel or control."
     },
@@ -475,11 +475,11 @@
     "duckEnvelope": "Schematic explanation, not a measured response plot",
     "gainStages": "Schematic: final physical sum and secondary-clock adaptation precede the attenuation-only limiter and device output."
   },
-  "uiBuildRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
-  "manualSourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
+  "uiBuildRevision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
+  "manualSourceRevision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
   "visualCompatibility": {
-    "checkedOn": "2026-11-17",
-    "revision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
-    "basis": "Five figures (the welcome screen, Edit Mode, Show Mode, the Show Mode QuickPlay and the playlist bar) were recaptured from the packaged 2.7.1 app at one window size. The attached QuickPlay panel now opens 336 pixels wide instead of 300, so the playlist opens 36 pixels narrower. The other figures show the lower panel, which spans the whole window, or controls that did not change, and keep their earlier captures. All in the dark theme on an Apple silicon Mac; nothing was captured on Windows."
+    "checkedOn": "2026-11-19",
+    "revision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
+    "basis": "Two figures were recaptured from the packaged 2.8.0 app: the welcome screen, for its version number, and the docked Video Output settings, which gained Picture sync under Picture framing. The top bar's small picture of the output was removed, but no figure shows it. The other figures show controls that did not change and keep their earlier captures. All in the dark theme on an Apple silicon Mac; nothing was captured on Windows."
   }
 }
