@@ -879,6 +879,31 @@ void test_program_plays_through_main() {
     state.stop_all_cues(0);
 }
 
+// Autosave sends the whole show. When it matches what the engine already has
+// (edits reach the engine as they happen), the file is written and the show
+// is not rebuilt: a rebuild touches every cue, playing ones included, and can
+// refuse a GO while it runs. A real difference still rebuilds.
+void test_autosave_keeps_unchanged_show() {
+    const auto wav = make_wav(8'192, 480'000);
+    liveplay::audio::AudioEngine engine;
+    engine.device_test_context_ = null_preview_context();
+    liveplay::core::ProjectState state(engine);
+    const auto path = fixture_dir() / "autosave-unchanged.dwcue";
+    check(state.load_from_json(document(json::array({audio("bed", wav), audio("next", wav)})), path) &&
+              wait_ready(state) && state.trigger_item("bed"),
+          "autosave: show open with a cue playing");
+    const auto generation = [&] { std::lock_guard lock{state.mutex_}; return state.document_generation_; };
+    auto snapshot = state.full_document();
+    const auto before = generation();
+    snapshot["lastModified"] = "2026-11-19T12:00:00.000Z";
+    check(state.save(path, &snapshot) && generation() == before && on_air(state, engine, "bed"),
+          "autosave: the same show is written without rebuilding it");
+    snapshot["items"][1]["volume"] = -6.0;
+    check(state.save(path, &snapshot) && generation() != before,
+          "autosave: a show that differs is still applied");
+    state.stop_all_cues(0);
+}
+
 // Two software outputs: "Main Output" (the system default) and "Second Output".
 ma_context* two_output_context() {
     static ma_context context{};
@@ -4011,6 +4036,7 @@ int main() try {
     test_program_plays_through_main();
     test_program_switches_outputs();
     test_chosen_output_has_its_own_stream();
+    test_autosave_keeps_unchanged_show();
     test_stop_all_during_diagnostic_output_start();
     test_stop_all_during_output_settings_open();
     test_stop_all_during_preview_retirement();

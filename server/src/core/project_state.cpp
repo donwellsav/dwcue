@@ -2095,6 +2095,40 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
                       util::path_to_utf8(path));
         return false;
     }
+    // Autosave sends the whole show after its queued edits, which already
+    // reached the engine. When it matches, write the file and keep the show
+    // as it is: a rebuild touches every cue, playing ones included, and holds
+    // each cue's preparation while a GO could be refused.
+    if (replacement) {
+        project_file::PreparedDocument incoming;
+        std::string ignored;
+        if (project_file::prepare_client_document(*replacement, std::nullopt, incoming, ignored)) {
+            json current;
+            {
+                std::lock_guard lock{mutex_};
+                current = document_;
+            }
+            // What the engine adds when it sends the show out (engine cue ids,
+            // derived level targets, a status block) and save metadata are not
+            // the show's content.
+            const std::function<void(json&)> strip_items = [&](json& items) {
+                if (!items.is_array()) return;
+                for (auto& item : items) {
+                    if (!item.is_object()) continue;
+                    item.erase("cueId");
+                    if (item.contains("children")) strip_items(item["children"]);
+                }
+            };
+            for (json* doc : {&incoming.document, &current}) {
+                for (const char* key : {"lastModified", "folderPath", "server"}) doc->erase(key);
+                if (doc->contains("settings") && (*doc)["settings"].is_object())
+                    (*doc)["settings"].erase("outputTargetLevels");
+                if (doc->contains("items")) strip_items((*doc)["items"]);
+                if (doc->contains("quickPlayItems")) strip_items((*doc)["quickPlayItems"]);
+            }
+            if (incoming.document == current) replacement = nullptr;
+        }
+    }
     if (replacement && !replace_full_document(*replacement, /*new_session=*/false)) return false;
     try {
         json doc;
