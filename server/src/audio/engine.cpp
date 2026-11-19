@@ -1962,10 +1962,12 @@ void AudioEngine::device_watchdog_loop() {
             }
             // A lost or stalled output is retried by itself every 2 s with a
             // fresh native stream, one attempt at a time: when the device
-            // comes back, Main and every route on it play again.
+            // comes back, Main and every route on it play again. An output
+            // opened without a native stream (no lifecycle lock) has nothing
+            // to restart; it plays on when its callbacks resume.
             const auto runtime = device->runtime_state.load(std::memory_order_acquire);
             const auto now = std::chrono::steady_clock::now();
-            if (!device->closing.load(std::memory_order_acquire) &&
+            if (device->lifecycle && !device->closing.load(std::memory_order_acquire) &&
                 !device->recovery_in_progress.load(std::memory_order_acquire) &&
                 (runtime == DeviceRuntimeState::Disconnected || runtime == DeviceRuntimeState::Stalled) &&
                 now >= device->next_auto_recovery) {

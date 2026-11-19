@@ -690,6 +690,28 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
     }
 }
 
+// Callbacks that pause for over a second (a busy computer) mark an output
+// stalled, and the watchdog restarts its native stream. An output with no
+// native stream has nothing to restart: it must play on when its callbacks
+// resume, not be marked lost and go silent.
+void test_callback_pause_keeps_streamless_output(const std::filesystem::path& quiet) {
+    Fixture f(quiet);
+    check(f.engine.start(), "callback pause: software output starts");
+    std::this_thread::sleep_for(std::chrono::milliseconds{1'300});
+    int audible = 0;
+    for (int i = 0; i < 64; ++i) {
+        const auto out = f.drain();
+        audible += std::any_of(out.begin(), out.end(), [](float sample) { return sample > 0.05f; });
+        std::this_thread::sleep_for(std::chrono::microseconds{block * 1'000'000 / 48'000});
+    }
+    std::printf("callback pause: %d of 64 blocks audible, state %d\n", audible,
+                static_cast<int>(f.device->runtime_state.load()));
+    check(audible >= 32 && f.device->runtime_state.load() == DeviceRuntimeState::Running,
+          "callback pause: an output with no native stream plays on when its callbacks resume");
+    f.engine.stop_all(std::chrono::milliseconds{0}, true);
+    f.engine.stop();
+}
+
 void test_source_starvation(const std::filesystem::path& source, const std::filesystem::path& silence) {
     for (const SampleRate rate : {44'100u, 48'000u, 96'000u}) {
         PlaybackItemDesc desc; desc.id = CueId{"starvation"}; desc.file_path = source;
@@ -1710,6 +1732,7 @@ int main() {
     test_catalog_follows_native_reroute();
     test_stop_before_render_wait_snapshot(quiet);
     test_blocked_decoder_reads(quiet);
+    test_callback_pause_keeps_streamless_output(quiet);
     test_source_starvation(quiet, silence);
     test_channel_map_reload(quiet, left);
     test_shared_output(tone, false);
