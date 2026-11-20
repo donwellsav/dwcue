@@ -43,6 +43,13 @@ using namespace std::chrono_literals;
 
 namespace {
 int failures = 0;
+// On Windows a file being deleted reads "access denied" until its last handle
+// closes: it is still there, not an error.
+bool file_present(const std::filesystem::path& path) {
+    std::error_code error;
+    const bool present = std::filesystem::exists(path, error);
+    return present || (error && error != std::errc::no_such_file_or_directory);
+}
 void check(bool ok, const char* label) {
     std::printf("%-68s %s\n", label, ok ? "PASS" : "FAIL");
     if (!ok) ++failures;
@@ -1117,9 +1124,9 @@ void test_stop_all_during_diagnostic_output_start() {
         check(controls.get() && discarded.cue_id.empty() && state.diagnostic_cues_.empty() &&
                   engine.items_.size() == 2 && engine.devices_.empty() && on_air(state, engine, "diagnostic-backup"),
               "Diagnostic open: late startup leaves no diagnostic cue, route or reference");
-        for (int i = 0; i < 200 && !owned.empty() && std::filesystem::exists(owned); ++i)
+        for (int i = 0; i < 200 && !owned.empty() && file_present(owned); ++i)
             std::this_thread::sleep_for(5ms);
-        check(owned.empty() ? std::filesystem::exists(file) : !std::filesystem::exists(owned),
+        check(owned.empty() ? file_present(file) : !file_present(owned),
               "Diagnostic open: cancellation deletes only the uploaded file after decoder close");
         const auto retried = state.add_av_sync_diagnostic_cue(wav, selection);
         const auto diagnostic = engine.find_cue(retried.cue_id);
@@ -3907,11 +3914,11 @@ void test_diagnostic_retirement(const std::filesystem::path& wav) {
         });
         const bool ready = remove.wait_for(250ms) == std::future_status::ready;
         check(ready, "diagnostic retirement: remove/reset/destruction acknowledges before native close");
-        check(std::filesystem::exists(file), "diagnostic retirement: owned file retained until decoder closes");
+        check(file_present(file), "diagnostic retirement: owned file retained until decoder closes");
         if (ready) engine.reset();
         held.unlock(); remove.get();
-        for (int i = 0; i < 2000 && std::filesystem::exists(file); ++i) std::this_thread::sleep_for(1ms);
-        check(!std::filesystem::exists(file), "diagnostic retirement: owned file removed after native return");
+        for (int i = 0; i < 2000 && file_present(file); ++i) std::this_thread::sleep_for(1ms);
+        check(!file_present(file), "diagnostic retirement: owned file removed after native return");
     }
 }
 
