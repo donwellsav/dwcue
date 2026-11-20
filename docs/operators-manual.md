@@ -1,7 +1,7 @@
 # DonWells Cue — Operator's Manual
 
 **Version:** 2.8.0
-**Source revision:** b2caa33
+**Source revision:** 5f1187f
 **Native engine baseline:** 5e259d0
 **Edition:** 20 November 2026 · English · Operator edition
 
@@ -1124,7 +1124,7 @@ The default **Escape** Stop All shortcut works while editing, including in the l
 
 ### About this edition
 
-This edition covers **2.8.0**, based on application source **b2caa33**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
+This edition covers **2.8.0**, based on application source **5f1187f**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
 
 Earlier checkpoints passed 13 native suites, 74 API checks, client checks, type checking, and renderer generation. Held storage tests exercised late Open, Save ordering, and direct cue registration. Chromium exercised Stop All during field editing, deletion, and imports with a software output and simulated online providers.
 
