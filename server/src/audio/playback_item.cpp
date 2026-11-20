@@ -498,6 +498,7 @@ void PlaybackItem::stop_now() {
     declick_remaining_ = 0;
     pause_peek_frames_ = 0;
     seek_hold_revision_ = 0;
+    seek_refill_wait_ = false;
     playhead_frames_.store(0, std::memory_order_relaxed);
     // Rewind on deliberate replay; stopping must never wait for storage.
     rewind_on_play_.store(true, std::memory_order_release);
@@ -593,6 +594,15 @@ void PlaybackItem::seek_seconds(double seconds) {
             reset_read_ahead_locked(playhead_frames_.load(std::memory_order_acquire));
             seek_pending_ = true;
             rewind_on_play_.store(true, std::memory_order_release);
+            // From the flush on, the only audio is the new position's: arm its
+            // ramp in now, before the decode worker can refill and the output
+            // can play it, and do not count the wait for it as a miss.
+            if (audible && !was_stopped && transport_.load(std::memory_order_acquire) != TransportState::Paused) {
+                declick_remaining_ = declick;
+                declick_rising_ = true;
+                pause_peek_frames_ = 0;
+                seek_refill_wait_ = true;
+            }
         }
         if (decoder_) {
             const ma_result r = ma_decoder_seek_to_pcm_frame(decoder_.get(), frame);
@@ -621,19 +631,13 @@ void PlaybackItem::seek_seconds(double seconds) {
             ltc_->reset(std::chrono::nanoseconds{ltc_offset_ns_.load()});
         }
     }
+#ifdef LIVEPLAY_TEST_ACCESS
+    if (after_seek_unlock_for_test_) after_seek_unlock_for_test_();
+#endif
     if (!audible) return;
     // Decode the first blocks at the new position now, not on the worker's
-    // next 2 ms poll, then ramp back in.
+    // next 2 ms poll; they ramp in from the flush's armed declick.
     service_read_ahead(4);
-    begin_render_exclusion();
-    const auto now = transport_.load(std::memory_order_acquire);
-    if (playback_revision() == revision && (now == TransportState::Playing ||
-        now == TransportState::FadingIn || now == TransportState::FadingOut)) {
-        declick_remaining_ = declick;
-        declick_rising_ = true;
-        pause_peek_frames_ = 0;
-    }
-    end_render_exclusion();
 }
 
 void PlaybackItem::set_gain_db(float db) noexcept {
@@ -1342,10 +1346,11 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
                         (slot.loop_end_frame - loop_in);
             }
         }
+        if (frames_read > 0) seek_refill_wait_ = false;
         if (frames_read < frame_count && !natural_end &&
             (seek_pending_ || !rewind_on_play_.load(std::memory_order_acquire)) &&
             !decode_terminal_.load(std::memory_order_acquire)) {
-            read_ahead_underruns_.fetch_add(1, std::memory_order_relaxed);
+            if (!seek_refill_wait_) read_ahead_underruns_.fetch_add(1, std::memory_order_relaxed);
             // Let brief gaps recover; a sustained 250 ms gap must never re-enter late.
             if (st != TransportState::FadingOut) {
                 starved_frames_ += frame_count - frames_read;

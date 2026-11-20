@@ -1144,6 +1144,60 @@ void test_restart_while_playing_declicks(const std::filesystem::path& tone) {
           "restart while playing: ramps out and back in, with no miss");
 }
 
+// The window after a restart's jump and before seek_seconds returns: the
+// output may ask for audio before the decoder refills, then play the new
+// position. The wait is part of the jump, not a miss, and the new audio
+// ramps in from silence once, with no drop when the jump finishes.
+void test_restart_window_ramps_in_once(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.render(3);
+    for (int i = 0; i < 40; ++i) { f.render(); (void)f.drain(); }
+    const auto misses = f.item->stats().read_ahead_underruns;
+    float previous = 0.0f, largest_step = 0.0f;
+    bool first = true;
+    const auto take = [&](bool refill) {
+        if (refill) f.item->service_read_ahead(1);
+        const auto topology = f.engine.snapshot_topology();
+        f.engine.render_one_block(*topology);
+        const auto out = f.drain();
+        for (std::size_t n = 0; n < block; ++n) {
+            if (!first) largest_step = std::max(largest_step, std::fabs(out[n * 2] - previous));
+            previous = out[n * 2];
+            first = false;
+        }
+    };
+    std::atomic<bool> in_window{false}, window_done{false};
+    f.item->after_seek_unlock_for_test_ = [&] {
+        in_window.store(true);
+        for (int i = 0; i < 1000 && !window_done.load(); ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    };
+    auto restart = std::async(std::launch::async, [&] { f.item->seek_seconds(0.25); });
+    bool window_seen = false;
+    for (int i = 0; i < 40 || restart.wait_for(std::chrono::seconds{0}) != std::future_status::ready; ++i) {
+        if (!window_seen && in_window.load()) {
+            window_seen = true;
+            take(false);                      // the output asks before the refill
+            f.item->service_read_ahead(4);    // the decode worker refills
+            for (int k = 0; k < 4; ++k) take(false);
+            window_done.store(true);
+            continue;
+        }
+        // Until the window, only the jump decodes: the ramp out plays queued
+        // audio without consuming it.
+        take(window_seen);
+        if (i > 4000) break;
+    }
+    restart.get();
+    f.item->after_seek_unlock_for_test_ = {};
+    // A 1 kHz tone at amplitude 0.7 moves at most 0.092 per 48 kHz sample.
+    std::printf("restart window: largest step %.3f, read-ahead misses %llu\n", largest_step,
+                static_cast<unsigned long long>(f.item->stats().read_ahead_underruns - misses));
+    check(window_seen && largest_step < 0.12f && f.item->stats().read_ahead_underruns == misses &&
+              f.item->stats().transport == liveplay::audio::TransportState::Playing,
+          "restart window: new audio ramps in once, and the jump's wait is not a miss");
+}
+
 // Arming Cue to Continue (loop off) on a playing loop, away from its seam,
 // keeps the audio already queued and plays on without a gap or a tick.
 void test_cue_to_continue_keeps_playing(const std::filesystem::path& seamless) {
@@ -1749,6 +1803,7 @@ int main() {
     test_pause_resume_ramps(tone);
     test_rego_during_fade_ramps(tone);
     test_restart_while_playing_declicks(tone);
+    test_restart_window_ramps_in_once(tone);
     test_cue_to_continue_keeps_playing(seamless_44k(dir));
     test_mixer_changes_ramp(tone);
     test_stop_without_output(tone);

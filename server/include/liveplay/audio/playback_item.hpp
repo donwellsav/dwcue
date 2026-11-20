@@ -336,6 +336,13 @@ private:
     // A playing cue about to jump plays its ramp out, then holds silent until
     // the jump flushes its queue. Tagged with that seek's revision.
     std::uint64_t              seek_hold_revision_ = 0;
+    // Set when a playing cue's jump flushes its queue, cleared by its first
+    // new audio: the wait for that audio is part of the jump, not a miss.
+    bool                       seek_refill_wait_ = false;
+#ifdef LIVEPLAY_TEST_ACCESS
+    // Runs after a jump releases the decoder, before seek_seconds returns.
+    std::function<void()>      after_seek_unlock_for_test_;
+#endif
     std::atomic<float>          gain_target_linear_{1.0f};
     std::atomic<float>          gain_current_linear_{1.0f};     // smoothed
     std::atomic<float>          group_gain_target_{1.0f};
