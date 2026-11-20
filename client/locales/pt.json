@@ -330,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: saída de áudio bloqueada — sem callbacks do relógio.",
+    "lost": "{name}: saída de áudio perdida — a reconectar automaticamente.",
     "queued": "{name}: a saída continua bloqueada. Recuperação na fila; aguardando callbacks do relógio.",
     "starting": "{name}: a saída de áudio está a iniciar; aguardando callbacks do relógio.",
     "recoveryFailed": "{name}: não foi possível colocar a recuperação da saída de áudio na fila."

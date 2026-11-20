@@ -55,3 +55,37 @@ test('the detached QuickPlay window hands transport keys to the operator window'
   assert.match(relay.slice(0, 1400), /mainWindow\.webContents\.send\('video-output:shortcut'/, 'to the operator window, as Video Output keys go');
   assert.match(source('../electron/preload.js'), /forwardShortcutToOperator: \(shortcut\) => ipcRenderer\.send\('quickplay-window:shortcut', shortcut\)/);
 });
+
+test('a socket this window swaps itself skips the reconnect choice; a failed check is retried', () => {
+  const server = source('../app/composables/useLiveplayServer.ts');
+  assert.match(server, /failPendingCommands\('Stop All canceled the pending cue command\.'\);\s*swapSocket\(\);/,
+    'Stop All leaving a stuck GO behind swaps the socket, marked as a swap');
+  assert.match(server, /const socketSwap = performance\.now\(\) - socketSwapAt < SOCKET_SWAP_WINDOW_MS;/);
+  assert.match(server, /cb\(lifetime\.signal, \{ socketSwap \}\)/);
+  const guard = source('../app/composables/useConnectionGuard.ts');
+  const swapCheck = guard.indexOf("if (info.socketSwap && header.server.projectSessionId === server.projectSessionId) return 'verified';");
+  assert.ok(swapCheck > 0 && swapCheck < guard.indexOf('if (hasUnsavedChanges.value)'),
+    'the same engine show after a swap is verified before unsaved edits could ask for a choice');
+  assert.match(guard, /for \(let attempt = 0; attempt < VERIFY_ATTEMPTS && !decided; attempt\+\+\)/);
+  assert.match(guard, /const VERIFY_ATTEMPTS = 4;/);
+});
+
+test('a crashed operator or QuickPlays window reloads by itself', () => {
+  const main = source('../electron/main.js');
+  assert.match(main, /reloadAfterRendererCrash\(mainWindow, 'main-window'\);/);
+  assert.match(main, /reloadAfterRendererCrash\(detachedQuickPlayWindow, 'QuickPlaysWindow'\);/);
+  const helper = main.slice(main.indexOf('function reloadAfterRendererCrash'), main.indexOf('function createDetachedQuickPlayWindow'));
+  assert.match(helper, /render-process-gone/);
+  assert.match(helper, /if \(reason === 'clean-exit' \|\| quitConfirmed\) return;/);
+  assert.match(helper, /window\.webContents\.reload\(\)/);
+});
+
+test('a lost or interrupted output is announced, in every language', () => {
+  const alert = source('../app/components/ServerAlert.vue');
+  assert.match(alert, /const TROUBLED_STATES = new Set\(\['stalled', 'disconnected', 'interrupted'\]\);/);
+  assert.match(alert, /t\('audioHealth\.lost', \{ name: device\.display_name \}\)/);
+  for (const code of ['ar', 'bn', 'de', 'el', 'en', 'es', 'fa', 'fr', 'hi', 'it', 'ja', 'ko', 'no', 'pt', 'ro', 'ru', 'sq', 'sv', 'tr', 'ur', 'zh']) {
+    const messages = JSON.parse(source(`../locales/${code}.json`));
+    assert.match(messages.audioHealth.lost, /\{name\}/, `${code} names the output`);
+  }
+});

@@ -46,11 +46,14 @@ const failedRecovery = ref<RecoveryTarget | null>(null);
 const recoveryRequesting = ref(false);
 let stopVideoStatus: (() => void) | null = null;
 
-const stalledDevice = computed(() =>
-  server.devices.find(device => device.is_open && device.runtime_state === 'stalled') ?? null);
+// An open output that has stalled, been lost (unplugged, cut off) or been
+// interrupted: the room may have gone silent, so say so.
+const TROUBLED_STATES = new Set(['stalled', 'disconnected', 'interrupted']);
+const troubledDevice = computed(() =>
+  server.devices.find(device => device.is_open && TROUBLED_STATES.has(device.runtime_state ?? '')) ?? null);
 const audioDevice = computed(() => {
   const target = pendingRecovery.value ?? failedRecovery.value;
-  if (!target) return stalledDevice.value;
+  if (!target) return troubledDevice.value;
   return server.devices.find(device => device.id === target.id) ?? {
     id: target.id,
     display_name: target.name,
@@ -66,7 +69,10 @@ const audioHealthMessage = computed(() => {
       ? t('audioHealth.starting', { name: device.display_name })
       : t('audioHealth.queued', { name: device.display_name });
   }
-  return t('audioHealth.stalled', { name: device.display_name });
+  // A lost output is retried by the engine every 2 s; a stalled one waits.
+  return device.runtime_state === 'stalled'
+    ? t('audioHealth.stalled', { name: device.display_name })
+    : t('audioHealth.lost', { name: device.display_name });
 });
 const videoErrorMessage = computed(() => videoStatus.value?.testCardError
   || videoStatus.value?.playbackError?.message || '');

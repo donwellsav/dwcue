@@ -330,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: ses çıkışı durdu — saat geri çağrısı yok.",
+    "lost": "{name}: ses çıkışı kayboldu — kendiliğinden yeniden bağlanıyor.",
     "queued": "{name}: çıkış hâlâ durdu. Kurtarma sıraya alındı; saat geri çağrıları bekleniyor.",
     "starting": "{name}: ses çıkışı başlatılıyor; saat geri çağrıları bekleniyor.",
     "recoveryFailed": "{name}: ses çıkışı kurtarma işlemi sıraya alınamadı."

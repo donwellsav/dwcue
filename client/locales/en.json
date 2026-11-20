@@ -330,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: audio output stalled — no clock callbacks.",
+    "lost": "{name}: audio output lost — reconnecting by itself.",
     "queued": "{name}: output remains stalled. Recovery queued; waiting for clock callbacks.",
     "starting": "{name}: audio output is starting; waiting for clock callbacks.",
     "recoveryFailed": "{name}: could not queue audio output recovery."

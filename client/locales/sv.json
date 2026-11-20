@@ -330,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: ljudutgången har stannat — inga klockåteranrop.",
+    "lost": "{name}: ljudutgången är borta — ansluter igen av sig själv.",
     "queued": "{name}: utgången är fortfarande stoppad. Återställning har köats; väntar på klockåteranrop.",
     "starting": "{name}: ljudutgången startar; väntar på klockåteranrop.",
     "recoveryFailed": "{name}: det gick inte att köa återställning av ljudutgången."

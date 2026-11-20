@@ -187,7 +187,9 @@ function createClient() {
   }
 
   // Verify a retained show on every new socket, even within the loss grace period.
-  type ReconnectedSubscriber = (signal: AbortSignal) => void;
+  // socketSwap: this window replaced its own socket a moment ago (Stop All
+  // leaving a stuck GO behind), with no real loss of the engine.
+  type ReconnectedSubscriber = (signal: AbortSignal, info: { socketSwap: boolean }) => void;
   const reconnectedSubscribers = new Set<ReconnectedSubscriber>();
   function onReconnected(cb: ReconnectedSubscriber): () => void {
     reconnectedSubscribers.add(cb);
@@ -279,6 +281,15 @@ function createClient() {
   // Deliberately does NOT clear `connectionLost`: the modal stays up until we
   // are actually back, otherwise a failed retry would flash the UI open and
   // then re-lock it a moment later.
+  // Stop All replaces a socket an earlier GO may still be holding. The new
+  // socket opens at once; only an open that soon after counts as that swap.
+  let socketSwapAt = -Infinity;
+  const SOCKET_SWAP_WINDOW_MS = 1000;
+  function swapSocket() {
+    socketSwapAt = performance.now();
+    forceReconnect();
+  }
+
   function forceReconnect() {
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     reconnectDelay = 1500;
@@ -314,6 +325,8 @@ function createClient() {
       if (ws !== socket) return;
       const shouldProbeAfterReconnect = reconnectProbePending || !!currentProjectForImport.value;
       reconnectProbePending = false;
+      const socketSwap = performance.now() - socketSwapAt < SOCKET_SWAP_WINDOW_MS;
+      socketSwapAt = -Infinity;
       showVerification.value = currentProjectForImport.value ? 'checking' : null;
       connected.value = true;
       reconnecting.value = false;
@@ -325,7 +338,7 @@ function createClient() {
       connectionLost.value = false;
       if (shouldProbeAfterReconnect) {
         for (const cb of reconnectedSubscribers) {
-          try { cb(lifetime.signal); } catch (e) { console.warn('[liveplay] reconnect handler threw:', e); }
+          try { cb(lifetime.signal, { socketSwap }); } catch (e) { console.warn('[liveplay] reconnect handler threw:', e); }
         }
       }
       // Only refresh REST-backed catalogues on the very first connection.
@@ -618,7 +631,7 @@ function createClient() {
       if (replaceSocket) {
         // The canceled command can still occupy this socket until native work returns.
         failPendingCommands('Stop All canceled the pending cue command.');
-        forceReconnect();
+        swapSocket();
         awaitingStopRevision.value = true;
       }
       stopAllStatus.value = confirmed ? 'confirmed' : 'unconfirmed';

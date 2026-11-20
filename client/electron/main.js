@@ -2665,6 +2665,7 @@ function createWindow() {
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('Failed to load:', errorCode, errorDescription);
   });
+  reloadAfterRendererCrash(mainWindow, 'main-window');
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
@@ -2693,6 +2694,24 @@ function createWindow() {
 
 
   createMenu('en', isDevMode);
+}
+
+// A crashed operator or QuickPlays window comes back by itself: it reloads,
+// and the operator window rejoins the show the engine is still playing, so
+// keys, MIDI and Stop All return. One that keeps crashing reloads less often.
+function reloadAfterRendererCrash(window, label) {
+  const crashes = [];
+  window.webContents.on('render-process-gone', (_event, details) => {
+    const reason = details?.reason || 'unknown';
+    console.error(`[${label}] Renderer stopped:`, reason, details?.exitCode ?? 'unknown');
+    if (reason === 'clean-exit' || quitConfirmed) return;
+    const now = Date.now();
+    while (crashes.length && now - crashes[0] > 60_000) crashes.shift();
+    crashes.push(now);
+    setTimeout(() => {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.reload();
+    }, crashes.length > 3 ? 10_000 : 250);
+  });
 }
 
 // Create the detached QuickPlays window.
@@ -2731,6 +2750,7 @@ function createDetachedQuickPlayWindow() {
   detachedQuickPlayWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('[QuickPlaysWindow] Failed to load:', errorCode, errorDescription);
   });
+  reloadAfterRendererCrash(detachedQuickPlayWindow, 'QuickPlaysWindow');
 
   detachedQuickPlayWindow.on('closed', () => {
     detachedQuickPlayWindow = null;

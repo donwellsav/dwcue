@@ -162,8 +162,8 @@ assert.match(
 const connectionGuard = read('client/app/composables/useConnectionGuard.ts');
 assert.match(
   connectionGuard,
-  /if \(hasUnsavedChanges\.value\) \{[\s\S]*?projectChanged\.value = true;[\s\S]*?sessionLost\.value = true;[\s\S]*?return;\s*\}[\s\S]*?await tryRejoinExistingProject\(header, signal\)/,
-  'dirty reconnects must request an explicit choice before clean mirrors rehydrate',
+  /if \(hasUnsavedChanges\.value\) \{[\s\S]*?projectChanged\.value = true;[\s\S]*?sessionLost\.value = true;[\s\S]*?return 'verified';\s*\}[\s\S]*?await tryRejoinExistingProject\(header, signal\)/,
+  'dirty reconnects must request an explicit choice before clean mirrors rehydrate (a socket this window swapped itself onto the same show excepted)',
 );
 assert.match(
   connectionGuard,

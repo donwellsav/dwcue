@@ -330,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name} : sortie audio bloquée — aucun rappel d’horloge.",
+    "lost": "{name} : sortie audio perdue — reconnexion automatique en cours.",
     "queued": "{name} : la sortie reste bloquée. Récupération mise en file d’attente ; attente des rappels d’horloge.",
     "starting": "{name} : démarrage de la sortie audio ; attente des rappels d’horloge.",
     "recoveryFailed": "{name} : impossible de mettre en file d’attente la récupération de la sortie audio."

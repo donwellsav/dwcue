@@ -222,7 +222,7 @@ function productionFunctionSource(name) {
 
 test('control-window close waits for healthy quit confirmation', () => {
   for (const state of ['healthy', 'crashed', 'unresponsive', 'destroyed', 'confirmed']) {
-    const messages = [], serverStops = [], keepAwakeReleases = [];
+    const messages = [], serverStops = [], keepAwakeReleases = [], crashReloads = [];
     class ControlWindow extends EventEmitter {
       constructor() {
         super();
@@ -239,8 +239,10 @@ test('control-window close waits for healthy quit confirmation', () => {
       isDevMode: true, quitConfirmed: state === 'confirmed', createMenu() {}, process: { argv: [] },
       stopServer: () => serverStops.push('stop'),
       releaseKeepAwake: () => keepAwakeReleases.push('release'),
+      reloadAfterRendererCrash: (_window, label) => crashReloads.push(label),
     };
     vm.runInNewContext(productionFunctionSource('createWindow') + '\ncreateWindow();', context);
+    assert.deepEqual(crashReloads, ['main-window'], 'a crashed control window reloads by itself');
     const window = context.mainWindow;
     if (state === 'unresponsive') window.emit('unresponsive');
     const event = { prevented: false, preventDefault() { this.prevented = true; } };

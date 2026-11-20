@@ -330,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: uscita audio bloccata — nessun callback del clock.",
+    "lost": "{name}: uscita audio persa — si riconnette da sola.",
     "queued": "{name}: l’uscita è ancora bloccata. Ripristino in coda; in attesa dei callback del clock.",
     "starting": "{name}: avvio dell’uscita audio; in attesa dei callback del clock.",
     "recoveryFailed": "{name}: impossibile accodare il ripristino dell’uscita audio."

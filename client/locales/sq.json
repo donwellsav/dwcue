@@ -330,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: dalja audio ngeci — nuk ka thirrje të orës.",
+    "lost": "{name}: dalja audio humbi — po rilidhet vetë.",
     "queued": "{name}: dalja mbetet e ngecur. Rikuperimi u vendos në radhë; po priten thirrjet e orës.",
     "starting": "{name}: dalja audio po niset; po priten thirrjet e orës.",
     "recoveryFailed": "{name}: rikuperimi i daljes audio nuk mund të vendosej në radhë."

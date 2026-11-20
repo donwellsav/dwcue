@@ -330,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: Audioausgabe angehalten — keine Clock-Callbacks.",
+    "lost": "{name}: Audioausgabe verloren — wird automatisch neu verbunden.",
     "queued": "{name}: Ausgabe bleibt angehalten. Wiederherstellung eingereiht; Clock-Callbacks werden abgewartet.",
     "starting": "{name}: Audioausgabe wird gestartet; Clock-Callbacks werden abgewartet.",
     "recoveryFailed": "{name}: Wiederherstellung der Audioausgabe konnte nicht eingereiht werden."
