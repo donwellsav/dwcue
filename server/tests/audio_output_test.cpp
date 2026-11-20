@@ -1130,7 +1130,10 @@ void test_slow_period_clock_is_not_a_stall(const std::filesystem::path& tone) {
     master->runtime_state.store(DeviceRuntimeState::Running);
     master->clock_master.store(true);
     master->reset_requested.store(false);
-    master->callback_period_frames.store(960);   // 20 ms between callbacks
+    // 100 ms between callbacks: its allowance (two periods, 200 ms) is far
+    // beyond a slow machine's scheduling delays, and far beyond the two
+    // render blocks (10.7 ms) the clock used to allow every output.
+    master->callback_period_frames.store(4800);
     const auto now = CallbackLivenessMonitor::Clock::now();
     master->callback_liveness.arm(0, now);
     f.device->callback_liveness.arm(0, now);
@@ -1146,19 +1149,19 @@ void test_slow_period_clock_is_not_a_stall(const std::filesystem::path& tone) {
     };
     f.engine.start(false);
     check(waiting.get_future().wait_for(std::chrono::seconds{1}) == std::future_status::ready &&
-              master->clock_master.load(), "slow period: the 20 ms output paces the renderer");
+              master->clock_master.load(), "slow period: the 100 ms output paces the renderer");
     std::this_thread::sleep_for(std::chrono::milliseconds{12});
     f.drain(2 * block);                                 // the other output runs low
     std::this_thread::sleep_for(std::chrono::milliseconds{3});
     const bool kept = master->clock_master.load() && !f.device->clock_master.load();
-    const auto deadline = CallbackLivenessMonitor::Clock::now() + std::chrono::milliseconds{200};
+    const auto deadline = CallbackLivenessMonitor::Clock::now() + std::chrono::milliseconds{2000};
     while (!f.device->clock_master.load() && CallbackLivenessMonitor::Clock::now() < deadline) {
         f.drain(block / 4);                             // keeps calling back; the master never does
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
     }
     const bool promoted = f.device->clock_master.load();
     f.engine.stop();
-    check(kept, "slow period: a 15 ms gap within a 20 ms cadence keeps the clock where it is");
+    check(kept, "slow period: a 15 ms gap within a 100 ms cadence keeps the clock where it is");
     check(promoted, "slow period: a real stall still hands the clock to the live output");
 }
 
@@ -1359,6 +1362,32 @@ void test_restart_while_playing_declicks(const std::filesystem::path& tone) {
     check(largest_step < 0.12f && f.item->stats().read_ahead_underruns == misses &&
               f.item->stats().transport == liveplay::audio::TransportState::Playing,
           "restart while playing: ramps out and back in, with no miss");
+}
+
+// On an output that calls back every 20 ms (Windows, Bluetooth), the ramp out
+// of a restart is rendered up to 20 ms after the restart asks for it. The jump
+// waits for it instead of cutting the old audio mid-wave.
+void test_restart_on_slow_output_declicks(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.render(3);
+    for (int i = 0; i < 40; ++i) { f.render(); (void)f.drain(); }
+    auto restart = std::async(std::launch::async, [&] { f.item->seek_seconds(0.0); });
+    float previous = 0.0f, largest_step = 0.0f;
+    bool first = true;
+    for (int i = 0; i < 12 || restart.wait_for(std::chrono::seconds{0}) != std::future_status::ready; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds{20});   // the output's next callback
+        f.render();
+        const auto out = f.drain();
+        for (std::size_t n = 0; n < block; ++n) {
+            if (!first) largest_step = std::max(largest_step, std::fabs(out[n * 2] - previous));
+            previous = out[n * 2];
+            first = false;
+        }
+        if (i > 400) break;
+    }
+    restart.get();
+    std::printf("restart on a 20 ms output: largest step %.3f\n", largest_step);
+    check(largest_step < 0.12f, "restart on a 20 ms output: the old audio ramps out, no cut");
 }
 
 // The window after a restart's jump and before seek_seconds returns: the
@@ -1567,11 +1596,8 @@ void test_fading_jump_keeps_its_ramp_in(const std::filesystem::path& tone) {
             window_done.store(true);
             continue;
         }
-        // Until the jump reaches its window, give its thread time to get
-        // there: a busy machine must not let the loop run out first.
-        if (!seen) std::this_thread::sleep_for(std::chrono::milliseconds{2});
         r.step(seen);
-        if (i > 300) break;
+        if (i > 400) break;
     }
     jump.get();
     r.f.item->after_seek_unlock_for_test_ = {};
@@ -2279,6 +2305,7 @@ int main() {
     test_pause_resume_ramps(tone);
     test_rego_during_fade_ramps(tone);
     test_restart_while_playing_declicks(tone);
+    test_restart_on_slow_output_declicks(tone);
     test_restart_window_ramps_in_once(tone);
     test_stuck_jump_stops(tone);
     test_ramps_turn_round_from_their_level(tone);

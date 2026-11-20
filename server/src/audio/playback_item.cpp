@@ -20,6 +20,14 @@
 
 namespace liveplay::audio {
 
+// How long a jump (a restart, a seek while playing) waits for its ramp out to
+// play before it flushes the old audio. The ramp out is one render block, but
+// the renderer only renders when an output has room: on an output that calls
+// back every 20 ms or more (Windows, Bluetooth), or on a busy machine, that can
+// be several blocks away. Flushing first cuts the old audio mid-wave, a click.
+// A healthy output finishes it long before this; only a stalled one waits it out.
+constexpr auto kJumpRampOutWait = std::chrono::milliseconds{100};
+
 namespace {
 
 // Edges that would otherwise click (a stop during a fade, pause, resume, a
@@ -563,7 +571,7 @@ void PlaybackItem::arm_declick_locked(bool rising, float from_level) noexcept {
 }
 
 void PlaybackItem::wait_for_jump_ramp_out() noexcept {
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{16};
+    const auto deadline = std::chrono::steady_clock::now() + kJumpRampOutWait;
     while (std::chrono::steady_clock::now() < deadline) {
         begin_render_exclusion();
         const bool done = declick_remaining_ == 0 || seek_hold_revision_ == 0;
@@ -627,8 +635,8 @@ void PlaybackItem::seek_seconds(double seconds) {
         }
     } hold_release{*this, release_hold};
     if (audible) {
-        // The ramp plays on the audio thread; allow it 10 ms and a block, no more.
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{16};
+        // The ramp plays on the audio thread (see kJumpRampOutWait).
+        const auto deadline = std::chrono::steady_clock::now() + kJumpRampOutWait;
         while (std::chrono::steady_clock::now() < deadline) {
             begin_render_exclusion();
             const bool ramped = declick_remaining_ == 0 || seek_hold_revision_ != revision;
