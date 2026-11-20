@@ -641,6 +641,8 @@ struct FfmpegDataSource {
     bool seeking = false;
     bool demux_eof = false;
     bool drain_sent = false;
+    // Damaged frames skipped in a row; a whole run of them is a broken file.
+    int damaged_run = 0;
     std::vector<float> pcm;
     std::vector<ma_channel> channel_map;
     ma_uint64 pcm_offset = 0;
@@ -703,13 +705,20 @@ int64_t frame_position(const FfmpegDataSource& source, const AVFrame& frame) {
                         AVRational{1, static_cast<int>(source.sample_rate)});
 }
 
+// One damaged frame (a bad sector, a broken download) is skipped, as players
+// do: the cue plays on with a few milliseconds missing. Only a long run of
+// them, a file broken beyond that, stops the cue.
+constexpr int kMaxDamagedRun = 64;
+
 int decode_next(FfmpegDataSource& source) {
     source.pcm.clear();
     source.pcm_offset = 0;
 
     for (;;) {
         const int received = avcodec_receive_frame(source.codec, source.frame);
+        if (received == AVERROR_INVALIDDATA && ++source.damaged_run <= kMaxDamagedRun) continue;
         if (received == 0) {
+            source.damaged_run = 0;
             const int capacity = swr_get_out_samples(source.resampler, source.frame->nb_samples);
             if (capacity <= 0) {
                 av_frame_unref(source.frame);
@@ -784,6 +793,7 @@ int decode_next(FfmpegDataSource& source) {
             }
             const int sent = avcodec_send_packet(source.codec, source.packet);
             av_packet_unref(source.packet);
+            if (sent == AVERROR_INVALIDDATA && ++source.damaged_run <= kMaxDamagedRun) continue;
             if (sent < 0 && sent != AVERROR(EAGAIN)) return sent;
             break;
         }

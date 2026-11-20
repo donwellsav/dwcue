@@ -410,6 +410,22 @@ void PlaybackItem::play() {
         declick_remaining_ = 0;
         pause_peek_frames_ = 0;
         seek_refill_wait_ = false;
+        // Nor to a duck change made while it was stopped (render applies
+        // those only while it plays): a release must not make it start at
+        // the ducked level and swell up. A duck still held starts ducked.
+        const auto revision = duck_command_revision_.load(std::memory_order_acquire);
+        if ((revision & 1U) == 0 && revision != duck_applied_revision_) {
+            const float target = duck_command_target_linear_.load(std::memory_order_relaxed);
+            const bool active = duck_command_active_.load(std::memory_order_relaxed);
+            if (duck_command_revision_.load(std::memory_order_acquire) == revision) {
+                duck_target_linear_ = target;
+                duck_active_ = active;
+                duck_applied_revision_ = revision;
+            }
+        }
+        duck_duration_samples_ = 0;
+        duck_elapsed_samples_ = 0;
+        if (duck_active_) duck_current_linear_.store(duck_target_linear_, std::memory_order_release);
     }
 
     // Reset natural-end flags so take_natural_end() doesn't fire for a

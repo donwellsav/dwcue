@@ -1792,6 +1792,28 @@ void test_follow_leaves_when_the_source_finishes(const std::filesystem::path& qu
     }
 }
 
+// A duck released while its cue was stopped is not applied on the next
+// play: the cue starts at its own level instead of ducked and swelling up.
+void test_duck_release_while_stopped(const std::filesystem::path& quiet) {
+    Fixture f(quiet);
+    f.render(3);
+    f.item->set_duck_gain_linear(0.1f, std::chrono::milliseconds{0}, true);
+    for (int i = 0; i < 4; ++i) { f.render(); (void)f.drain(); }
+    f.item->stop_now();
+    f.item->set_duck_gain_linear(1.0f, std::chrono::milliseconds{500}, false);  // released while stopped
+    check(f.item->prime(2.0, 0.0), "duck: the cue prepares again");
+    f.item->play();
+    float early_peak = 0.0f;
+    for (int i = 0; i < 4; ++i) {
+        f.render();
+        const auto out = f.drain();
+        // The limiter's lookahead delays the first output; take the last two blocks.
+        if (i >= 2) for (std::size_t n = 0; n < block; ++n) early_peak = std::max(early_peak, std::fabs(out[n * 2]));
+    }
+    std::printf("duck release while stopped: first peak %.4f\n", early_peak);
+    check(early_peak > 0.09f, "duck: a release made while stopped leaves the next play at its own level");
+}
+
 void test_busy_follow(const std::filesystem::path& quiet,
                       const std::filesystem::path& next) {
   for (const bool source_busy : {false, true}) {
@@ -2108,6 +2130,7 @@ int main() {
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);
     test_follow_leaves_when_the_source_finishes(quiet, next);
+    test_duck_release_while_stopped(quiet);
     test_exact_follow(quiet, next, true);
     test_busy_follow(quiet, next);
     test_main_channel_map(quiet, center, 0.7f * 0.70710678f, 0.7f * 0.70710678f);

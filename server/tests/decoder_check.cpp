@@ -1,5 +1,6 @@
 #include "liveplay/audio/decoder.hpp"
 
+#include "damaged_aac_fixture.hpp"
 #include "video_only_fixture.hpp"
 
 #include <algorithm>
@@ -206,6 +207,38 @@ int main(int argc, char** argv) {
         if (file_count != before_count) {
             std::cerr << path << ": decoder created a file\n";
             ++failures;
+        }
+    }
+
+    // One damaged frame in a compressed file (a bad sector, a broken
+    // download) must not stop the cue: the decoder skips it and plays on.
+    if (!self_tests.empty()) {
+        const auto damaged = fs::temp_directory_path() / "liveplay-decoder-self-test" / "damaged.aac";
+        {
+            std::ofstream out(damaged, std::ios::binary);
+            out.write(reinterpret_cast<const char*>(kDamagedAac), kDamagedAacLen);
+        }
+        const auto config = liveplay::audio::decoder_config(ma_format_f32, 0, 48000);
+        ma_decoder decoder{};
+        if (liveplay::audio::decoder_init_file(damaged, config, decoder) != MA_SUCCESS) {
+            std::cerr << damaged << ": open failed\n";
+            ++failures;
+        } else {
+            std::vector<float> pcm(4096 * 8);
+            ma_uint64 total = 0;
+            ma_result result = MA_SUCCESS;
+            while (result == MA_SUCCESS && total < 48000 * 10) {
+                ma_uint64 frames = 0;
+                result = ma_decoder_read_pcm_frames(&decoder, pcm.data(), 4096, &frames);
+                total += frames;
+            }
+            ma_decoder_uninit(&decoder);
+            // 2 s of audio, less the one skipped frame (1024 samples).
+            if (result != MA_AT_END || total < 48000 * 2 - 3000) {
+                std::cerr << damaged << ": stopped at a damaged frame (result="
+                          << ma_result_description(result) << ", frames=" << total << ")\n";
+                ++failures;
+            }
         }
     }
     return failures == 0 ? 0 : 1;
