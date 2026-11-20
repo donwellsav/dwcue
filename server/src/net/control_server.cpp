@@ -3496,6 +3496,16 @@ void ControlServer::install_routes() {
 
                 // Content-Length is derived from r.body by Crow — never set
                 // it manually (a duplicate header would corrupt framing).
+#ifdef LIVEPLAY_TEST_HOOKS
+                // Stands in for storage that stops answering mid-show.
+                if (const char* gate = std::getenv("DWCUE_TEST_MEDIA_READ_GATE");
+                    gate && fs::exists(gate)) {
+                    std::ofstream{std::string{gate} + ".entered", std::ios::app} << '.';
+                    const auto release = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+                    while (fs::exists(gate) && std::chrono::steady_clock::now() < release)
+                        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+                }
+#endif
                 std::ifstream in(file_path, std::ios::binary);
                 if (!in) return json_err(404, "not found");
                 in.seekg(static_cast<std::streamoff>(begin), std::ios::beg);
