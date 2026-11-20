@@ -854,11 +854,13 @@ export function useVideoOutput(
     // Background cues keep advancing before they become the picture again.
     const displayed = newestActiveCue();
     let stoppedAt: number | undefined;
+    const stoppedItems: string[] = [];
     for (const meter of meters.items) {
       const key = `cue:${meter.cue_id}`;
       const cue = activeCues.get(key);
       if (meter.transport === TRANSPORT_STOPPED) {
         activeCues.delete(key);
+        if (cue) stoppedItems.push(cue.itemUuid);
         if (cue && cue === displayed) stoppedAt = meter.playhead_seconds;
         continue;
       }
@@ -868,6 +870,8 @@ export function useVideoOutput(
       }
     }
     if (stoppedAt !== undefined) renderNewestActive(false, stoppedAt);
+    // Cue to Continue belongs to the pass that just stopped.
+    for (const uuid of stoppedItems) followOverrides.delete(uuid);
     const active = newestActiveCue();
     if (!active?.cueId) return;
     const meter = meters.items.find((item) => item.cue_id === active.cueId);
