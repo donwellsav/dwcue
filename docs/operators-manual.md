@@ -504,6 +504,8 @@ Pause/Resume holds or resumes an active cue. Stop uses its configured stop behav
 
 Use **Cue to Continue** to finish the active loop pass and advance. It resolves the saved item/index destination or next sibling. You can still set a different **Up Next** before the pass ends. With no valid target, the pass ends without another cue. The saved End Behavior stays Loop.
 
+To move on at once instead, press GO. While a loop plays, **Up Next** shows where Cue to Continue would go, so GO starts that cue straight away. The next cue's ducking decides whether the loop stops, ducks or keeps playing. Stopping a loop by hand leaves the same cue as **Up Next**.
+
 If Cue to Continue stalls, use **Stop All**. The controller reconnects if the command is still awaiting acknowledgment. After it verifies the show, arm a ready backup and press GO. The canceled command cannot change a later playback of the loop.
 
 Stop, replay, removal, media replacement, Stop All or project switch cancels that one-pass continuation. A later replay uses the authored ending. **Toggle Loop** instead edits the project’s End Behavior between Loop and Nothing; it does not restore a prior ending. Autosave saves this edit; otherwise it remains dirty. Choose Cue to Continue for a one-pass release.

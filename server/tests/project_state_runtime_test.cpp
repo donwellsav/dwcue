@@ -3559,8 +3559,17 @@ void test_manual_go_parity(const std::filesystem::path& wav) {
     doc["items"][0]["endBehavior"] = {{"action", "loop"}};
     state.replace_full_document(doc);
     check(wait_ready(state), "manual GO: loop media ready"); close_devices(engine);
-    check(state.trigger_item("go-a") && next() == "go-a" && state.go() == "go-a",
-          "manual GO: a loop advertises and accepts the same replay target");
+    // "Use Loop on the bed if it should play until the next GO."
+    check(state.trigger_item("go-a") && next() == "go-b", "manual GO: a playing loop shows the next cue as Up Next");
+    check(state.go() == "go-b" && on_air(state, engine, "go-b"), "manual GO: GO on a playing loop starts the next cue");
+    state.stop_all_cues(0);
+    doc["items"][0]["endBehavior"] = {{"action", "loop"}, {"targetUuid", "go-c"}};
+    state.replace_full_document(doc);
+    check(wait_ready(state), "manual GO: loop with a continuation ready"); close_devices(engine);
+    check(state.trigger_item("go-a") && next() == "go-c",
+          "manual GO: a loop with a continuation target shows it as Up Next, as Cue to Continue would go");
+    check(state.stop_item("go-a") && state.next_item_override() == "go-c",
+          "manual GO: stopping that loop by hand arms its continuation");
     state.stop_all_cues(0);
 
     doc = document(json::array({cue("go-a", "next"), cue("go-b", "nothing"),
@@ -3569,7 +3578,7 @@ void test_manual_go_parity(const std::filesystem::path& wav) {
     state.replace_full_document(doc);
     check(wait_ready(state), "manual GO: overlapping media ready"); close_devices(engine);
     check(state.trigger_item("go-c") && state.trigger_item("go-a"), "manual GO: reverse trigger order starts");
-    check(next() == "go-b" && state.go() == "go-b", "manual GO: overlapping cues use advertised document order");
+    check(next() == "go-b" && state.go() == "go-b", "manual GO: overlapping cues go on from the cue fired last");
     check(state.set_next_item_override("go-unavailable") && next() == "go-unavailable" && state.go().empty() &&
           state.next_item_override() == "go-unavailable" && on_air(state, engine, "go-a"),
           "manual GO: refused output preserves override and current playback");

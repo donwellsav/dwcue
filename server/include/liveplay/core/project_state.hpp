@@ -930,7 +930,7 @@ private:
     // Resolve Cue to Continue's target without consulting endBehavior.action:
     // targetUuid, then targetIndex, then the next sibling. Caller holds mutex_.
     std::string resolve_loop_continuation_target_locked(
-        const std::string& current_uuid);
+        const std::string& current_uuid) const;
 
     // Server-authoritative "Up Next" arming for cues with no end behaviour
     // (endBehavior.action == "nothing") when settings.autoCueNextWithoutEnd-

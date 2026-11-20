@@ -987,8 +987,12 @@ test('Up Next follows the cue fired last, then playlist order', () => {
   activeCues.value = new Map([['quickplay', { triggerSeq: 9 }], ['c', { triggerSeq: 5 }], ['a', { triggerSeq: 6 }]]);
   assert.equal(next.value, 'b', 'a was fired again after c');
   activeCues.value = new Map(['quickplay', 'c', 'a'].map(uuid => [uuid, {}]));
+  // GO on a playing loop moves on, where Cue to Continue would go.
   currentProject.value.items[0].endBehavior.action = 'loop';
-  assert.equal(next.value, 'a');
+  assert.equal(next.value, 'b', 'a playing loop shows the next cue');
+  Object.assign(currentProject.value.items[0].endBehavior, { targetUuid: 'd' });
+  assert.equal(next.value, 'd', 'a loop with a continuation target shows it');
+  currentProject.value.items[0].endBehavior = { action: 'loop' };
   activeCues.value = new Map([['a', {}]]);
   currentProject.value.items[0].endBehavior.action = 'nothing';
   assert.equal(next.value, 'b');
@@ -996,6 +1000,8 @@ test('Up Next follows the cue fired last, then playlist order', () => {
   assert.equal(next.value, 'b');
   currentProject.value.settings.autoCueNextWithoutEndBehavior = false;
   assert.equal(next.value, null);
+  currentProject.value.items[0].endBehavior = { action: 'loop' };
+  assert.equal(next.value, 'b', 'the setting for cues ending in Nothing does not hold a loop');
 });
 
 test('MIDI Master Volume changes only the Global Master after its first reference sample', () => {

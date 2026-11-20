@@ -259,6 +259,11 @@ export const useAudioEngine = () => {
       .filter((item) => activeCues.value.has(item.uuid) && item.type === 'audio')
       .map((item, order) => ({ item, order, seq: activeCues.value.get(item.uuid)?.triggerSeq ?? 0 }))
       .sort((a, b) => b.seq - a.seq || a.order - b.order);
+    const nextInOrder = (audioItem: AudioItem): string | null => {
+      const nextIndex = [...audioItem.index];
+      nextIndex[nextIndex.length - 1]++;
+      return findItemByIndex(nextIndex)?.uuid ?? null;
+    };
     for (const { item } of firedLast) {
       const audioItem = item as AudioItem;
       // QuickPlay-only cues live outside the playlist tree (sentinel index
@@ -270,16 +275,21 @@ export const useAudioEngine = () => {
           if (currentProject.value.settings?.autoCueNextWithoutEndBehavior === false) break;
           // Prepare a manual GO target without starting the next cue.
         case 'next': {
-          const nextIndex = [...audioItem.index];
-          nextIndex[nextIndex.length - 1]++;
-          const nextItem = findItemByIndex(nextIndex);
-          if (nextItem) return nextItem.uuid;
+          const next = nextInOrder(audioItem);
+          if (next) return next;
           break;
         }
-        case 'loop':
-          // A looping cue replays itself — surface it as its own "up next"
-          // so the UI reflects the end behaviour instead of showing nothing.
-          return audioItem.uuid;
+        case 'loop': {
+          // GO while a loop plays moves on, where Cue to Continue would go:
+          // a target kept on its ending, otherwise the next cue.
+          const end = audioItem.endBehavior as { targetUuid?: string; targetIndex?: number[] };
+          if (end.targetUuid) return end.targetUuid;
+          const next = Array.isArray(end.targetIndex)
+            ? findItemByIndex(end.targetIndex)?.uuid ?? null
+            : nextInOrder(audioItem);
+          if (next) return next;
+          break;
+        }
         case 'goto-item':
           if (audioItem.endBehavior.targetUuid) return audioItem.endBehavior.targetUuid;
           break;

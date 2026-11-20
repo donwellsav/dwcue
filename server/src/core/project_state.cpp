@@ -3542,7 +3542,8 @@ std::string ProjectState::resolve_next_item_locked(const std::string& current_uu
     if (!found) return {};
 
     if (manual_go) {
-        if (end_action == "loop") return current_uuid;
+        // GO while a loop plays moves on, where Cue to Continue would go.
+        if (end_action == "loop") return resolve_loop_continuation_target_locked(current_uuid);
         if (end_action == "nothing" || end_action.empty()) {
             const auto settings = doc.find("settings");
             if (settings != doc.end() && settings->is_object() &&
@@ -3600,8 +3601,9 @@ std::string ProjectState::resolve_next_item_locked(const std::string& current_uu
 }
 
 std::string ProjectState::resolve_loop_continuation_target_locked(
-    const std::string& current_uuid) {
-    json& doc = document_;
+    const std::string& current_uuid) const {
+    // Read-only walk; for_each_item takes json& (see resolve_next_item_locked).
+    json& doc = const_cast<json&>(document_);
     const json* current = nullptr;
     std::string parent_uuid;
     for_each_item(doc, [&](json& item, const std::string& parent) {
@@ -7435,8 +7437,8 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
         if (is_quick_play_cue(*found)) return;
         // The natural end of a cue with an ending is advanced by the sequencer
         // itself. A manual stop takes the cue out of the sequencer, so it arms
-        // what GO would start: a Go To ending's target, otherwise (Play Next,
-        // Loop) the next cue in order.
+        // what GO would start: a Go To ending's target, a Loop's continuation,
+        // otherwise the next cue in order.
         std::string action = "nothing";
         if (found->contains("endBehavior") && (*found)["endBehavior"].is_object())
             action = json_get_or((*found)["endBehavior"], "action",
@@ -7445,6 +7447,8 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
         if (action != "nothing" && !was_manual) return;
         if (action == "goto-item" || action == "goto-index")
             next_to_arm = resolve_next_item_locked(stopped_uuid, /*manual_go=*/false);
+        else if (action == "loop")
+            next_to_arm = resolve_loop_continuation_target_locked(stopped_uuid);
 
         // Advance to the next item in document order. A cue that is the last
         // in its group goes on to the item after the group (and so on up),
