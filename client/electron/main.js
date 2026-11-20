@@ -2798,6 +2798,8 @@ let videoOutputRestarting = false;
 // Automatic Restart Output after a crash or a hang (see scheduleVideoOutputRestart).
 const videoOutputAutoRestarts = [];
 let videoOutputAutoRestartTimer = null;
+let videoOutputReadyTimer = null;
+let videoOutputReadyLimitMs = 15_000;
 let videoOutputPictureHealth = null;
 const videoOutputDiagnostics = [];
 let capturingVideoStandby = false;
@@ -3218,7 +3220,7 @@ function loadVideoOutputWindow(outputWindow) {
     : outputWindow.loadFile(path.join(__dirname, '../.output/public/index.html'), { query: { videoOutput: '1' } });
 }
 
-function failVideoOutputRenderer(outputWindow, message) {
+function failVideoOutputRenderer(outputWindow, message, restoreOperator = true) {
   if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed()) return;
   videoOutputRendererReady = false;
   videoOutputRecoveryRequired = true;
@@ -3230,7 +3232,10 @@ function failVideoOutputRenderer(outputWindow, message) {
   const connection = videoOutputTestCardConnection;
   videoOutputTestCardConnection = null;
   void testCardPlayback.update(null, connection);
-  if (mainWindow && !mainWindow.isDestroyed()) {
+  // Bring the operator back once: an output that keeps failing, and the
+  // restarts that follow, must not take the keyboard away every few seconds.
+  const repeated = videoOutputAutoRestarts.some(at => Date.now() - at < 60_000);
+  if (restoreOperator && !repeated && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show();
     mainWindow.focus();
   }
@@ -3281,15 +3286,29 @@ function scheduleVideoOutputRestart(outputWindow) {
   videoOutputAutoRestarts.push(now);
   videoOutputAutoRestartTimer = setTimeout(() => {
     videoOutputAutoRestartTimer = null;
-    if (videoOutputWindow === outputWindow && !outputWindow.isDestroyed()) void restartVideoOutputWindow();
+    if (!quitConfirmed && videoOutputWindow === outputWindow && !outputWindow.isDestroyed())
+      void restartVideoOutputWindow();
   }, videoOutputAutoRestarts.length > 3 ? 10_000 : 250);
+}
+
+// A restarted output that loads but never reports its picture ready is
+// restarted again rather than left black.
+function watchVideoOutputReady(outputWindow) {
+  clearTimeout(videoOutputReadyTimer);
+  videoOutputReadyTimer = setTimeout(() => {
+    videoOutputReadyTimer = null;
+    if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed() || videoOutputRendererReady
+      || videoOutputRecoveryRequired || videoOutputRestarting) return;
+    failVideoOutputRenderer(outputWindow, 'Video Output did not become ready. Audience output is held black while it restarts.');
+    scheduleVideoOutputRestart(outputWindow);
+  }, videoOutputReadyLimitMs);
 }
 
 async function restartVideoOutputWindow() {
   const outputWindow = videoOutputWindow;
   if (!outputWindow || outputWindow.isDestroyed() || videoOutputRestarting) return videoOutputStatus();
   videoOutputRestarting = true;
-  failVideoOutputRenderer(outputWindow, 'Restarting Video Output; audience output is held black.');
+  failVideoOutputRenderer(outputWindow, 'Restarting Video Output; audience output is held black.', false);
   try {
     if (!outputWindow.webContents.isCrashed()) {
       await new Promise((resolve, reject) => {
@@ -3305,9 +3324,11 @@ async function restartVideoOutputWindow() {
     if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed()) return videoOutputStatus();
     videoOutputRecoveryRequired = false;
     videoOutputPlaybackError = null;
+    videoOutputRendererReady = false;
     await loadVideoOutputWindow(outputWindow);
+    watchVideoOutputReady(outputWindow);
   } catch (error) {
-    failVideoOutputRenderer(outputWindow, `Video Output restart failed: ${error.message}`);
+    failVideoOutputRenderer(outputWindow, `Video Output restart failed: ${error.message}`, false);
   } finally {
     if (videoOutputWindow === outputWindow) {
       videoOutputRestarting = false;
@@ -3532,7 +3553,9 @@ function createVideoOutputWindow() {
   outputWindow.webContents.on('unresponsive', () => {
     if (videoOutputWindow !== outputWindow) return;
     videoOutputRendererResponsive = false;
-    failVideoOutputRenderer(outputWindow, 'Video Output is not responding. Audience output is held black; it restarts when it answers.');
+    failVideoOutputRenderer(outputWindow, 'Video Output is not responding. Audience output is held black while it restarts.');
+    // A hang that never ends (a GPU or decoder deadlock) is restarted too.
+    scheduleVideoOutputRestart(outputWindow);
   });
   outputWindow.webContents.on('responsive', () => {
     if (videoOutputWindow !== outputWindow) return;
@@ -3606,6 +3629,10 @@ function closeVideoOutputWindow({ preserveSession = false, playbackError = null 
   videoOutputRendererResponsive = true;
   videoOutputRecoveryRequired = false;
   videoOutputRestarting = false;
+  clearTimeout(videoOutputAutoRestartTimer);
+  videoOutputAutoRestartTimer = null;
+  clearTimeout(videoOutputReadyTimer);
+  videoOutputReadyTimer = null;
   videoOutputPictureHealth = null;
   resetVideoOutputGeometry();
   const connection = videoOutputTestCardConnection;

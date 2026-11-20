@@ -339,6 +339,7 @@ function createVideoWindowHarness() {
     videoOutputRendererReady: false, videoOutputRendererResponsive: true,
     videoOutputRecoveryRequired: false, videoOutputRestarting: false, videoOutputDiagnostics: [], URL,
     videoOutputAutoRestarts: [], videoOutputAutoRestartTimer: null, quitConfirmed: false,
+    videoOutputReadyTimer: null, videoOutputReadyLimitMs: 300,
     videoOutputPowerSaveId: null,
     videoOutputWindowsPreservingSession: new WeakSet(),
     readVideoOutputConfig: () => ({}), resolveVideoOutputDisplay: () => null,
@@ -382,7 +383,7 @@ function createVideoWindowHarness() {
   vm.runInNewContext([
     mainSource.slice(geometryStart, geometryEnd),
     productionFunctionSource('resetVideoOutputGeometry'),
-    ...['sanitizeVideoPlaybackErrorMessage', 'loadVideoOutputWindow', 'failVideoOutputRenderer', 'markVideoOutputReady', 'scheduleVideoOutputRestart', 'restartVideoOutputWindow', 'requireVideoOutputIpc']
+    ...['sanitizeVideoPlaybackErrorMessage', 'loadVideoOutputWindow', 'failVideoOutputRenderer', 'markVideoOutputReady', 'scheduleVideoOutputRestart', 'watchVideoOutputReady', 'restartVideoOutputWindow', 'requireVideoOutputIpc']
       .filter(name => mainSource.includes('function ' + name + '(')).map(productionFunctionSource),
     productionFunctionSource('createVideoOutputWindow'),
     ...['parkVideoOutputWindow', 'restoreVideoOutputWindow', 'installVideoOutputWatchdog']
@@ -503,7 +504,7 @@ test('responsive events and old ready handshakes cannot uncover a failed output'
 // The audience screen recovers by itself: nobody has to find Restart Output
 // in the middle of a show.
 for (const failure of ['crash', 'hang']) {
-  test(`an output that ${failure === 'crash' ? 'crashes' : 'hangs, then answers again,'} restarts by itself behind its cover`, async () => {
+  test(`an output that ${failure === 'crash' ? 'crashes' : 'hangs and never answers'} restarts by itself behind its cover`, async () => {
     const h = createVideoWindowHarness();
     const output = h.open();
     let loads = 0;
@@ -514,14 +515,8 @@ for (const failure of ['crash', 'hang']) {
     output.webContents.mainFrame = {};
     const ready = () => h.context.markVideoOutputReady({ sender: output.webContents, senderFrame: output.webContents.mainFrame });
     ready();
-    if (failure === 'crash') {
-      output.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 7 });
-    } else {
-      output.webContents.emit('unresponsive');
-      await new Promise(resolve => setTimeout(resolve, 400));
-      assert.equal(loads, 0, 'a window that has not answered is not restarted under itself');
-      output.webContents.emit('responsive');
-    }
+    if (failure === 'crash') output.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 7 });
+    else output.webContents.emit('unresponsive');   // a deadlock: it never answers
     assert.equal(output.videoOutputCover.visible, true);
     await new Promise(resolve => setTimeout(resolve, 400));
     assert.equal(loads, 1, 'the output reloaded without the operator');
@@ -531,6 +526,41 @@ for (const failure of ['crash', 'hang']) {
     assert.deepEqual(h.powerStops, []);
   });
 }
+
+test('a restarted output that never reports ready is restarted again, and the operator is brought back once', async () => {
+  const h = createVideoWindowHarness();
+  const output = h.open();
+  let loads = 0;
+  output.loadURL = () => { loads++; return Promise.resolve(); };
+  output.webContents.isCrashed = () => true;
+  output.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 7 });
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(loads, 1, 'restarted once');
+  // Its page loads but never says it is ready (the harness limit is 300 ms).
+  await new Promise(resolve => setTimeout(resolve, 800));
+  assert.equal(loads, 2, 'restarted again instead of staying black');
+  assert.equal(output.videoOutputCover.visible, true);
+  assert.deepEqual(h.operator, ['show', 'focus'], 'the operator window is brought forward for the first failure only');
+  h.context.closeVideoOutputWindow({ preserveSession: true });
+});
+
+test('closing the output drops its pending restart, so a new output restarts on its own failure', async () => {
+  const h = createVideoWindowHarness();
+  const old = h.open();
+  old.webContents.isCrashed = () => true;
+  old.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 7 });
+  assert.notEqual(h.context.videoOutputAutoRestartTimer, null);
+  h.context.closeVideoOutputWindow({ preserveSession: true });
+  assert.equal(h.context.videoOutputAutoRestartTimer, null, 'the old window\'s restart is dropped');
+  const replacement = h.open();
+  let loads = 0;
+  replacement.loadURL = () => { loads++; return Promise.resolve(); };
+  replacement.webContents.isCrashed = () => true;
+  replacement.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 7 });
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(loads, 1, 'the new window restarts');
+  h.context.closeVideoOutputWindow({ preserveSession: true });
+});
 
 test('operator restart kills a hung renderer behind the same cover before loading', async () => {
   const h = createVideoWindowHarness();
