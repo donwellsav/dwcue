@@ -47,7 +47,7 @@ This manual uses the English labels. Change language through **Settings → User
 | GO | The **Play Next** action; Space is its default shortcut. |
 | QuickPlay | An independent quick-play copy in the QuickPlays bank. |
 | Engine / server | The process that owns audio playback and the active project. |
-| Portable archive | A ZIP-based `.dwcuepack` export containing one active show and the files in its dedicated project folder. |
+| Portable archive | A ZIP-based `.dwcuepack` export containing one active show, the files in its dedicated project folder, and any media the show links from elsewhere. |
 
 ## 2. First setup and a safe first cue
 
@@ -847,7 +847,7 @@ Tick the files to remove and choose **Move … to the Trash** (the **Recycle Bin
 4. Wait for **Archive saved to** before using the resulting **.dwcuepack**. Export saves the show before packaging. Resolve any save failure before retrying.
 5. Import it into a separate rehearsal location and verify cues, media readiness, images, and playback with the original source paths unavailable.
 
-> **CAUTION — Export packages the project folder.** Keep the show in a dedicated folder. Do not choose a folder containing credentials, unrelated documents, personal media, or application data and assume export will include only the files shown in the playlist. Externally linked media also needs a deliberate portability check.
+> **CAUTION — Export packages the project folder.** Keep the show in a dedicated folder. Do not choose a folder containing credentials, unrelated documents, personal media, or application data and assume export will include only the files shown in the playlist. Media the show links from outside the folder, such as a music drive, is copied into the archive's `media` folder, and the archived show points at those copies; the show on this computer is not changed. A linked file that is missing when you export cannot be included: check the imported copy.
 
 Device assignments, physical patching, local MIDI mappings, and video display identity need checking on the destination machine. A successful archive extraction is not a substitute for that check.
 
