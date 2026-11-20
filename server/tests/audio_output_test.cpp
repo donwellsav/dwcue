@@ -1055,6 +1055,54 @@ void test_stalled_clock_failover(const std::filesystem::path& tone) {
           "clock failover: the live secondary keeps PCM before the watchdog marks the clock stalled");
 }
 
+// A clock master whose stream calls back every 20 ms (a Windows output's
+// usual 10 ms period is the same case) is quiet between callbacks by design:
+// a gap within its own cadence must not hand the clock to another output
+// (a hard resync on Main); a real stall still does.
+void test_slow_period_clock_is_not_a_stall(const std::filesystem::path& tone) {
+    Fixture f(tone, false, true);
+    auto master = std::make_shared<AudioEngine::Device>();
+    master->id = DeviceId{"slow-period-clock"};
+    master->channels = 2;
+    master->scratch.resize(block * 2);
+    master->ring = std::make_unique<ma_pcm_rb>();
+    if (ma_pcm_rb_init(ma_format_f32, 2, AudioEngine::kDeviceRingBlocks * block,
+                       nullptr, nullptr, master->ring.get()) != MA_SUCCESS) std::abort();
+    master->runtime_state.store(DeviceRuntimeState::Running);
+    master->clock_master.store(true);
+    master->reset_requested.store(false);
+    master->callback_period_frames.store(960);   // 20 ms between callbacks
+    const auto now = CallbackLivenessMonitor::Clock::now();
+    master->callback_liveness.arm(0, now);
+    f.device->callback_liveness.arm(0, now);
+    master->callback_entries.record_entry();
+    f.engine.devices_.push_back(master);
+    f.engine.publish_device_snapshot_locked();
+    f.render(3);
+
+    std::promise<void> waiting;
+    bool signalled = false;
+    f.engine.before_render_wait_snapshot_for_test_ = [&] {
+        if (!std::exchange(signalled, true)) waiting.set_value();
+    };
+    f.engine.start(false);
+    check(waiting.get_future().wait_for(std::chrono::seconds{1}) == std::future_status::ready &&
+              master->clock_master.load(), "slow period: the 20 ms output paces the renderer");
+    std::this_thread::sleep_for(std::chrono::milliseconds{12});
+    f.drain(2 * block);                                 // the other output runs low
+    std::this_thread::sleep_for(std::chrono::milliseconds{3});
+    const bool kept = master->clock_master.load() && !f.device->clock_master.load();
+    const auto deadline = CallbackLivenessMonitor::Clock::now() + std::chrono::milliseconds{200};
+    while (!f.device->clock_master.load() && CallbackLivenessMonitor::Clock::now() < deadline) {
+        f.drain(block / 4);                             // keeps calling back; the master never does
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    const bool promoted = f.device->clock_master.load();
+    f.engine.stop();
+    check(kept, "slow period: a 15 ms gap within a 20 ms cadence keeps the clock where it is");
+    check(promoted, "slow period: a real stall still hands the clock to the live output");
+}
+
 void test_single_output_underrun(const std::filesystem::path& tone) {
     Fixture f(tone);
     f.render(2);
@@ -2158,6 +2206,7 @@ int main() {
     test_bursty_secondary_output(quiet);
     test_bounced_output_starts_clean(quiet);
     test_stalled_clock_failover(quiet);
+    test_slow_period_clock_is_not_a_stall(quiet);
     test_single_output_underrun(quiet);
     test_output_delay(quiet);
     test_resampled_loop_seam(seamless_44k(dir));

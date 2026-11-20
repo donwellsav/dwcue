@@ -532,6 +532,10 @@ private:
         // Every reset request is numbered, so one made after an earlier reset
         // was applied (an output dropping out again while it refilled, then
         // coming back) is applied too, not mistaken for the one already done.
+        // How often the native stream calls back, in mix-rate frames (0 when
+        // unknown). A Windows output often calls back every 10 ms, longer
+        // than two render blocks: its quiet gaps are normal, not a stall.
+        std::atomic<std::uint32_t>  callback_period_frames{0};
         std::atomic<std::uint64_t>  reset_epoch{0};
         std::uint64_t               applied_reset_epoch = 0; // render thread only
         void request_reset() noexcept {
@@ -703,6 +707,7 @@ private:
                                bool reopen = false) noexcept;
     static bool reopen_native_device(Device& device) noexcept;
     bool reset_device_if_requested(Device& device) noexcept;
+    static void note_callback_period(Device& device) noexcept;
 
     Device* find_device_locked(const DeviceId& id) const;
     const OutputChannelState* output_state_locked(MasterChannelIndex master) const;

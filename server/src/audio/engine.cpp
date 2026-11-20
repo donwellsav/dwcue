@@ -959,6 +959,7 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         ma_pcm_rb_uninit(dev->ring.get());
         return {};
     }
+    note_callback_period(*dev);
     if (dev->ma_dev->playback.name[0] != '\0') {
         dev->display_name = dev->ma_dev->playback.name;
     }
@@ -1824,6 +1825,18 @@ float AudioEngine::read_master_gain_reduction_db(MasterChannelIndex master) cons
 // native stream for it, found by name (or the system default), and keep
 // everything else: the engine id, ring, routes and owners. Caller holds the
 // device's native mutex with the old stream stopped.
+// Record how often a just-initialised native stream calls back, at the mix
+// rate, so a long but regular period is not mistaken for a stall.
+void AudioEngine::note_callback_period(Device& device) noexcept {
+    if (!device.ma_dev) return;
+    const auto& playback = device.ma_dev->playback;
+    const std::uint32_t mix_rate = device.sample_rate;
+    const auto rate = playback.internalSampleRate > 0 ? playback.internalSampleRate : mix_rate;
+    const auto frames = static_cast<std::uint64_t>(playback.internalPeriodSizeInFrames) *
+        mix_rate / std::max<std::uint32_t>(1, rate);
+    device.callback_period_frames.store(static_cast<std::uint32_t>(frames), std::memory_order_relaxed);
+}
+
 bool AudioEngine::reopen_native_device(Device& device) noexcept {
     try {
         if (!device.lifecycle) return false;
@@ -1863,6 +1876,7 @@ bool AudioEngine::reopen_native_device(Device& device) noexcept {
         if (ma_device_init(device.native_context, &cfg, fresh.get()) != MA_SUCCESS) return false;
         ma_device_uninit(device.ma_dev.get());
         device.ma_dev = std::move(fresh);
+        note_callback_period(device);
         {
             std::lock_guard identity{device.identity_mutex};
             device.native_backend = device.ma_dev->pContext->backend;
@@ -2234,6 +2248,15 @@ void AudioEngine::render_loop() {
 
                 const auto now = CallbackLivenessMonitor::Clock::now();
                 const auto callback_grace = block_duration * 2;
+                // An output is quiet for longer than this only when stalled:
+                // two of its own callback periods, two render blocks at least.
+                const auto grace_for = [&](const Device& dev) {
+                    const auto period = static_cast<long long>(
+                        dev.callback_period_frames.load(std::memory_order_relaxed));
+                    const auto own = std::chrono::nanoseconds{
+                        2 * period * 1'000'000'000LL / static_cast<long long>(cfg_.mix_sample_rate)};
+                    return std::max<std::chrono::nanoseconds>(callback_grace, own);
+                };
                 std::shared_ptr<Device> first_healthy, draining_secondary;
                 for (const auto& dev : *device_snap) {
                     const bool healthy =
@@ -2252,7 +2275,7 @@ void AudioEngine::render_loop() {
                     if (dev->clock_master.load(std::memory_order_acquire)) {
                         clock_master = dev;
                     } else if (!draining_secondary &&
-                               now - dev->render_callback_progress < callback_grace &&
+                               now - dev->render_callback_progress < grace_for(*dev) &&
                                !dev->reset_requested.load(std::memory_order_acquire) &&
                                dev->ring_occupancy_frames.load(std::memory_order_relaxed) <=
                                    cfg_.render_block * 2) {
@@ -2264,7 +2287,7 @@ void AudioEngine::render_loop() {
                 if (!clock_master) {
                     clock_master = first_healthy;
                 } else if (draining_secondary &&
-                           now - clock_master->render_callback_progress >= callback_grace) {
+                           now - clock_master->render_callback_progress >= grace_for(*clock_master)) {
                     clock_master = draining_secondary;
                 }
 
