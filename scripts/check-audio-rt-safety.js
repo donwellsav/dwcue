@@ -84,11 +84,16 @@ assert.match(renderBlock, /kMasterQueueBlocks\s*:\s*dev->clock_controller\.targe
   'secondary recovery must refill to its clock target while the master uses its own queue');
 assert.match(engine, /notificationCallback\s*=\s*&AudioEngine::ma_notification_callback/,
   'device loss/reroute/interruption notifications must be wired');
+// Each output keeps its native identity apart from ma_dev (an output busy
+// recovering is still listed); a reroute must move that identity with it.
 assert.match(
   enumerateDevices,
-  /ma_device_id_equal\(&dev->ma_dev->playback\.id, &entry\.native_id\)/,
+  /ma_device_id_equal\(&dev->native_id, &entry\.native_id\)/,
   'enumeration must follow the native output ID across default-device reroutes',
 );
+assert.match(engine,
+  /case ma_device_notification_type_rerouted:[\s\S]{0,400}device->native_id = notification->pDevice->playback\.id;/,
+  'a reroute must move the output\'s kept identity to the new hardware');
 assert.doesNotMatch(enumerateDevices, /ma_context_(?:init|get_devices|get_device_info|uninit)\(/,
   'device status must not execute native discovery on a control or broadcast worker');
 assert.ok(
