@@ -1685,6 +1685,9 @@ void test_exact_follow(const std::filesystem::path& quiet,
     const auto item = f.engine.find_cue(target);
     check(item->prime(2.0, 0.0), "follow target read-ahead prepared without playback");
     constexpr std::uint64_t endpoint = 1'013;
+    // A follow leaves at its source's end: here an Out point with no fade.
+    f.item->set_fade_out(std::chrono::milliseconds{0});
+    f.item->set_out_point_seconds((endpoint + 0.5) / 48'000.0);
     const auto follow = f.engine.schedule_follow(f.item->id(), target, endpoint);
     check(follow && item->stats().transport == TransportState::Stopped,
           "scheduled follow leaves its prepared target stopped");
@@ -1724,6 +1727,69 @@ void test_exact_follow(const std::filesystem::path& quiet,
           f.item->stats().transport == TransportState::Stopped &&
           item->stats().playhead_frame == block * 8 - endpoint,
           "follow fires once at its exact source frame and preserves target cursor");
+}
+
+// A follow leaves when its source has finished. A soft Out point with a
+// fade plays the fade out first; a compressed file's estimated length may
+// end before or after the audio really does.
+void test_follow_leaves_when_the_source_finishes(const std::filesystem::path& quiet,
+                                                 const std::filesystem::path& next) {
+    // mode 0: Out point with a 20 ms fade. 1: the source's real end is past
+    // the estimated end frame. 2: the estimate is past the real end.
+    for (const int mode : {0, 1, 2}) {
+        Fixture f(quiet);
+        const auto target = f.engine.load_cue_no_route(next);
+        const auto mixer = f.engine.snapshot_topology()->mixers.front()->id();
+        f.engine.route_item_source_to_mixer(target, 0, mixer, 0, 0.0f);
+        const auto item = f.engine.find_cue(target);
+        if (!item || !item->prime(2.0, 0.0)) { check(false, "follow end: target prepared"); continue; }
+        constexpr std::uint64_t out_frame = 1'000;
+        std::uint64_t real_end = out_frame, scheduled = out_frame;
+        if (mode == 0) {
+            f.item->set_fade_out(std::chrono::milliseconds{20});
+            real_end = out_frame + 960;            // the fade plays out
+        } else if (mode == 1) {
+            f.item->set_fade_out(std::chrono::milliseconds{0});
+            scheduled = out_frame - 300;           // the estimate is short
+        } else {
+            f.item->set_fade_out(std::chrono::milliseconds{0});
+            scheduled = out_frame + 2'000;         // the estimate is long
+        }
+        f.item->set_out_point_seconds((out_frame + 0.5) / 48'000.0);
+        const auto follow = f.engine.schedule_follow(f.item->id(), target, scheduled);
+        if (!follow) { check(false, "follow end: scheduled"); continue; }
+        std::size_t time = 0, source_last = 0, target_first = 0;
+        for (int i = 0; i < 16; ++i) {
+            f.render();
+            const auto out = f.drain();
+            for (std::size_t s = 0; s < block; ++s, ++time) {
+                const float v = out[s * 2];
+                if (v > 0.005f && v < 0.15f) source_last = time;          // quiet.wav at 0.1
+                if (v > 0.15f && target_first == 0) target_first = time;  // next.wav from 0.2
+            }
+        }
+        const bool fired = follow->status.load() == PreparedFollow::State::Fired;
+        // Measured on the output, which the limiter delays equally for both.
+        Limiter reference;
+        reference.configure(48'000, -1.0f);
+        std::vector<float> delayed(block * 2, 0.1f);
+        reference.process(delayed.data(), delayed.size());
+        const auto delay = static_cast<std::size_t>(std::find_if(
+            delayed.begin(), delayed.end(), [](float x) { return x != 0; }) - delayed.begin());
+        const auto played_to = source_last + 1;
+        std::printf("follow end mode %d: source to %zu, target from %zu, fired %d\n",
+                    mode, played_to, target_first, fired ? 1 : 0);
+        const bool not_early = target_first >= played_to;
+        const bool no_gap = target_first <= played_to + block;
+        // The fade starts at the block split after the Out point, and its last
+        // few dozen samples fall under the detection level.
+        const bool whole_source = played_to <= real_end + delay + (mode == 0 ? block : 2) &&
+            played_to + (mode == 0 ? 64 : 2) >= real_end + delay;
+        check(fired && not_early && no_gap && whole_source,
+              mode == 0 ? "follow end: an Out point's fade plays out before the next cue starts"
+              : mode == 1 ? "follow end: audio past an estimated end is not cut"
+                          : "follow end: a source ending short of its estimate hands over within a block");
+    }
 }
 
 void test_busy_follow(const std::filesystem::path& quiet,
@@ -2041,6 +2107,7 @@ int main() {
     test_clock_zero_crossing(ramp);
     test_clock_resync(ramp);
     test_exact_follow(quiet, next, false);
+    test_follow_leaves_when_the_source_finishes(quiet, next);
     test_exact_follow(quiet, next, true);
     test_busy_follow(quiet, next);
     test_main_channel_map(quiet, center, 0.7f * 0.70710678f, 0.7f * 0.70710678f);

@@ -2461,7 +2461,14 @@ void AudioEngine::render_one_block(const Topology& topo) {
             }
             const auto stats = follow->source->stats();
             if (stats.transport == TransportState::Paused) continue;
-            if (stats.playhead_frame >= follow->end_frame) {
+            // The follow starts when its source has finished: at the file's
+            // end, or once the fade from a soft Out point has played out. A
+            // compressed file's length is an estimate, so the end frame only
+            // marks where to split the block: firing there cut a fade (and
+            // started the next cue a fade early), cut audio still playing, or
+            // missed a source that ended short of it. A manual stop or a
+            // decode error has already cancelled the follow above.
+            if (stats.transport == TransportState::Stopped) {
                 auto expected = PreparedFollow::State::Armed;
                 if (!follow->status.compare_exchange_strong(
                         expected, PreparedFollow::State::Firing,
@@ -2476,10 +2483,7 @@ void AudioEngine::render_one_block(const Topology& topo) {
                 follow->status.store(fired ? PreparedFollow::State::Fired
                     : retry ? PreparedFollow::State::Armed : PreparedFollow::State::Cancelled,
                                       std::memory_order_release);
-            } else if (stats.transport == TransportState::Stopped) {
-                follow->status.store(PreparedFollow::State::Cancelled,
-                                      std::memory_order_release);
-            } else {
+            } else if (stats.playhead_frame < follow->end_frame) {
                 count = std::min<std::size_t>(
                     count, follow->end_frame - stats.playhead_frame);
             }
