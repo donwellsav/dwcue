@@ -733,7 +733,7 @@ A capture is saved with the show: it is there when the show is opened again and 
 
 ### Recover a frozen or failed video output
 
-Use **Settings → Video Output** to read output status. Renderer crashes and hangs latch a native black cover over the existing audience window while the operator controls remain available. Choose **Restart Output** in the header or in Video Output settings. The cover stays until the replacement view is ready. The replacement follows the current native cue state. Check the active cue before another GO. **Copy diagnostics** captures current output information for investigation.
+Use **Settings → Video Output** to read output status. Renderer crashes and hangs latch a native black cover over the existing audience window while the operator controls remain available. The output then restarts by itself: at once after a crash, and as soon as a hung output answers again. One that keeps crashing restarts every 10 seconds. **Restart Output** in the header or in Video Output settings does the same at any time. The cover stays until the replacement view is ready. The replacement follows the current native cue state. Check the active cue before another GO. **Copy diagnostics** captures current output information for investigation.
 
 **Waiting for cue details** appears in the operator status area while Video Output retries. If the details arrive during the cue, picture starts at its current playhead. The playlist, GO, and Stop All remain available.
 
