@@ -690,6 +690,7 @@ function createClient() {
       const projectScoped = resource.startsWith('/api/project/items') || resource.startsWith('/api/project/quickplay')
         || ['/api/project/save', '/api/project/document', '/api/project/theme', '/api/project/settings',
           '/api/project/repair', '/api/project/close', '/api/project/load',
+          '/api/project/backups', '/api/project/backups/restore',
           '/api/waveform_generate'].includes(resource);
       if (projectScoped) {
         const session = headers.get('X-DWCUE-Project-Session') ?? projectSessionId.value;
