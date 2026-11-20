@@ -410,7 +410,7 @@ If Preview is not configured, its cue-row control opens Project Settings. Previe
 
 ### Respond to an audio-output warning
 
-A missing or stalled audio callback shows a red header warning even while cue controls remain available. Confirm the intended interface and cable, then use the header's **Reconnect audio output** button. The button remains available after the warning text expires. Reconnecting restarts the device stream in place and retains its routes and cue identities. Wait for the recovery indicator to clear after callbacks return, then verify the physical destination before another GO. Explicit Stop and current recovery choices still take precedence over pending playback recovery.
+A missing, stalled or lost audio output shows a red header warning even while cue controls remain available. A lost output, such as an interface that was unplugged, reads **audio output lost — reconnecting by itself**: the app reopens it within about two seconds of its return. Confirm the intended interface and cable, then use the header's **Reconnect audio output** button if it does not come back. The button remains available after the warning text expires. Reconnecting restarts the device stream in place and retains its routes and cue identities. Wait for the recovery indicator to clear after callbacks return, then verify the physical destination before another GO. Explicit Stop and current recovery choices still take precedence over pending playback recovery.
 
 Secondary devices follow the master clock using continuous correction. Their queue absorbs callback bursts and adds around 11 ms of buffering at 48 kHz compared with the previous software. The master queue stays at three blocks. Check recurring buffer warnings and align independently clocked outputs through the actual line-level destinations during rehearsal.
 
@@ -600,7 +600,7 @@ Open **Settings → Shortcuts**, select a binding, and press the desired key. Fo
 
 Keyboard assignments belong to the project. QuickPlay slots **1 through 9** default to their matching number keys, and **0** fires slot **10**. **Shift+1** fires slot **11**, **Shift+2** fires slot **12**, and so on through **Shift+0** for slot **20**. Saved assignments take precedence. **Clear shortcut** disables a tile's key. **Reset to Defaults** in **Settings → Shortcuts** restores the defaults. Use **Enter** to set the selected cue as Up Next, **Space** to fire it, **Shift+Enter** to play the selected cue immediately, and **L** to toggle Loop. **P** and **Shift+Space** both pause or resume. **C** cues a loop or QuickPlay to continue at the end of its pass. **J** jumps to the next cue. **F1** also plays the selected audio cue.
 
-The main workspace accepts playback and QuickPlay shortcuts with the bank visible, hidden, or detached. The mapped **Stop All** works even while the shortcut editor is learning a keyboard or MIDI assignment.
+The main workspace accepts playback and QuickPlay shortcuts, and MIDI, with the bank visible, hidden, or detached, and in a show with no QuickPlays. In the detached QuickPlays window, the transport keys (Play Next, Up Next, Pause / Resume and the rest) act in the main window; QuickPlay keys and Stop All act directly. The mapped **Stop All** works even while the shortcut editor is learning a keyboard or MIDI assignment. Dragging a cue's progress bar or ticking a box does not take the keys away: Space still runs Play Next.
 
 In the playlist workspace, Enter, Space, and Escape keep their assigned show actions after Tab moves focus to a button. Text fields own typing while you edit. Keyboard/MIDI Pause/Resume and Toggle Loop target the first active cue, otherwise the selected audio cue. Use the cue's visible control if several cues are active and you need to target a specific one.
 
@@ -614,7 +614,7 @@ In the playlist workspace, Enter, Space, and Escape keep their assigned show act
 
 1. Connect the controller before the show and open **Settings → MIDI**.
 2. Select the intended **MIDI Device**. **All Devices** listens broadly; choosing a particular controller reduces accidental input from other connected equipment.
-3. Choose **Learn** beside the required action and operate the intended pad, button, or fader once.
+3. Choose **Learn** beside the required action and operate the intended pad, button, or fader once. A fader or knob mapped to an action fires once as it passes the middle of its travel, and again only after it has come back below it.
 4. Check the captured channel and message, resolve any conflict with **Cancel** or **Reassign** above the MIDI binding list, and leave Learn mode. **Escape** still runs Stop All.
 5. In a safe rehearsal, test exactly one intended action, including arming and retrigger policy for QuickPlays.
 6. Repeat on the backup computer. MIDI mappings are machine settings, not part of the project document.
@@ -807,7 +807,7 @@ The save-recovery chart separates an Autosave toggle's forced save from later of
 
 **Autosave** is on by default. Changing the toggle in either direction force-saves the current document together with the preference. Do not use the toggle merely to experiment with an unsaved show. After Autosave is off, subsequent edits change the active engine document and remain dirty until an explicit save; after it is on, subsequent accepted edits request persistence. It is not an audio safety lock. Use **File → Save Project** for a deliberate durable checkpoint. New and converted shows save to their canonical `.dwcue` path.
 
-When a command asks about unsaved changes, finish that decision first. If you choose **Save**, wait for it to finish. Run any declined command again after the first action completes.
+While anything is playing, opening or creating another show (File → Open Project, Open Recent, a show file opened from the desktop, New Show) first asks in the lower panel. **Keep playing** is the default and leaves the show running; **Stop and switch** stops everything and carries on. When a command asks about unsaved changes, finish that decision first. If you choose **Save**, wait for it to finish. Run any declined command again after the first action completes.
 
 A failed autosave or manual save leaves **Save failed** and **Retry** in the header. Correct the path, permissions, or storage fault, then choose **Retry**. Retry saves the current show even with Autosave off. The indicator clears once a save of the current changes succeeds. A detached QuickPlay save failure is also reported in the detached QuickPlays window and the settings panel.
 
@@ -886,7 +886,7 @@ Use **Choose Another Show** to open the standard show picker from the load-error
 
 ### Connection loss is not proof that sound stopped
 
-The **Connection lost** panel opens below the playlist in the main window. The last verified playlist stays visible for reference while cue starts and edits wait. **Retry now** retries the same server. Its **Restart** action relaunches the client. The engine and Program can continue running. **Exit** closes the client. Before restart or exit, the desktop removes client-owned AV resources. If cleanup fails, the diagnostic remains visible and the client stays open so you can correct the cause and retry. Verify the destination and credential before retrying a failed connection.
+The **Connection lost** panel opens below the playlist in the main window. It also opens when the engine stays silent for 8 seconds with its connection still open, which means it has stopped answering; the app keeps connecting again. In Local mode, if the engine has stopped for good, the app starts it again by itself and then offers to reopen the show. The last verified playlist stays visible for reference while cue starts and edits wait. **Retry now** retries the same server. Its **Restart** action relaunches the client. The engine and Program can continue running. **Exit** closes the client. Before restart or exit, the desktop removes client-owned AV resources. If cleanup fails, the diagnostic remains visible and the client stays open so you can correct the cause and retry. Verify the destination and credential before retrying a failed connection.
 
 In a detached QuickPlays window, the reconnect notice opens below the tiles. **Stop All** remains available in the header, and **Escape** runs Stop All while the notice is open even if you remapped the shortcut. QuickPlay starts wait for the active show to be verified. If the engine has no show or a different show is active, detached QuickPlays wait for a fresh, verified show from the main window. **Stop All** and **Escape** stay available while waiting.
 
