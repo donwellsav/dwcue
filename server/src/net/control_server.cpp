@@ -2467,7 +2467,15 @@ void ControlServer::install_routes() {
                     (j.contains("enabled") && j["enabled"].is_boolean())
                         ? j["enabled"].get<bool>()
                         : !engine_.limiter_enabled();
-                engine_.set_limiter_enabled(enabled);
+                // Through the show's settings, as the app's own switch does: a
+                // bypass set from a remote is saved with the show, and the
+                // next settings save cannot switch the limiter back on.
+                if (!state_.patch_settings(json{{"disableLimiter", !enabled}}))
+                    return json_err(409, "the limiter could not be changed");
+                broadcast_doc_patch(json{
+                    {"type", "doc_patch"}, {"op", "settings_patched"},
+                    {"settings", state_.full_document()["settings"]},
+                });
                 broadcast_doc_patch(json{
                     {"type", "doc_patch"}, {"op", "limiter_changed"},
                     {"enabled", enabled},

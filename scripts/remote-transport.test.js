@@ -13,7 +13,7 @@ const token = 'remote-transport-test-token';
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // The routes a Companion button or other remote uses.
-test('remote Pause leaves a stopping cue alone, and GO says why it did nothing', { timeout: 30000 }, async t => {
+test('remote Pause leaves a stopping cue alone, GO says why it did nothing, a limiter bypass is saved', { timeout: 30000 }, async t => {
   const folder = await mkdtemp(path.join(os.tmpdir(), 'dwcue-remote-'));
   const reserve = net.createServer();
   await new Promise(resolve => reserve.listen(0, '127.0.0.1', resolve));
@@ -39,9 +39,10 @@ test('remote Pause leaves a stopping cue alone, and GO says why it did nothing',
     await rm(folder, { recursive: true, force: true });
   });
 
-  const rest = (route, body) => new Promise((resolve, reject) => {
+  const rest = (route, body, method) => new Promise((resolve, reject) => {
     const request = http.request({
-      host: '127.0.0.1', port, path: route, agent: false, method: body === undefined ? 'GET' : 'POST', timeout: 5000,
+      host: '127.0.0.1', port, path: route, agent: false, method: method ?? (body === undefined ? 'GET' : 'POST'),
+      timeout: 5000,
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     }, response => {
       const chunks = [];
@@ -104,4 +105,13 @@ test('remote Pause leaves a stopping cue alone, and GO says why it did nothing',
   const go = await rest('/api/transport/go', {});
   assert.equal(go.status, 409, `GO of an armed cue that cannot start: ${go.body}`);
   assert.match(go.body, /Up Next could not start/);
+
+  // A remote limiter bypass belongs to the show: the next settings save, which
+  // carries every setting, must not switch the limiter back on.
+  assert.equal((await rest('/api/master/limiter', { enabled: false })).status, 200);
+  const settings = JSON.parse((await rest('/api/project/header')).body).settings;
+  assert.equal(settings.disableLimiter, true, 'the bypass is in the show');
+  assert.equal((await rest('/api/project/settings', { ...settings, autoSave: false }, 'PATCH')).status, 200);
+  assert.equal(JSON.parse((await rest('/api/master/limiter')).body).enabled, false,
+    'another setting saved afterwards leaves the limiter bypassed');
 });
