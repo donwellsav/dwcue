@@ -53,6 +53,11 @@ constexpr SampleRate kRate = 48'000;
 constexpr FrameCount kBlock = 256;
 int failures = 0;
 
+// How long a test lets an operation take to show it is not blocked behind
+// one the test is holding. The held one never finishes until the test lets it
+// go, so this can be generous for a slow build machine and still prove it.
+constexpr auto kUnblocked = std::chrono::seconds{2};
+
 void check(bool ok, const char* name) {
     std::printf("%-58s %s\n", name, ok ? "PASS" : "FAIL");
     if (!ok) ++failures;
@@ -440,7 +445,7 @@ void test_unchanged_setters_skip_decoder(PlaybackItem& item) {
         else if (mode == 1) item.set_loop(true, 0.01);
         else item.set_ltc_frame_rate(LTCFrameRate::Fps25);
     });
-    check(repeat.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready,
+    check(repeat.wait_for(kUnblocked) == std::future_status::ready,
           "unchanged native properties return before a held decoder lock");
     Output output;
     check(item.playback_revision() == revision && item.render_block(output.channels, 2, kBlock) == kBlock,
@@ -1156,7 +1161,7 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
             else if (mode == 4) item.stop_with_fade(std::chrono::milliseconds{20});
             else item.stop_now();
         });
-        const bool responsive = control.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+        const bool responsive = control.wait_for(kUnblocked) == std::future_status::ready;
         check(responsive, "live edit stall: Stop/Pause completes before storage release");
         if (responsive && mode == 4) {
             for (int i = 0; i < 8; ++i) item.render_block(output.channels, 2, kBlock);
@@ -1211,11 +1216,11 @@ void test_queued_seek_intents(const std::filesystem::path& wav) {
         std::unique_lock storage{item.decoder_mutex_};
         auto previous = item.playback_revision();
         auto first = std::async(std::launch::async, [&] { item.seek_seconds(0.5); });
-        for (int i = 0; i < 150 && item.playback_revision() == previous; ++i)
+        for (int i = 0; i < 3000 && item.playback_revision() == previous; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds{1});
         const auto first_revision = item.playback_revision();
         auto second = std::async(std::launch::async, [&] { item.seek_seconds(0.75); });
-        for (int i = 0; i < 150 && item.playback_revision() == first_revision; ++i)
+        for (int i = 0; i < 3000 && item.playback_revision() == first_revision; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds{1});
         check(first_revision != previous && item.playback_revision() != first_revision,
               "queued seek: each pending destination invalidates older playback intent before I/O");
@@ -1365,7 +1370,7 @@ void test_loop_and_concurrent_stress(PlaybackItem& item) {
         item.set_ltc_enabled((i & 1u) != 0);
         if (i + 1 == seeks / 2) {
             const auto before = rendered.load();
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
             while (rendered.load() == before && std::chrono::steady_clock::now() < deadline)
                 std::this_thread::sleep_for(std::chrono::milliseconds{1});
             check(rendered.load() > before, "stress: concurrent consumer renders decoded PCM between seek bursts");

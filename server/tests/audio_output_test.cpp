@@ -47,6 +47,11 @@ std::size_t rt_deallocations = 0;
 constexpr std::size_t block = 256;
 constexpr float ceiling = 0.891250938f; // -1 dB
 
+// How long a test lets an operation take to show it is not blocked behind
+// one the test is holding. The held one never finishes until the test lets it
+// go, so this can be generous for a slow build machine and still prove it.
+constexpr auto kUnblocked = std::chrono::seconds{2};
+
 void check(bool ok, const char* label) {
     std::printf("%-72s %s\n", label, ok ? "PASS" : "FAIL");
     if (!ok) ++failures;
@@ -140,7 +145,7 @@ struct NativeDeviceGate {
     }
     ~NativeDeviceGate() { ma_context_uninit(&context); }
     bool wait_entered() {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
         while (!entered.load() && std::chrono::steady_clock::now() < deadline)
             std::this_thread::sleep_for(std::chrono::milliseconds{1});
         return entered.load();
@@ -161,7 +166,7 @@ void test_fresh_device_list_finds_new_output() {
     const auto catalog = engine.device_catalog_;
     {
         std::unique_lock lock{catalog->mutex};
-        catalog->ready.wait_for(lock, std::chrono::seconds{2}, [&] { return !catalog->refreshing; });
+        catalog->ready.wait_for(lock, std::chrono::seconds{5}, [&] { return !catalog->refreshing; });
         catalog->devices.clear();   // as it was before the output was plugged in
         catalog->has_snapshot = true;
         catalog->next_refresh = std::chrono::steady_clock::now() + std::chrono::hours{1};
@@ -220,16 +225,16 @@ void test_initial_device_start_keeps_controls() {
         engine.stop_all(); engine.set_master_ceiling_db(-6.0f);
         return !engine.find_cue(CueId{"missing"});
     });
-    check(controls.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready,
+    check(controls.wait_for(kUnblocked) == std::future_status::ready,
           "Stop All, settings and cue introspection survive held device start/cleanup");
     std::future<DeviceId> reuse;
     if (!original.empty()) {
         reuse = std::async(std::launch::async, [&] { return engine.open_device_by_name(original.value); });
-        check(reuse.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready,
+        check(reuse.wait_for(kUnblocked) == std::future_status::ready,
               "already opened runtime device can be acquired during duplicate cleanup");
     }
     if (mode != 0)
-        check(open.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready,
+        check(open.wait_for(kUnblocked) == std::future_status::ready,
               "duplicate or failed start returns while its owned cleanup is held");
     gate.hold_start.store(false); gate.hold_uninit.store(false);
     const auto id = open.get();
@@ -275,11 +280,11 @@ void test_held_device_recovery_lifetime() {
         else if (mode == 1) engine->close_device(id);
         else engine.reset();
     });
-    const bool responsive = finish.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+    const bool responsive = finish.wait_for(kUnblocked) == std::future_status::ready;
     check(responsive, "recovery lifetime: Stop, Close and destruction do not wait for native recovery");
     if (responsive && mode == 0) check(engine->start(), "recovery lifetime: engine can restart before old native work returns");
     gate.hold_stop.store(false); gate.hold_start.store(false); finish.get();
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
     while (device->recovery_in_progress.load() && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
     check(!device->started.load() && (mode != 0 || ma_device_get_state(device->ma_dev.get()) == ma_device_state_stopped),
@@ -361,7 +366,7 @@ void test_open_while_an_output_recovers() {
     {
         std::unique_lock recovering{device->native_mutex};  // a reopen in progress
         auto open = std::async(std::launch::async, [&] { return engine.open_device_by_name("NULL Playback Device", 2); });
-        const bool answered = open.wait_for(std::chrono::seconds{2}) == std::future_status::ready;
+        const bool answered = open.wait_for(std::chrono::seconds{5}) == std::future_status::ready;
         recovering.unlock();
         again = open.get();
         check(answered, "open while recovering: the open does not wait on the busy output");
@@ -433,7 +438,7 @@ void test_device_list_read_without_rebuild() {
     auto& catalog = *engine.device_catalog_;
     {
         std::unique_lock lock{catalog.mutex};
-        catalog.ready.wait_for(lock, std::chrono::seconds{2}, [&] { return catalog.has_snapshot && !catalog.refreshing; });
+        catalog.ready.wait_for(lock, std::chrono::seconds{5}, [&] { return catalog.has_snapshot && !catalog.refreshing; });
         catalog.next_refresh = std::chrono::steady_clock::now() - std::chrono::seconds{1};  // a rebuild is due
     }
     (void)engine.enumerate_devices(false);
@@ -450,7 +455,7 @@ void test_device_list_read_without_rebuild() {
     }
     check(rebuilt, "device list: asking for the list still rebuilds it when due");
     std::unique_lock lock{catalog.mutex};
-    catalog.ready.wait_for(lock, std::chrono::seconds{2}, [&] { return !catalog.refreshing; });
+    catalog.ready.wait_for(lock, std::chrono::seconds{5}, [&] { return !catalog.refreshing; });
 }
 
 void test_device_catalog_survives_native_stall() {
@@ -463,7 +468,7 @@ void test_device_catalog_survives_native_stall() {
     const auto catalog = engine->device_catalog_;
     if (!cold) (void)engine->enumerate_devices();
     const auto wait_catalog = [&] {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
         for (;;) {
             { std::lock_guard lock{catalog->mutex}; if (!catalog->refreshing) return true; }
             if (std::chrono::steady_clock::now() >= deadline) return false;
@@ -475,7 +480,7 @@ void test_device_catalog_survives_native_stall() {
     engine->close_device(id);
     check(gate.wait_entered(), "device catalog: actual native uninit holds backend serialization");
     auto status = std::async(std::launch::async, [&] { return engine->enumerate_devices(); });
-    const bool responsive = status.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+    const bool responsive = status.wait_for(kUnblocked) == std::future_status::ready;
     check(responsive, "device catalog: enumeration/status never waits behind a hung native operation");
     std::vector<DeviceInfo> devices;
     if (responsive) { devices = status.get(); engine.reset(); }
@@ -517,7 +522,7 @@ void test_catalog_follows_native_reroute() {
     rerouted.info.id = DeviceId{"Rerouted"}; rerouted.info.display_name = "Rerouted";
     {
         std::unique_lock lock{engine.device_catalog_->mutex};
-        engine.device_catalog_->ready.wait_for(lock, std::chrono::seconds{2}, [&] { return !engine.device_catalog_->refreshing; });
+        engine.device_catalog_->ready.wait_for(lock, std::chrono::seconds{5}, [&] { return !engine.device_catalog_->refreshing; });
         engine.device_catalog_->devices = {original, rerouted};
         engine.device_catalog_->has_snapshot = true;
         engine.device_catalog_->next_refresh = std::chrono::steady_clock::now() + std::chrono::hours{1};
@@ -623,18 +628,18 @@ void test_stop_before_render_wait_snapshot(const std::filesystem::path& source) 
         proceed.wait();
     };
     check(f.engine.start(), "render shutdown: software output starts");
-    check(reached.wait_for(std::chrono::seconds{2}) == std::future_status::ready,
+    check(reached.wait_for(std::chrono::seconds{5}) == std::future_status::ready,
           "render shutdown: full ring holds the renderer before it snapshots the wait counter");
     auto& counter = f.engine.callback_state_->consumption_counter;
     const auto before = counter.load(std::memory_order_acquire);
     auto stop = std::async(std::launch::async, [&] { f.engine.stop(); });
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
     while (counter.load(std::memory_order_acquire) == before && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
     check(counter.load(std::memory_order_acquire) != before && !f.engine.is_running(),
           "render shutdown: stop sends its wake before the renderer snapshots the counter");
     release.set_value();
-    const auto stopped = stop.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+    const auto stopped = stop.wait_for(kUnblocked) == std::future_status::ready;
     check(stopped, "render shutdown: a full ring cannot strand Stop after its wake");
     // Let a broken build report its failure and exit.
     for (int i = 0; i < 400 && stop.wait_for(std::chrono::milliseconds{5}) != std::future_status::ready; ++i) {
@@ -675,13 +680,13 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
         for (const auto& item : blocked)
             static_cast<ma_data_source_base*>(item->decoder_->pBackend)->vtable = &stalled;
         check(f.engine.start(), "blocked read: production engine workers start with software output");
-        for (int i = 0; i < 250 && entered.load(std::memory_order_acquire) < blocked_count; ++i)
+        for (int i = 0; i < 1500 && entered.load(std::memory_order_acquire) < blocked_count; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds{2});
         check(entered.load() == blocked_count, "blocked read: each requested backend is held inside actual read");
         if (scenario == 8) {
             const auto& item = blocked.front();
             auto retire = std::async(std::launch::async, [&] { f.engine.unload_cue(item->id()); });
-            check(retire.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready &&
+            check(retire.wait_for(kUnblocked) == std::future_status::ready &&
                       !f.engine.find_cue(item->id()) && !item->decoder_ready_.load(),
                   "blocked read: cue removal retires its worker without waiting for the native read");
             release.set_value(); retire.get();
@@ -694,7 +699,7 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
             f.engine.remove_mixer_channel(silent);
             f.engine.stop();
             auto restart = std::async(std::launch::async, [&] { return f.engine.start(); });
-            const bool restarted = restart.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+            const bool restarted = restart.wait_for(kUnblocked) == std::future_status::ready;
             check(restarted,
                   "blocked read: rebuilding an unrouted cue during restart does not wait for its read");
             bool routed = false;
@@ -709,7 +714,7 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
             }
             check(routed, "blocked read: restart retains the actual mono unity routes while storage is held");
             auto stop = std::async(std::launch::async, [&] { f.engine.stop_all(std::chrono::milliseconds{0}, true); });
-            check(stop.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready &&
+            check(stop.wait_for(kUnblocked) == std::future_status::ready &&
                       f.item->stats().transport == TransportState::Stopped,
                   "blocked read: route reconstruction does not block Stop All engine ownership");
             release.set_value(); check(restart.get(), "blocked read: routing restart is accepted");
@@ -725,16 +730,16 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
             std::weak_ptr workers = f.engine.decode_state_;
             blocked.clear();
             auto destroy = std::async(std::launch::async, [owner = std::move(fixture)]() mutable { owner.reset(); });
-            const bool retired = destroy.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+            const bool retired = destroy.wait_for(kUnblocked) == std::future_status::ready;
             check(retired, "blocked read: engine destruction does not wait for storage");
             if (retired) {
-                for (int i = 0; i < 250 && !unrelated.expired(); ++i)
+                for (int i = 0; i < 3000 && !unrelated.expired(); ++i)
                     std::this_thread::sleep_for(std::chrono::milliseconds{1});
                 check(unrelated.expired() && !retained.expired(),
                     "blocked read: only the in-flight decoder stays owned after engine destruction");
             }
             release.set_value(); destroy.get();
-            for (int i = 0; i < 1000 && (!retained.expired() || !workers.expired()); ++i)
+            for (int i = 0; i < 1500 && (!retained.expired() || !workers.expired()); ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds{2});
             check(retained.expired() && workers.expired(),
                   "blocked read: delayed return releases retained decoder and worker ownership");
@@ -743,7 +748,7 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
         bool stopped_before_release = true;
         if (scenario >= 2) {
             auto pause = std::async(std::launch::async, [&] { f.engine.stop(); });
-            stopped_before_release = pause.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+            stopped_before_release = pause.wait_for(kUnblocked) == std::future_status::ready;
             check(stopped_before_release, "blocked read: engine stop completes before storage release");
             if (stopped_before_release) {
                 pause.get();
@@ -800,7 +805,7 @@ void test_blocked_decoder_reads(const std::filesystem::path& source) {
         auto stop = std::async(std::launch::async, [&] {
             f.engine.stop_all(std::chrono::milliseconds{0}, true);
         });
-        check(stop.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready &&
+        check(stop.wait_for(kUnblocked) == std::future_status::ready &&
                   f.item->stats().transport == TransportState::Stopped,
               "blocked read: Stop All remains independent of held reads");
         std::vector<std::uint64_t> stopped_frames;
@@ -1439,7 +1444,7 @@ void test_restart_window_ramps_in_once(const std::filesystem::path& tone) {
     std::atomic<bool> in_window{false}, window_done{false};
     f.item->after_seek_unlock_for_test_ = [&] {
         in_window.store(true);
-        for (int i = 0; i < 1000 && !window_done.load(); ++i)
+        for (int i = 0; i < 3000 && !window_done.load(); ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds{1});
     };
     auto restart = std::async(std::launch::async, [&] { f.item->seek_seconds(0.25); });
@@ -1494,7 +1499,7 @@ struct JumpRig {
         std::this_thread::sleep_for(std::chrono::microseconds{block * 1'000'000 / 48'000});
     }
     void wait_for_hold() {
-        for (int i = 0; i < 200; ++i) {
+        for (int i = 0; i < 3000; ++i) {
             f.item->begin_render_exclusion();
             const bool held = f.item->seek_hold_revision_ != 0;
             f.item->end_render_exclusion();
@@ -1569,7 +1574,7 @@ void test_ramps_turn_round_from_their_level(const std::filesystem::path& tone) {
         r.f.item->after_seek_unlock_for_test_ = [&] {
             if (unlocks.fetch_add(1) != 0) return;
             in_window.store(true);
-            for (int i = 0; i < 1000 && !window_done.load(); ++i)
+            for (int i = 0; i < 3000 && !window_done.load(); ++i)
                 std::this_thread::sleep_for(std::chrono::milliseconds{1});
         };
         auto restart = std::async(std::launch::async, [&] { r.f.item->seek_seconds(0.25); });
@@ -1604,7 +1609,7 @@ void test_fading_jump_keeps_its_ramp_in(const std::filesystem::path& tone) {
     std::atomic<bool> in_window{false}, window_done{false};
     r.f.item->after_seek_unlock_for_test_ = [&] {
         in_window.store(true);
-        for (int i = 0; i < 1000 && !window_done.load(); ++i)
+        for (int i = 0; i < 3000 && !window_done.load(); ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds{1});
     };
     // A quarter of a cycle into the tone: the new audio starts at its peak.
@@ -1696,7 +1701,7 @@ void test_stop_without_output(const std::filesystem::path& tone) {
     item->play();
     item->stop();
     bool stopped = false;
-    for (int i = 0; i < 100 && !stopped; ++i) {
+    for (int i = 0; i < 1500 && !stopped; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds{2});
         stopped = item->stats().transport == TransportState::Stopped;
     }
