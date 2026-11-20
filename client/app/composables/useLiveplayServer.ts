@@ -241,6 +241,28 @@ function createClient() {
   const CONNECTION_LOST_DELAY_MS = 3000;
   let connectionLostTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // The engine sends meters 30 times a second whether or not anything
+  // plays. A connection silent for this long belongs to an engine that has
+  // stopped answering (hung, or its machine asleep) even though the socket
+  // looks open: say so, as for any lost connection, and connect again. Some
+  // engine work (opening a large show) can pause the meters for a few
+  // seconds, so the limit is generous. Cleared by the next message.
+  const SILENCE_LIMIT_MS = 8000;
+  let lastMessageAt = 0;
+  let silentLoss = false;
+  if (typeof window !== 'undefined') {
+    const watchdog = setInterval(() => {
+      if (!connected.value || !ws || projectLoad.value === 'open' ||
+          performance.now() - lastMessageAt < SILENCE_LIMIT_MS) return;
+      console.warn('[liveplay] the engine has sent nothing for', SILENCE_LIMIT_MS, 'ms; reconnecting');
+      silentLoss = true;
+      connectionLost.value = true;
+      forceReconnect();
+    }, 1000);
+    // Never the only thing keeping a process alive (tests, shutdown).
+    (watchdog as unknown as { unref?: () => void }).unref?.();
+  }
+
   function armConnectionLostTimer() {
     if (connectionLostTimer || connectionLost.value) return;
     connectionLostTimer = setTimeout(() => {
@@ -335,7 +357,9 @@ function createClient() {
       stopAllStatus.value = null;
       failedReconnectAttempts.value = 0;
       clearConnectionLostTimer();
-      connectionLost.value = false;
+      lastMessageAt = performance.now();
+      // After silence, only a message proves the engine answers again.
+      if (!silentLoss) connectionLost.value = false;
       if (shouldProbeAfterReconnect) {
         for (const cb of reconnectedSubscribers) {
           try { cb(lifetime.signal, { socketSwap }); } catch (e) { console.warn('[liveplay] reconnect handler threw:', e); }
@@ -395,6 +419,11 @@ function createClient() {
 
     socket.onmessage = (ev) => {
       if (ws !== socket) return;
+      lastMessageAt = performance.now();
+      if (silentLoss) {
+        silentLoss = false;
+        connectionLost.value = false;
+      }
       let payload: any;
       try { payload = JSON.parse(ev.data); } catch { return; }
       if (!payload || typeof payload !== 'object' || !payload.type) return;
