@@ -2299,7 +2299,9 @@ void ControlServer::install_routes() {
             if (uuid.empty()) return json_err(404, "nothing is selected");
             Logger::playback("PLAY SELECTED: {}", item_playback_info(uuid, state_));
             if (!state_.trigger_item(uuid, -1.0, audio::CueId{}, true, stop_revision))
-                return json_err(404, "item not loaded into engine");
+                return state_.stop_revision() != stop_revision
+                    ? json_err(409, "Stop All came first; the cue was not started")
+                    : json_err(404, "item not loaded into engine");
             return json_ok(json({{"ok", true}, {"itemUuid", uuid}}));
         });
 
@@ -2388,7 +2390,9 @@ void ControlServer::install_routes() {
                 if (uuid.empty()) return json_err(404, "no item at that index");
                 Logger::playback("TRIGGER: {}", item_playback_info(uuid, state_));
                 if (!state_.trigger_item(uuid, -1.0, audio::CueId{}, true, stop_revision))
-                    return json_err(404, "item not loaded into engine");
+                    return state_.stop_revision() != stop_revision
+                        ? json_err(409, "Stop All came first; the cue was not started")
+                        : json_err(404, "item not loaded into engine");
                 return json_ok(json({{"ok", true}, {"uuid", uuid}, {"index", path}}));
             } catch (const std::exception& e) { return json_err(400, e.what()); }
         });
@@ -2405,7 +2409,9 @@ void ControlServer::install_routes() {
             if (uuid.empty()) return json_err(404, "QuickPlay slot is empty");
             Logger::playback("QUICKPLAY {}: {}", slot, item_playback_info(uuid, state_));
             if (!state_.trigger_item(uuid, -1.0, audio::CueId{}, true, stop_revision))
-                return json_err(404, "item not loaded into engine");
+                return state_.stop_revision() != stop_revision
+                    ? json_err(409, "Stop All came first; the cue was not started")
+                    : json_err(404, "item not loaded into engine");
             return json_ok(json({{"ok", true}, {"slot", slot}, {"uuid", uuid}}));
         });
 
