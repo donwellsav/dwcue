@@ -664,7 +664,7 @@ In **Settings → Video Output → Test card**, drop or paste a PNG, JPEG, WebP,
 
 ### What the audience sees
 
-The output shows one picture at a time and cuts to the newest sounding cue. **Full HD**, **Fit to display**, and **100%** are the default picture settings. A 16:9 cue fills a 1920 × 1080 output edge to edge. Video and stills retain their proportions and show the entire source. Black fills any space around the picture.
+The output shows one picture at a time and cuts to the newest sounding cue that has a picture, a video or a cue image. A sound-only cue started over a playing video, such as an effect, leaves the video on screen. **Full HD**, **Fit to display**, and **100%** are the default picture settings. A 16:9 cue fills a 1920 × 1080 output edge to edge. Video and stills retain their proportions and show the entire source. Black fills any space around the picture.
 
 When a cue has no usable video, the output uses the first available layer in this order: the cue's own **Cue image**, the show's **Standby image**, then black. A captured picture becomes one of those two. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output. A video can play on Video Output while the operator auditions that same cue in Preview.
 
@@ -995,7 +995,7 @@ First protect the audience using the rehearsed stop/mute procedure. Then identif
 | A group does not leave its last cue | Check the group's End Behavior and destination, then confirm that the selected descendant run completed rather than being manually stopped or cancelled. Stale child completion cannot fire the group ending after cancellation. |
 | QuickPlay does not fire | Check the keyboard/MIDI mapping, retrigger Ignore, connection and media readiness. Use the tile's Stop button to stop playback. |
 | MIDI volume appears to move the wrong stage | Confirm the mapping is Master Volume and make one small directional movement after its reference value. It changes separate engine state and does not move the visible main Master output fader or other output faders; verify the audible result only through the rehearsed destination. |
-| Video is black or shows a still image | Check the active cue and Video Output status. An audio-only cue may be using its still or standby. If a video is playing audio and the picture stays black, use **Copy Output Diagnostics** before restarting the output. |
+| Video is black or shows a still image | Check the active cue and Video Output status. With no video playing, an audio-only cue shows its still or the standby. If a video is playing audio and the picture stays black, use **Copy Output Diagnostics** before restarting the output. |
 | The server appears in discovery but will not connect | UDP discovery does not prove TCP reachability or authentication. Verify address, control port, firewall, and current token. |
 | Changes are missing after a restart | Check which copy was opened, whether the last save succeeded, Autosave state, and available disk backups. Unsaved edits are not in a disk-only backup. |
 | A moved show reports missing media | Restore the whole project folder, check external linked paths and mounted volumes, or replace the missing file in cue Properties and recheck its trims. |

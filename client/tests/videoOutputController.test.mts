@@ -264,7 +264,7 @@ function snapshotCue(
   };
 }
 
-test('an intentional video-to-audio pause cannot poison a later play of the same video', async () => {
+test('an intentional pause cannot poison a later play of the same video', async () => {
   const h = createHarness(project([audioItem('video', { hasVideo: true }), audioItem('audio')]));
   await flush();
   const pendingPlay = deferred<void>();
@@ -275,7 +275,7 @@ test('an intentional video-to-audio pause cannot poison a later play of the same
   };
   h.emitCue(snapshotCue('video', 'video-cue', 1));
   h.controller.onVideoCanPlay();
-  h.emitCue(snapshotCue('audio', 'audio-cue', 2));
+  h.emitCue(snapshotCue('video', 'video-cue', 1, 0, 4));   // the operator pauses it
   pendingPlay.reject(new DOMException('Playback was intentionally paused.', 'AbortError'));
   await flush();
   assert.equal(h.reports.some(report => report !== null), false, 'cancellation is not a decoder failure');
@@ -351,25 +351,43 @@ test('a late play rejection cannot stop a newer trigger of the same media URL', 
   h.stop();
 });
 
-test('fallback to an on-air video uses the native position received while an audio cue owned the picture', async () => {
-  const h = createHarness(project([audioItem('video', { hasVideo: true }), audioItem('audio'), audioItem('upcoming', { hasVideo: true })]));
+test('fallback to an on-air video uses the native position received while a still owned the picture', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true }), audioItem('still', { imagePath: 'images/slide.png' }), audioItem('upcoming', { hasVideo: true })]));
   await flush();
   h.emitCue(snapshotCue('video', 'video-cue', 1, 2));
   h.controller.onVideoCanPlay();
-  h.emitCue(snapshotCue('audio', 'audio-cue', 2));
+  h.emitCue(snapshotCue('still', 'still-cue', 2));
+  assert.equal(h.controller.showVideo.value, false, 'the still takes the picture');
   const retainedSource = h.controller.videoSrc.value;
   h.emitPatch({ op: 'next_item_set', itemUuid: 'upcoming' });
   await flush();
   const sourceDuringOverlay = h.controller.videoSrc.value;
   h.emitMeters({ items: [
     { cue_id: 'video-cue', transport: 1, playhead_seconds: 9 },
-    { cue_id: 'audio-cue', transport: 1, playhead_seconds: 1 },
+    { cue_id: 'still-cue', transport: 1, playhead_seconds: 1 },
   ] });
-  h.emitCue(snapshotCue('audio', 'audio-cue', 2, 1, 0));
+  h.emitCue(snapshotCue('still', 'still-cue', 2, 1, 0));
   assert.equal(h.controller.showVideo.value, true);
   assert.equal(h.element.currentTime, 9);
   assert.equal(h.element.paused, false, 'fallback must resume its retained decoded source immediately');
   assert.equal(sourceDuringOverlay, retainedSource, 'upcoming preparation cannot evict a retained video fallback');
+  h.stop();
+});
+
+test('a sound cue started over a playing video leaves the video on screen and playing', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true }), audioItem('effect')]));
+  await flush();
+  h.emitCue(snapshotCue('video', 'video-cue', 1, 2));
+  h.controller.onVideoCanPlay();
+  const source = h.controller.videoSrc.value;
+  h.emitCue(snapshotCue('effect', 'effect-cue', 2));
+  assert.equal(h.controller.showVideo.value, true, 'the audience keeps the picture');
+  assert.equal(h.element.paused, false, 'and it keeps moving with its sound');
+  assert.equal(h.controller.videoSrc.value, source);
+  h.emitCue(snapshotCue('effect', 'effect-cue', 2, 1, 0));
+  assert.equal(h.controller.showVideo.value, true, 'the effect ending changes nothing on screen');
+  h.emitCue(snapshotCue('video', 'video-cue', 1, 5, 0));
+  assert.equal(h.controller.showVideo.value, false, 'the video stopping still clears it');
   h.stop();
 });
 
@@ -457,7 +475,7 @@ test('a diagnostic stopped meter retains its separate paused-picture behavior', 
   h.stop();
 });
 
-test('an unknown newest cue blanks old media until its document arrives', async () => {
+test('an unknown newest cue blanks old media until its document arrives; a sound cue then gives the video back', async () => {
   const video = audioItem('video', { hasVideo: true, imagePath: 'images/video.png' });
   const h = createHarness(project([video]));
   await flush();
@@ -473,8 +491,7 @@ test('an unknown newest cue blanks old media until its document arrives', async 
   assert.equal(h.element.currentTime, 6, 'the new cue clock never seeks the old video');
   pendingDoc.resolve(project([video, audioItem('new-audio')]));
   await flush();
-  assert.equal(h.controller.showVideo.value, false);
-  assert.equal(h.element.paused, true);
+  assert.equal(h.controller.showVideo.value, true, 'a sound cue does not take the picture from the video still playing');
   h.stop();
 });
 

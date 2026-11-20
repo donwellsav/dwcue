@@ -651,10 +651,20 @@ export function useVideoOutput(
   // the snapshot); it belongs to that pass and is dropped when it stops.
   const followOverrides = new Map<string, 'armed' | 'suppressed'>();
 
+  // Only a cue with a picture (a video or a still) takes the output: a sound
+  // cue started over a playing video, a QuickPlay effect say, leaves the
+  // video on screen. A cue not yet in the document may be a picture; it
+  // stays a candidate so its metadata is fetched.
+  function hasNoPicture(active: ActiveCue): boolean {
+    const item = doc.value?.items.get(active.itemUuid);
+    return !!item && !item.hasVideo && !item.imagePath;
+  }
+
   function newestActiveCue(): ActiveCue | null {
     if (diagnosticCue) return diagnosticCue;
     let newest: ActiveCue | null = null;
     for (const active of activeCues.values()) {
+      if (hasNoPicture(active)) continue;
       if (!newest || active.triggerSeq > newest.triggerSeq) newest = active;
     }
     return newest;
