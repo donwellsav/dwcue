@@ -1366,28 +1366,43 @@ void test_restart_while_playing_declicks(const std::filesystem::path& tone) {
 
 // On an output that calls back every 20 ms (Windows, Bluetooth), the ramp out
 // of a restart is rendered up to 20 ms after the restart asks for it. The jump
-// waits for it instead of cutting the old audio mid-wave.
+// waits for it (up to 250 ms) instead of cutting the old audio mid-wave. A
+// machine that stalls this test for longer than that between two renders says
+// nothing about the engine: that attempt is run again.
 void test_restart_on_slow_output_declicks(const std::filesystem::path& tone) {
-    Fixture f(tone);
-    f.render(3);
-    for (int i = 0; i < 40; ++i) { f.render(); (void)f.drain(); }
-    auto restart = std::async(std::launch::async, [&] { f.item->seek_seconds(0.0); });
-    float previous = 0.0f, largest_step = 0.0f;
-    bool first = true;
-    for (int i = 0; i < 12 || restart.wait_for(std::chrono::seconds{0}) != std::future_status::ready; ++i) {
-        std::this_thread::sleep_for(std::chrono::milliseconds{20});   // the output's next callback
-        f.render();
-        const auto out = f.drain();
-        for (std::size_t n = 0; n < block; ++n) {
-            if (!first) largest_step = std::max(largest_step, std::fabs(out[n * 2] - previous));
-            previous = out[n * 2];
-            first = false;
+    float largest_step = 1.0f;
+    auto longest_gap = std::chrono::steady_clock::duration::zero();
+    bool conclusive = false;
+    for (int attempt = 0; attempt < 5 && !conclusive; ++attempt) {
+        Fixture f(tone);
+        f.render(3);
+        for (int i = 0; i < 40; ++i) { f.render(); (void)f.drain(); }
+        auto restart = std::async(std::launch::async, [&] { f.item->seek_seconds(0.0); });
+        float previous = 0.0f;
+        bool first = true;
+        largest_step = 0.0f;
+        longest_gap = std::chrono::steady_clock::duration::zero();
+        auto last_render = std::chrono::steady_clock::now();
+        for (int i = 0; i < 12 || restart.wait_for(std::chrono::seconds{0}) != std::future_status::ready; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds{20});   // the output's next callback
+            const auto now = std::chrono::steady_clock::now();
+            longest_gap = std::max(longest_gap, now - last_render);
+            last_render = now;
+            f.render();
+            const auto out = f.drain();
+            for (std::size_t n = 0; n < block; ++n) {
+                if (!first) largest_step = std::max(largest_step, std::fabs(out[n * 2] - previous));
+                previous = out[n * 2];
+                first = false;
+            }
+            if (i > 400) break;
         }
-        if (i > 400) break;
+        restart.get();
+        conclusive = longest_gap < std::chrono::milliseconds{200};
     }
-    restart.get();
-    std::printf("restart on a 20 ms output: largest step %.3f\n", largest_step);
-    check(largest_step < 0.12f, "restart on a 20 ms output: the old audio ramps out, no cut");
+    std::printf("restart on a 20 ms output: largest step %.3f, longest render gap %lld ms\n", largest_step,
+                static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(longest_gap).count()));
+    check(conclusive && largest_step < 0.12f, "restart on a 20 ms output: the old audio ramps out, no cut");
 }
 
 // The window after a restart's jump and before seek_seconds returns: the

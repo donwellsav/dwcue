@@ -25,8 +25,10 @@ namespace liveplay::audio {
 // the renderer only renders when an output has room: on an output that calls
 // back every 20 ms or more (Windows, Bluetooth), or on a busy machine, that can
 // be several blocks away. Flushing first cuts the old audio mid-wave, a click.
-// A healthy output finishes it long before this; only a stalled one waits it out.
-constexpr auto kJumpRampOutWait = std::chrono::milliseconds{100};
+// A healthy output finishes it long before this; only a stalled one waits it
+// out, as long as a jump may hold the cue silent before it counts as stuck
+// storage (a quarter of a second).
+constexpr auto kJumpRampOutWait = std::chrono::milliseconds{250};
 
 namespace {
 
