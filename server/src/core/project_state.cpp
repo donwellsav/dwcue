@@ -5952,6 +5952,24 @@ bool ProjectState::patch_settings(
         const auto requested = output->is_string() ? output->get<std::string>() : std::string{};
         if (requested == program_output_selection()) patch.erase(output);
     }
+    // Nor may an unchanged preview or LTC output: applying it again cancels
+    // playing cues' prepared follows, stops a preview and moves LTC mid-cue,
+    // and one that is unplugged right now would refuse every other setting.
+    for (const char* key : {"previewDevice", "ltcDevice"}) {
+        const auto selection = patch.find(key);
+        if (selection == patch.end() || !(selection->is_null() || selection->is_string())) continue;
+        const auto requested = selection->is_string() ? selection->get<std::string>() : std::string{};
+        std::string saved;
+        {
+            std::lock_guard lock{mutex_};
+            const auto settings = document_.find("settings");
+            if (settings != document_.end() && settings->is_object()) {
+                const auto value = settings->find(key);
+                if (value != settings->end() && value->is_string()) saved = value->get<std::string>();
+            }
+        }
+        if (requested == saved) patch.erase(selection);
+    }
     const auto edit = ++settings_intent_revision_;
     const auto generation = document_generation_;
     const auto stopped = stop_revision();

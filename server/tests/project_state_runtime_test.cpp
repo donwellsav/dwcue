@@ -1201,7 +1201,9 @@ void test_stop_all_during_preview_retirement() {
             if (mode == 0) return state.stop_preview();
             if (mode == 1) return state.start_preview("preview-item");
             if (mode == 3) return state.stop_preview(&stop_result);
-            return state.patch_settings({{"previewDevice", "NULL Playback Device"}});
+            // A real change of the Preview output retires the running Preview
+            // (saving the same output again leaves it alone).
+            return state.patch_settings({{"previewDevice", ""}});
         });
         for (int i = 0; i < 300 && preview->stats().transport != liveplay::audio::TransportState::Stopped; ++i)
             std::this_thread::sleep_for(1ms);
@@ -1232,6 +1234,8 @@ void test_stop_all_during_preview_retirement() {
         }
         check(mode == 1 ? !result : result, "preview stall: cancelled replacement refuses while stop/settings settle");
         check(state.current_preview_item_uuid().empty(), "preview stall: cancelled Preview cannot reappear after storage release");
+        if (mode == 2) check(state.patch_settings({{"previewDevice", "NULL Playback Device"}}),
+                             "preview stall: the Preview output is chosen again");
         check(state.start_preview("preview-item"), "preview stall: deliberate Preview retry succeeds");
         state.stop_preview(); state.stop_all_cues(0);
     }
@@ -2118,6 +2122,26 @@ void test_second_press_while_starting(const std::filesystem::path& wav) {
         check(second, (label + "the second press is told the cue is starting").c_str());
         state.stop_all_cues(0);
     }
+}
+
+// The client sends every setting on any change. A preview or LTC output that
+// stays as chosen must not be applied again: that cancels prepared follows,
+// stops a preview and moves LTC mid-cue, and one unplugged right now refused
+// every other setting.
+void test_unchanged_outputs_in_settings(const std::filesystem::path& wav) {
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    auto show = document(json::array({audio("settings-cue", wav)}));
+    show["settings"] = {{"ltcDevice", "Unplugged LTC interface"}, {"previewDevice", "Unplugged headphones"}};
+    check(state.replace_full_document(show) && wait_ready(state), "unchanged outputs: show ready");
+    close_devices(engine);
+    check(state.patch_settings({{"ltcDevice", "Unplugged LTC interface"}, {"previewDevice", "Unplugged headphones"},
+                                {"autoSave", false}}),
+          "unchanged outputs: another setting saves while the chosen preview and LTC outputs are unplugged");
+    check(state.full_document()["settings"].value("autoSave", true) == false,
+          "unchanged outputs: the other setting is applied");
+    check(!state.patch_settings({{"ltcDevice", "Another unplugged interface"}}),
+          "unchanged outputs: choosing a different missing output is still refused");
 }
 
 json group_of(const std::string& uuid, const std::string& start, const std::string& end, json children) {
@@ -4351,6 +4375,7 @@ int main() try {
     test_manual_stop_arms_up_next(wav);
     test_crossfade_tail_actions(wav);
     test_second_press_while_starting(wav);
+    test_unchanged_outputs_in_settings(wav);
     test_group_end_goes_after_the_group(wav);
     test_nested_play_first_readiness(wav);
     test_start_actions(wav);
