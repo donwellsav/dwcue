@@ -558,6 +558,85 @@ void test_invalid_time_inputs_preserve_audio(PlaybackItem& item) {
     check(item.stats().playhead_frame == 0, "valid negative seek still clamps to zero");
 }
 
+// Decode LTC the way a timecode reader does: edges become bits by their
+// spacing (a whole bit with no middle edge is 0, two half bits are 1), each
+// sync word marks the end of a frame, and the frame before it is read.
+struct DecodedLtcFrame { long long number; bool even_ones; };
+std::vector<DecodedLtcFrame> decode_ltc(const std::vector<float>& signal, double samples_per_bit,
+                                        int fps, int& edge_errors) {
+    std::vector<std::size_t> edges;
+    for (std::size_t i = 1; i < signal.size(); ++i)
+        if ((signal[i] > 0.0f) != (signal[i - 1] > 0.0f)) edges.push_back(i);
+    std::vector<int> bits;
+    edge_errors = 0;
+    bool half_pending = false;
+    for (std::size_t i = 1; i < edges.size(); ++i) {
+        const double interval = static_cast<double>(edges[i] - edges[i - 1]);
+        if (std::abs(interval - samples_per_bit) <= samples_per_bit * 0.25) {
+            if (half_pending) ++edge_errors;
+            half_pending = false;
+            bits.push_back(0);
+        } else if (std::abs(interval - samples_per_bit * 0.5) <= samples_per_bit * 0.25) {
+            if (half_pending) bits.push_back(1);
+            half_pending = !half_pending;
+        } else {
+            ++edge_errors;
+            half_pending = false;
+        }
+    }
+    static constexpr int kSync[16] = {0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1};
+    const auto bcd = [&](std::size_t at, int count) {
+        int value = 0;
+        for (int b = 0; b < count; ++b) value |= bits[at + b] << b;
+        return value;
+    };
+    std::vector<DecodedLtcFrame> frames;
+    for (std::size_t end = 79; end < bits.size(); ++end) {
+        const std::size_t start = end - 79;
+        if (!std::equal(std::begin(kSync), std::end(kSync), bits.begin() + static_cast<long>(start + 64))) continue;
+        const int ff = bcd(start, 4) + 10 * bcd(start + 8, 2);
+        const int ss = bcd(start + 16, 4) + 10 * bcd(start + 24, 3);
+        const int mm = bcd(start + 32, 4) + 10 * bcd(start + 40, 3);
+        const int hh = bcd(start + 48, 4) + 10 * bcd(start + 56, 2);
+        int ones = 0;
+        for (std::size_t b = start; b <= end; ++b) ones += bits[b];
+        frames.push_back({((hh * 60LL + mm) * 60 + ss) * fps + ff, (ones & 1) == 0});
+    }
+    return frames;
+}
+
+// LTC rendered block by block from a cue's playhead must decode as one
+// unbroken run of frames, each with even polarity, at every frame rate.
+void test_ltc_decodes_cleanly() {
+    struct Rate { LTCFrameRate rate; int fps; const char* name; };
+    for (const Rate& r : {Rate{LTCFrameRate::Fps24, 24, "24"}, Rate{LTCFrameRate::Fps25, 25, "25"},
+                          Rate{LTCFrameRate::Fps30, 30, "30"}}) {
+        LTCGenerator generator;
+        generator.configure(kRate, r.rate, std::chrono::nanoseconds{0}, 0.5f);
+        std::vector<float> signal;
+        std::array<float, kBlock> block{};
+        for (std::uint64_t frames = 0; frames < 3ULL * kRate; frames += kBlock) {
+            // The cue's own playhead arithmetic (playback_item.cpp).
+            constexpr std::uint64_t scale = 1'000'000'000;
+            const auto ns = (frames / kRate) * scale + (frames % kRate) * scale / kRate;
+            generator.render_block(block.data(), kBlock, std::chrono::nanoseconds{static_cast<long long>(ns)});
+            signal.insert(signal.end(), block.begin(), block.end());
+        }
+        int edge_errors = 0;
+        const auto frames = decode_ltc(signal, static_cast<double>(kRate) / r.fps / 80.0, r.fps, edge_errors);
+        bool consecutive = !frames.empty(), even = true;
+        for (std::size_t i = 0; i < frames.size(); ++i) {
+            even = even && frames[i].even_ones;
+            if (i > 0) consecutive = consecutive && frames[i].number == frames[i - 1].number + 1;
+        }
+        std::printf("LTC %s fps: %zu frames decoded, edge errors %d, consecutive %d, even %d\n",
+                    r.name, frames.size(), edge_errors, consecutive ? 1 : 0, even ? 1 : 0);
+        check(frames.size() >= static_cast<std::size_t>(3 * r.fps - 2) && consecutive && edge_errors == 0,
+              "LTC: block-by-block timecode decodes as one unbroken run of frames");
+        check(even, "LTC: every frame carries an even number of ones (polarity bit)");
+    }
+}
+
 void test_long_position_ltc(PlaybackItem& item) {
     const std::vector<std::pair<std::uint64_t, long long>> positions{
         {0, 0}, {172'800'000, 3'600'000'000'000},
@@ -1539,6 +1618,7 @@ int main() {
         test_unchanged_boundaries_preserve_audio(item);
         test_invalid_time_inputs_preserve_audio(item);
         test_long_position_ltc(item);
+        test_ltc_decodes_cleanly();
         test_pause_preserves_envelope(item);
         test_device_reference_churn();
         test_project_runtime_fences();

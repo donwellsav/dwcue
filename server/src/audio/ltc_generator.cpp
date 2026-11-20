@@ -4,6 +4,7 @@
 #include "liveplay/audio/ltc_generator.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <limits>
 
@@ -150,13 +151,16 @@ void LTCGenerator::build_frame_bits(std::uint64_t frame_number) noexcept {
     current_bits_[8] = kSyncLo;
     current_bits_[9] = kSyncHi;
 
-    // Compute and set parity bit (bit 27 for non-DF; SMPTE specifies even
-    // parity over the data + sync portions). Count 1s in bits 0..63.
+    // Polarity correction bit (SMPTE 12M): bit 27, or bit 59 at 25 fps, set
+    // so the whole 80-bit frame, sync word included, holds an even number of
+    // ones (and so of zeros). Every frame then starts at the same polarity.
     int ones = 0;
     for (std::size_t i = 0; i < 64; ++i) {
         if (read_bit(current_bits_, i)) ++ones;
     }
-    set_bit(current_bits_, 27, (ones & 1) != 0);  // make total 1s even
+    constexpr int kSyncOnes = std::popcount(kSyncLo) + std::popcount(kSyncHi);
+    const std::size_t polarity_bit = frame_rate_ == LTCFrameRate::Fps25 ? 59 : 27;
+    set_bit(current_bits_, polarity_bit, ((ones + kSyncOnes) & 1) != 0);
 }
 
 bool LTCGenerator::get_bit(std::size_t bit_index) const noexcept {
@@ -186,8 +190,18 @@ void LTCGenerator::render_block(Sample* dst,
     const double frames_f    = abs_seconds / seconds_per_frame_;
     const std::uint64_t target_frame_number = static_cast<std::uint64_t>(frames_f);
 
-    // If the host has scrubbed/jumped, resync the encoder state.
-    if (target_frame_number != current_frame_number_) {
+    // The encoder follows the playhead by counting samples, as the cue does,
+    // and resyncs only on a real jump (a seek, a loop wrap). Comparing frame
+    // numbers instead resynced whenever a block began on a frame boundary,
+    // where the rounded playhead lands a frame early: the frame was rebuilt
+    // mid-stream and the biphase signal broke several times a second.
+    const bool started = current_frame_number_ != static_cast<std::uint64_t>(-1);
+    const double samples_per_frame = samples_per_bit_ * 80.0;
+    const double target_sample = frames_f * samples_per_frame;
+    const double encoder_sample = started
+        ? static_cast<double>(current_frame_number_) * samples_per_frame + sample_within_frame_ : 0.0;
+    constexpr double kResyncSamples = 2.0;
+    if (!started || std::abs(target_sample - encoder_sample) > kResyncSamples) {
         const double frac_into_frame_seconds =
             (frames_f - static_cast<double>(target_frame_number)) * seconds_per_frame_;
         const double sample_into_frame = frac_into_frame_seconds * static_cast<double>(sample_rate_);
@@ -200,8 +214,8 @@ void LTCGenerator::render_block(Sample* dst,
         bit_index_           = std::min<std::size_t>(79, static_cast<std::size_t>(bit_pos));
         sample_within_bit_   = (bit_pos - static_cast<double>(bit_index_)) * samples_per_bit_;
         mid_bit_emitted_     = sample_within_bit_ >= (samples_per_bit_ * 0.5);
-        // Polarity unknown after a seek — start positive; will resync on next bit boundary.
-        polarity_            = 1.0f;
+        // A jump keeps the level it is at, so the next edge is a real one.
+        if (!started) polarity_ = 1.0f;
     }
 
     const double half_bit = samples_per_bit_ * 0.5;
