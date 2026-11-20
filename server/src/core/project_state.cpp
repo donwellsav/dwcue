@@ -2277,12 +2277,14 @@ bool write_file_atomically(const std::filesystem::path& path, const std::string&
         }
     }
     std::error_code ec;
-    if (!util::replace_file_atomically(tmp, path, ec)) {
+    // On the disk before it replaces the show file, as a save is.
+    if (!util::flush_file_to_disk(tmp, ec) || !util::replace_file_atomically(tmp, path, ec)) {
         std::error_code remove_error;
         std::filesystem::remove(tmp, remove_error);
         error = ec.message();
         return false;
     }
+    util::flush_directory_entry(path);
     return true;
 }
 
