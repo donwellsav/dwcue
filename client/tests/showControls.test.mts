@@ -80,6 +80,34 @@ test('a crashed operator or QuickPlays window reloads by itself', () => {
   assert.match(helper, /window\.webContents\.reload\(\)/);
 });
 
+test('crash events reported together reload once, and none reloads once quitting', async () => {
+  const main = source('../electron/main.js');
+  const helper = main.slice(main.indexOf('function reloadAfterRendererCrash'), main.indexOf('function createDetachedQuickPlayWindow'))
+    .replaceAll('quitConfirmed', 'state.quitConfirmed');
+  const install = new Function('state', 'console', `${helper}\nreturn reloadAfterRendererCrash;`)(
+    { get quitConfirmed() { return quitting; } }, { error() {} });
+  let quitting = false;
+  const makeWindow = () => {
+    const listeners: Array<(event: unknown, details: unknown) => void> = [];
+    const window = { reloads: 0, isDestroyed: () => false,
+      webContents: { isDestroyed: () => false, reload() { window.reloads++; },
+        on(_name: string, listener: (event: unknown, details: unknown) => void) { listeners.push(listener); } },
+      crash() { for (const listener of listeners) listener({}, { reason: 'crashed', exitCode: 1 }); } };
+    return window;
+  };
+  const twice = makeWindow();
+  install(twice, 'test');
+  twice.crash(); twice.crash();
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(twice.reloads, 1, 'one reload for crashes reported together');
+  const quit = makeWindow();
+  install(quit, 'test');
+  quit.crash();
+  quitting = true;
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(quit.reloads, 0, 'quitting after the crash: no reload');
+});
+
 test('a lost or interrupted output is announced, in every language', () => {
   const alert = source('../app/components/ServerAlert.vue');
   assert.match(alert, /const TROUBLED_STATES = new Set\(\['stalled', 'disconnected', 'interrupted'\]\);/);

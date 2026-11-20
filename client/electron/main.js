@@ -2701,14 +2701,18 @@ function createWindow() {
 // keys, MIDI and Stop All return. One that keeps crashing reloads less often.
 function reloadAfterRendererCrash(window, label) {
   const crashes = [];
+  let pending = null;
   window.webContents.on('render-process-gone', (_event, details) => {
     const reason = details?.reason || 'unknown';
     console.error(`[${label}] Renderer stopped:`, reason, details?.exitCode ?? 'unknown');
     if (reason === 'clean-exit' || quitConfirmed) return;
+    if (pending) return;   // one reload covers crashes reported together
     const now = Date.now();
     while (crashes.length && now - crashes[0] > 60_000) crashes.shift();
     crashes.push(now);
-    setTimeout(() => {
+    pending = setTimeout(() => {
+      pending = null;
+      if (quitConfirmed) return;
       if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.reload();
     }, crashes.length > 3 ? 10_000 : 250);
   });
