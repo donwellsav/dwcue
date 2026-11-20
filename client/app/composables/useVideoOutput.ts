@@ -154,6 +154,13 @@ function readActiveCue(value: unknown): ActiveCue | null {
   };
 }
 
+// Quick retries first, then every 5 s for as long as the cue is on air: a
+// drive or share that comes back after a longer outage brings the picture back.
+const PICTURE_RETRY_DELAYS_MS = [500, 1500, 3000, 5000];
+export function pictureRetryDelayMs(attempt: number): number {
+  return PICTURE_RETRY_DELAYS_MS[Math.min(Math.max(0, attempt), PICTURE_RETRY_DELAYS_MS.length - 1)]!;
+}
+
 export function useVideoOutput(
   diagnosticSource?: Readonly<Ref<VideoTestCardPlayback | null>>,
   pictureOffsetMs?: Readonly<Ref<number>>,
@@ -490,7 +497,6 @@ export function useVideoOutput(
   // A playback error mid-cue (a GPU reset, a refused or interrupted media
   // request) is retried with a fresh request for the same file while the cue
   // is on air, instead of leaving the audience black for the rest of the cue.
-  const RETRY_DELAYS_MS = [500, 1500, 3000];
   let retryTimer: number | undefined;
   let retryTrigger = -1;
   let retryAttempts = 0;
@@ -500,8 +506,7 @@ export function useVideoOutput(
       retryTrigger = activeTriggerSeq;
       retryAttempts = 0;
     }
-    if (retryAttempts >= RETRY_DELAYS_MS.length) return;
-    const delay = RETRY_DELAYS_MS[retryAttempts++]!;
+    const delay = pictureRetryDelayMs(retryAttempts++);
     const trigger = activeTriggerSeq;
     const uuid = activeItemUuid.value;
     clearTimeout(retryTimer);

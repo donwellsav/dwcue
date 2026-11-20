@@ -845,6 +845,11 @@ test('a playback error mid-cue retries the same source instead of staying black'
   } finally { h.stop(); }
 });
 
+test('a picture keeps being retried while its cue is on air, not only three times', async () => {
+  const { pictureRetryDelayMs } = await import('../app/composables/useVideoOutput.ts');
+  assert.deepEqual([0, 1, 2, 3, 4, 20].map(pictureRetryDelayMs), [500, 1500, 3000, 5000, 5000, 5000]);
+});
+
 test('the next video cue waits ready in the spare and the cut swaps to it without a reload', async () => {
   const h = createHarness(project([audioItem('first', { hasVideo: true }), audioItem('second', { hasVideo: true })]));
   try {
