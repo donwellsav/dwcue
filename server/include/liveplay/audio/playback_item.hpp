@@ -432,6 +432,13 @@ private:
     void begin_render_exclusion() noexcept;
     void end_render_exclusion() noexcept;
     void reset_read_ahead_locked(std::uint64_t frame) noexcept;
+    // Declick (render_exclusion_ held): the level the 10 ms ramp has reached,
+    // 0..1, and a new ramp that starts from a given level, so a ramp turned
+    // round midway never jumps.
+    float declick_level_locked() const noexcept;
+    void arm_declick_locked(bool rising, float from_level) noexcept;
+    // Control side: let a jump's ramp out finish (10 ms, a block at most).
+    void wait_for_jump_ramp_out() noexcept;
     bool fill_read_ahead_block_locked() noexcept;
     void stop_for_decode_error(int decoder_result) noexcept;
     void handle_natural_end() noexcept;

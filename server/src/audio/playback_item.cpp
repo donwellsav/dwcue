@@ -405,6 +405,12 @@ void PlaybackItem::play() {
     // A deliberate replay is a fresh attempt. Drop any error notification from
     // the prior attempt so the sequencer cannot attach it to this new play.
     clear_decode_error();
+    if (st == TransportState::Stopped) {
+        // A fresh start owes nothing to an earlier jump's ramp or wait.
+        declick_remaining_ = 0;
+        pause_peek_frames_ = 0;
+        seek_refill_wait_ = false;
+    }
 
     // Reset natural-end flags so take_natural_end() doesn't fire for a
     // stale previous play on this same item.
@@ -449,6 +455,15 @@ void PlaybackItem::stop() {
     }
     if (st == TransportState::Paused) {
         end_render_exclusion();
+        stop_now();
+        return;
+    }
+    if (seek_hold_revision_ != 0) {
+        // A jump is holding this cue silent (or ramping it out): the stop
+        // ends it there once the ramp out is done. Fading the held cue would
+        // never progress, and would bring back the audio the jump silenced.
+        end_render_exclusion();
+        wait_for_jump_ramp_out();
         stop_now();
         return;
     }
@@ -511,15 +526,44 @@ void PlaybackItem::stop_now() {
 // playhead stays exactly where the pause landed; render plays the ramp from
 // audio it does not consume, and resume carries on from that same frame.
 
+float PlaybackItem::declick_level_locked() const noexcept {
+    const float total = static_cast<float>(desc_.mix_sample_rate) * kDeclickMs / 1000.0f;
+    if (declick_remaining_ > 0 && total > 0.0f) {
+        const float left = std::min(1.0f, static_cast<float>(declick_remaining_) / total);
+        return declick_rising_ ? 1.0f - left : left;
+    }
+    // No ramp running: silent once paused or held for a jump, full otherwise.
+    const bool held = transport_.load(std::memory_order_acquire) == TransportState::Paused ||
+        seek_hold_revision_ != 0;
+    return held ? 0.0f : 1.0f;
+}
+
+void PlaybackItem::arm_declick_locked(bool rising, float from_level) noexcept {
+    const float total = static_cast<float>(desc_.mix_sample_rate) * kDeclickMs / 1000.0f;
+    const float level = std::clamp(from_level, 0.0f, 1.0f);
+    declick_rising_ = rising;
+    declick_remaining_ = std::llround((rising ? 1.0f - level : level) * total);
+    pause_peek_frames_ = 0;
+}
+
+void PlaybackItem::wait_for_jump_ramp_out() noexcept {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{16};
+    while (std::chrono::steady_clock::now() < deadline) {
+        begin_render_exclusion();
+        const bool done = declick_remaining_ == 0 || seek_hold_revision_ == 0;
+        end_render_exclusion();
+        if (done) return;
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+}
+
 void PlaybackItem::pause() {
     begin_render_exclusion();
     const TransportState st = transport_.load(std::memory_order_acquire);
     if (st == TransportState::Playing || st == TransportState::FadingIn ||
         st == TransportState::FadingOut) {
         paused_transport_ = st;
-        declick_remaining_ = static_cast<long long>(desc_.mix_sample_rate) * kDeclickMs / 1000;
-        declick_rising_ = false;
-        pause_peek_frames_ = 0;
+        arm_declick_locked(false, declick_level_locked());
         transport_.store(TransportState::Paused, std::memory_order_release);
     }
     end_render_exclusion();
@@ -528,10 +572,8 @@ void PlaybackItem::pause() {
 void PlaybackItem::resume() {
     begin_render_exclusion();
     if (transport_.load(std::memory_order_acquire) == TransportState::Paused) {
+        arm_declick_locked(true, declick_level_locked());
         transport_.store(paused_transport_, std::memory_order_release);
-        declick_remaining_ = static_cast<long long>(desc_.mix_sample_rate) * kDeclickMs / 1000;
-        declick_rising_ = true;
-        pause_peek_frames_ = 0;
     }
     end_render_exclusion();
 }
@@ -541,7 +583,6 @@ void PlaybackItem::seek_seconds(double seconds) {
         seconds >= static_cast<double>(UINT64_MAX) / desc_.mix_sample_rate) return;
     if (seconds < 0) seconds = 0;
     ma_uint64 frame = static_cast<ma_uint64>(seconds * desc_.mix_sample_rate);
-    const long long declick = static_cast<long long>(desc_.mix_sample_rate) * kDeclickMs / 1000;
     begin_render_exclusion();
     const auto revision = playback_revision_.fetch_add(1, std::memory_order_acq_rel) + 1;
     // A playing cue (a QuickPlay restarted, a seek while it plays) ramps out
@@ -551,10 +592,8 @@ void PlaybackItem::seek_seconds(double seconds) {
     const bool audible = before == TransportState::Playing || before == TransportState::FadingIn ||
         before == TransportState::FadingOut;
     if (audible) {
+        arm_declick_locked(false, declick_level_locked());
         seek_hold_revision_ = revision;
-        declick_remaining_ = declick;
-        declick_rising_ = false;
-        pause_peek_frames_ = 0;
     }
     end_render_exclusion();
     // The hold ends when this seek flushes the queue (from there on the seek
@@ -596,11 +635,10 @@ void PlaybackItem::seek_seconds(double seconds) {
             rewind_on_play_.store(true, std::memory_order_release);
             // From the flush on, the only audio is the new position's: arm its
             // ramp in now, before the decode worker can refill and the output
-            // can play it, and do not count the wait for it as a miss.
+            // can play it, and do not count the wait for it as a miss. New
+            // audio always rises from silence.
             if (audible && !was_stopped && transport_.load(std::memory_order_acquire) != TransportState::Paused) {
-                declick_remaining_ = declick;
-                declick_rising_ = true;
-                pause_peek_frames_ = 0;
+                arm_declick_locked(true, 0.0f);
                 seek_refill_wait_ = true;
             }
         }
@@ -1269,7 +1307,19 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     if (st == TransportState::Stopped) return 0;
     // Paused, or a playing cue held while it jumps: ramp out, then silence.
     const bool pause_ramp = st == TransportState::Paused || seek_hold_revision_ != 0;
-    if (pause_ramp && declick_remaining_ == 0) return 0;
+    if (pause_ramp && declick_remaining_ == 0) {
+        // Held silent for a jump: storage that never lets the jump finish
+        // must still stop the cue, as a starved queue does at 250 ms.
+        if (seek_hold_revision_ != 0 && st != TransportState::Paused) {
+            starved_frames_ += frame_count;
+            if (starved_frames_ >= std::max<std::uint64_t>(1, desc_.mix_sample_rate / 4)) {
+                playback_revision_.fetch_add(1, std::memory_order_acq_rel);
+                seek_hold_revision_ = 0;
+                stop_for_decode_error(MA_TIMEOUT);
+            }
+        }
+        return 0;
+    }
     if (!decoder_ready_) return 0;
     const auto file_channels =
         file_channels_.load(std::memory_order_acquire);
@@ -1500,7 +1550,9 @@ std::size_t PlaybackItem::render_block(Sample* const* out_channel_buffers,
     float output_gain_end = duck_active_ ||
         duck_elapsed_samples_ < duck_duration_samples_
             ? std::min(gain_end, duck_end) : gain_end;
-    if (declick_remaining_ > 0) {
+    // A ramp advances only over audio: a fading cue renders on through an
+    // empty queue, and its ramp in must still be there for the first audio.
+    if (declick_remaining_ > 0 && frames_read > 0) {
         const float total = static_cast<float>(desc_.mix_sample_rate) * kDeclickMs / 1000.0f;
         const long long advance = std::min<long long>(frame_count, declick_remaining_);
         const float left_before = static_cast<float>(declick_remaining_) / total;
@@ -1595,6 +1647,13 @@ void PlaybackItem::stop_with_fade(std::chrono::milliseconds dur) {
         return;
     }
     playback_revision_.fetch_add(1, std::memory_order_acq_rel);
+    if (seek_hold_revision_ != 0) {
+        // Held silent for a jump: end it there, as stop() does.
+        end_render_exclusion();
+        wait_for_jump_ramp_out();
+        stop_now();
+        return;
+    }
     // Not a natural end — don't set fading_out_naturally_ so the sequencer
     // won't auto-advance on this particular fade completion.
     if (dur.count() > 0) {
