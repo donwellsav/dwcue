@@ -897,6 +897,7 @@ void ControlServer::broadcast_loop() {
 
     using CueStateSignature = std::pair<audio::TransportState, std::optional<long long>>;
     std::unordered_map<std::string, CueStateSignature> prev_cue_states;
+    std::unordered_map<std::string, std::string> prev_cue_items;  // cue id -> item uuid
 
     // Absolute-deadline schedule. sleep_for(period - work) systematically
     // undershoots the target rate on Windows (~15.6 ms sleep granularity
@@ -1028,13 +1029,16 @@ void ControlServer::broadcast_loop() {
         // trigger order. Publish that change even if transport stays Playing.
         std::vector<std::string> cue_state_events;
         try {
+            std::unordered_set<std::string> listed;
             for (auto& cue : state_.list_cues()) {
+                listed.insert(cue.id.value);
                 const auto item = engine_.find_cue(cue.id);
                 const auto stats = item ? item->stats() : audio::PlaybackItemStats{};
                 auto& prev = prev_cue_states[cue.id.value];
                 if (stats.transport == audio::TransportState::Stopped &&
                     prev.first == audio::TransportState::Stopped) continue;
                 const auto uuid = state_.cue_to_item_uuid(cue.id);
+                if (uuid) prev_cue_items[cue.id.value] = *uuid;
                 const auto seq = uuid ? state_.item_trigger_seq(*uuid) : std::nullopt;
                 const CueStateSignature current{stats.transport, seq};
                 if (current == prev) continue;
@@ -1049,6 +1053,26 @@ void ControlServer::broadcast_loop() {
                 if (seq) evt["trigger_seq"] = *seq;
                 cue_state_events.push_back(evt.dump());
                 prev = current;
+            }
+            // A cue retired while it played (another show opened, a playing
+            // cue deleted, its media replaced, or moved between folders)
+            // leaves the list with no Stopped edge: send one, or every client
+            // keeps showing it as playing, with a Stop button that does nothing.
+            for (auto it = prev_cue_states.begin(); it != prev_cue_states.end();) {
+                if (listed.contains(it->first)) { ++it; continue; }
+                if (it->second.first != audio::TransportState::Stopped) {
+                    json evt{
+                        {"type", "cue_state"},
+                        {"cue_id", it->first},
+                        {"transport", static_cast<int>(audio::TransportState::Stopped)},
+                        {"playhead_seconds", 0.0},
+                    };
+                    if (const auto uuid = prev_cue_items.find(it->first); uuid != prev_cue_items.end())
+                        evt["item_uuid"] = uuid->second;
+                    cue_state_events.push_back(evt.dump());
+                }
+                prev_cue_items.erase(it->first);
+                it = prev_cue_states.erase(it);
             }
         } catch (const std::exception& e) {
             Logger::error("broadcast_loop: failed to build cue_state events: {}", e.what());
@@ -1108,6 +1132,7 @@ void ControlServer::broadcast_loop() {
             if (batch_epoch != impl_->http_generation.load(std::memory_order_acquire)) {
                 // Rebuild fresh edges next tick; reconnect snapshots stay pending.
                 prev_cue_states.clear();
+                prev_cue_items.clear();
                 prev_device_states.clear();
             } else for (auto* c : impl_->ws_clients) {
                 try {

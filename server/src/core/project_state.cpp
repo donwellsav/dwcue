@@ -1462,6 +1462,19 @@ void ProjectState::reset() {
     // Main keep their independent references when they share the device.
     release_device_routings();
 
+    // Clearing Up Next below is announced once the show lock is released:
+    // a silent clear left the closed show's Up Next on every client.
+    bool had_next = false;
+    {
+        std::lock_guard lock{mutex_};
+        had_next = !next_item_override_.empty();
+    }
+    struct AnnounceClearedNext {
+        ProjectState& state;
+        bool armed;
+        ~AnnounceClearedNext() { if (armed) state.announce_cleared_next_item(); }
+    } announce_cleared_next{*this, had_next};
+
     std::lock_guard lock{mutex_};
 
     // Stop and unload every engine cue. Clearing the bookkeeping maps alone is
@@ -6175,8 +6188,10 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
     release_device_routings();
     // Canonical .dwcue documents use the camelCase desktop schema. Keep the
     // full document for clients while mirroring its engine-facing state.
+    bool had_next = false;
     {
         std::lock_guard lock{mutex_};
+        had_next = !next_item_override_.empty();
         next_item_override_.clear();
         next_item_override_manual_ = false;
         next_item_for_go_only_ = false;
@@ -6230,6 +6245,7 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
         // async mirror kickoff — cues_ is empty at this instant, so the "nothing
         // on air" guard passes on a fresh open.
         arm_first_item_on_open();
+        if (had_next) announce_cleared_next_item();
         if (loaded_header) *loaded_header = header_document();
         return true;
     }
@@ -7297,6 +7313,16 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
     }
 
     if (!next_to_arm.empty()) (void)set_next_item_override(next_to_arm, /*manual=*/false);
+}
+
+void ProjectState::announce_cleared_next_item() {
+    std::function<void(const std::string&)> cb;
+    {
+        std::lock_guard lock{mutex_};
+        if (!next_item_override_.empty()) return;
+        cb = next_item_broadcaster_;
+    }
+    if (cb) cb("");
 }
 
 void ProjectState::arm_first_item_on_open() {

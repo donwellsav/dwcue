@@ -933,6 +933,8 @@ private:
     // armed or playing, so the operator's first GO fires without a click.
     // Gated on settings.autoCueNextWithoutEndBehavior. Call with no lock held.
     void arm_first_item_on_open();
+    // Tells clients Up Next is empty, if it is, after a show closes or opens.
+    void announce_cleared_next_item();
 
     // True when the item's cue is currently on air (Playing, FadingIn or
     // Paused). The automatic advance paths (Start Next, crossfade,
