@@ -60,6 +60,7 @@
 </template>
 
 <script setup lang="ts">
+import { isTextEntry } from '~/utils/textEntry';
 const { t } = useLocalization();
 const {
   active, index, items, currentItem, currentWindow, playing,
@@ -78,10 +79,7 @@ const formatTime = (seconds: number): string => {
 // [ / ] walk cues, Q exits. Letter keys only fire unmodified, so Cmd+R
 // (reload) and similar chords still pass through. Never fires while the
 // operator is typing in a field.
-const isEditingTarget = (e: KeyboardEvent): boolean => {
-  const el = e.target as HTMLElement | null;
-  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
-};
+const isEditingTarget = (e: KeyboardEvent): boolean => isTextEntry(e.target as Element | null);
 const onKeydown = (e: KeyboardEvent) => {
   if (!active.value || isEditingTarget(e)) return;
   const key = e.key.toLowerCase();

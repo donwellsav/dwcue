@@ -269,6 +269,7 @@
 </template>
 
 <script setup lang="ts">
+import { isTextEntry } from '~/utils/textEntry';
 import LevelCheckBar from './LevelCheckBar.vue';
 import PreShowCheckPanel from './PreShowCheckPanel.vue';
 import ProjectSettingsModal from './ProjectSettingsModal.vue';
@@ -489,6 +490,9 @@ watch(hasAssignedQuickPlays, (assigned) => {
 const quickPlayFullscreen = ref(false);
 const quickPlayDetached = ref(false);
 const quickPlayVisible = computed(() => !quickPlayClosed.value && !quickPlayDetached.value);
+// MIDI runs while a show is open in this window, whether or not QuickPlays
+// are shown, attached or detached: GO from a controller must always work.
+const { mount: mountMidi, unmount: unmountMidi } = useMidiController();
 const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useQuickPlayHotkeys({
   'toggle-settings': () => { showProjectSettings.value = !showProjectSettings.value; },
   'toggle-properties': () => {
@@ -862,12 +866,7 @@ watch(
 
 // True when the user is typing in a text field — selection/clipboard
 // shortcuts must defer to native editing behaviour there.
-const isTextInputFocused = (): boolean => {
-  const el = document.activeElement as HTMLElement | null;
-  if (!el) return false;
-  const tag = el.tagName.toLowerCase();
-  return tag === 'input' || tag === 'textarea' || el.isContentEditable;
-};
+const isTextInputFocused = (): boolean => isTextEntry(document.activeElement);
 
 const isForwardedFromVideoOutput = (e: KeyboardEvent): boolean =>
   (e as KeyboardEvent & { dwcueForwardedFromVideoOutput?: boolean })
@@ -964,6 +963,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 onMounted(() => {
   if (import.meta.client) {
     mountHotkeys();
+    void mountMidi();
     window.addEventListener('keydown', handleKeydown);
     panelObserver = new ResizeObserver(() => {
       visiblePanelHeight.value = lowerPanel.value?.offsetHeight ?? 0;
@@ -978,6 +978,7 @@ onUnmounted(() => {
   if (import.meta.client) {
     panelObserver?.disconnect();
     unmountHotkeys();
+    unmountMidi();
     window.removeEventListener('keydown', handleKeydown);
   }
 });

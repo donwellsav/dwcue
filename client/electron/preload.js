@@ -187,6 +187,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openDetachedQuickPlayWindow: (projectFolderPath) => ipcRenderer.invoke('open-detached-quickplay-window', projectFolderPath),
   toggleDetachedQuickPlayWindow: () => ipcRenderer.invoke('toggle-detached-quickplay-window'),
   attachDetachedQuickPlayWindow: () => ipcRenderer.send('detached-quickplay-window-attach'),
+  // The detached QuickPlay window hands transport keys (GO, Up Next...) to the operator window.
+  forwardShortcutToOperator: (shortcut) => ipcRenderer.send('quickplay-window:shortcut', shortcut),
   getQuickPlayWindowProjectData: () => ipcRenderer.invoke('get-quickplay-window-project-data'),
   onDetachedQuickPlayWindowOpened: (callback) => replaceIpcListener('detached-quickplay-window-opened', callback),
   onDetachedQuickPlayWindowClosed: (callback) => replaceIpcListener('detached-quickplay-window-closed', callback),

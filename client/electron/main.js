@@ -5539,6 +5539,31 @@ ipcMain.handle('toggle-detached-quickplay-window', (event) => {
   else createDetachedQuickPlayWindow();
 });
 
+// The detached QuickPlay window has no full show: its transport keys (GO, Up
+// Next, pause...) run in the operator window, as the Video Output's do.
+ipcMain.on('quickplay-window:shortcut', (event, shortcut) => {
+  try {
+    requireTrustedIpc(event);
+  } catch (error) {
+    console.warn('[quickplay-window:shortcut] rejected event:', error.message);
+    return;
+  }
+  if (!detachedQuickPlayWindow || detachedQuickPlayWindow.isDestroyed() ||
+      event.sender !== detachedQuickPlayWindow.webContents) return;
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+  if (!shortcut || typeof shortcut !== 'object' || typeof shortcut.key !== 'string' ||
+      !shortcut.key || shortcut.key.length > 32) return;
+  mainWindow.webContents.send('video-output:shortcut', {
+    key: shortcut.key,
+    code: typeof shortcut.code === 'string' ? shortcut.code.slice(0, 32) : '',
+    ctrlKey: shortcut.ctrlKey === true,
+    shiftKey: shortcut.shiftKey === true,
+    altKey: shortcut.altKey === true,
+    metaKey: shortcut.metaKey === true,
+    repeat: shortcut.repeat === true,
+  });
+});
+
 ipcMain.on('detached-quickplay-window-attach', (event) => {
   try {
     requireTrustedIpc(event);

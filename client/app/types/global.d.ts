@@ -223,6 +223,7 @@ declare global {
       openDetachedQuickPlayWindow: (projectFolderPath: string) => Promise<void>;
       toggleDetachedQuickPlayWindow: () => Promise<void>;
       attachDetachedQuickPlayWindow: () => void;
+      forwardShortcutToOperator?: (shortcut: { key: string; code: string; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean; repeat: boolean }) => void;
       getQuickPlayWindowProjectData: () => Promise<QuickPlayProjectEnvelope>;
       onDetachedQuickPlayWindowOpened: (callback: () => void) => void;
       onDetachedQuickPlayWindowClosed: (callback: () => void) => void;

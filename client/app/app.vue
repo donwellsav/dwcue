@@ -539,7 +539,7 @@ onMounted(() => {
     // and is left alone, so Tab+Space navigation still works.
     window.addEventListener('click', (e: MouseEvent) => {
       if (e.detail === 0 || (e.target as HTMLElement | null)?.closest?.('.binding-button')) return;
-      const el = (e.target as HTMLElement | null)?.closest?.('button, [role="button"], a[href], summary') as HTMLElement | null;
+      const el = (e.target as HTMLElement | null)?.closest?.('button, [role="button"], a[href], summary, input[type="range"], input[type="checkbox"], input[type="radio"]') as HTMLElement | null;
       if (el && typeof el.blur === 'function') el.blur();
     }, true);
 

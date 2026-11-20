@@ -147,7 +147,6 @@ const { quickPlayItems, addQuickPlayItem, removeQuickPlayItem } = useQuickPlayIt
 const { uiMode, quickPlayGridLayouts, quickPlayFontScale } = useUiMode();
 const { t } = useLocalization();
 const { keyMappings, mount: mountHotkeys, unmount: unmountHotkeys } = useQuickPlayHotkeys();
-const { mount: mountMidi, unmount: unmountMidi } = useMidiController();
 const server = useLiveplayServer();
 const { isDetached, identity: detachedIdentity, mutate } = useDetachedQuickPlayMutation();
 const canMutate = computed(() => isDetached ? !!detachedIdentity.value : projectHydrationStatus.value === 'ready');
@@ -520,14 +519,12 @@ const handleAttach = () => {
 
 onMounted(() => {
   if (props.isDetachedWindow) mountHotkeys();
-  mountMidi();
 });
 
 onUnmounted(() => {
   importSlot.value = null;
   if (!isDetached && workspaceImportPanel.value === 'quickplay') workspaceImportPanel.value = null;
   unmountHotkeys();
-  unmountMidi();
 });
 </script>
 

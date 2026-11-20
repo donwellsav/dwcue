@@ -354,6 +354,7 @@ function loadHandleKeydown(dependencies: Record<string, unknown>) {
         findPlaybackActionForEvent,
         findSlotForEvent,
         isDetached = false,
+        forwardToOperator = () => {},
         isForwardedFromVideoOutput,
         isTextInputFocused,
         triggerSlot,
@@ -460,11 +461,13 @@ test('assigned show shortcuts keep priority after Tab focuses a workspace button
 
 test('Shift+Q can close focused QuickPlays without relaxing the hydration guard for GO', () => {
   const actions: string[] = [];
+  const forwarded: string[] = [];
   const handleKeydown = loadHandleKeydown({
     isDetached: true,
     currentProject: { value: {} },
     projectHydrationStatus: { value: 'failed' },
     dispatchPlaybackAction: (action: string) => actions.push(action),
+    forwardToOperator: (event: { key: string }) => forwarded.push(event.key),
     findPlaybackActionForEvent: (event: { key: string }) =>
       event.key === 'Q' ? 'toggle-detached-quickplays' : 'play-next',
     isForwardedFromVideoOutput: () => false,
@@ -474,6 +477,8 @@ test('Shift+Q can close focused QuickPlays without relaxing the hydration guard 
     handleKeydown({ key, repeat, preventDefault() {}, stopPropagation() {} });
   }
   assert.deepEqual(actions, ['toggle-detached-quickplays']);
+  // GO does not run in the detached window: the operator window runs it.
+  assert.deepEqual(forwarded, [' ']);
 });
 
 test('QuickPlay number-row shortcuts work with shifted symbols and respect text focus', () => {
