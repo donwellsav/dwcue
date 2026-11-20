@@ -151,7 +151,24 @@ void render_to_end(liveplay::core::ProjectState& state,
         item->service_read_ahead(1);
         item->render_block(channels, 2, 256);
     }
+    // The sequencer handles the end on one of its polls. However slow the
+    // machine, wait until it has let the cue go, then for what its end does:
+    // the sequencer runs that holding the playback lock, which reading the
+    // intent revision takes.
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    for (;;) {
+        bool tracked = false;
+        {
+            std::lock_guard lock{state.sequencer_mutex_};
+            tracked = std::any_of(state.sequenced_items_.begin(), state.sequenced_items_.end(),
+                                  [&](const auto& sequenced) { return sequenced.uuid == uuid; });
+        }
+        if (!tracked || std::chrono::steady_clock::now() > deadline) break;
+        std::this_thread::sleep_for(5ms);
+    }
+    (void)state.playback_intent_revision();
     std::this_thread::sleep_for(120ms);
+    (void)state.playback_intent_revision();
 }
 json document(json items) {
     return json{{"name", "runtime-contract"}, {"folderPath", ""},
@@ -2073,15 +2090,28 @@ void test_crossfade_tail_actions(const std::filesystem::path& wav) {
         float* channels[]{left.data(), right.data()};
         bool crossfaded = false;
         for (int i = 0; i < 100 && item->stats().transport != liveplay::audio::TransportState::Stopped; ++i) {
+            // Inside the crossfade window, wait for the sequencer to start it
+            // before playing on, however slow the machine: the action at
+            // 0.095 s must still be ahead when it does.
+            if (!crossfaded && item->stats().playhead_seconds >= 0.05) {
+                const auto deadline = std::chrono::steady_clock::now() + 3s;
+                while (!on_air(state, engine, "xfade-in") && std::chrono::steady_clock::now() < deadline)
+                    std::this_thread::sleep_for(5ms);
+                crossfaded = on_air(state, engine, "xfade-in");
+                if (crossfaded && stop_all) state.stop_all_cues(0);
+            }
             item->service_read_ahead(1);
             item->render_block(channels, 2, 256);
             std::this_thread::sleep_for(15ms);
-            if (!crossfaded && on_air(state, engine, "xfade-in")) {
-                crossfaded = true;
-                if (stop_all) state.stop_all_cues(0);
-            }
         }
         check(crossfaded, "crossfade tail: the next cue came in on the crossfade");
+        if (!stop_all) {
+            const auto deadline = std::chrono::steady_clock::now() + 3s;
+            while (std::chrono::steady_clock::now() < deadline) {
+                { std::lock_guard lock{received_mutex}; if (received.size() >= 2) break; }
+                std::this_thread::sleep_for(5ms);
+            }
+        }
         std::this_thread::sleep_for(200ms);
         std::lock_guard lock{received_mutex};
         if (stop_all)
