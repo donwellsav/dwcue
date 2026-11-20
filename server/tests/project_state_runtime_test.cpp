@@ -2090,6 +2090,36 @@ void test_crossfade_tail_actions(const std::filesystem::path& wav) {
     }
 }
 
+// A second press while a cue is still reading its media (a slow drive, or a
+// Companion button pressed twice) must not cancel the start already under way.
+void test_second_press_while_starting(const std::filesystem::path& wav) {
+    for (const bool via_go : {false, true}) {
+        const std::string label = via_go ? "second GO while starting: " : "second start while starting: ";
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.replace_full_document(document(json::array({audio("slow", wav), audio("after-slow", wav)}))) &&
+              wait_ready(state), (label + "show ready").c_str());
+        close_devices(engine);
+        if (via_go) check(state.set_next_item_override("slow", true), (label + "armed").c_str());
+        const auto gate = std::filesystem::temp_directory_path() / ("dwcue-second-press-" + std::to_string(via_go));
+        std::filesystem::remove(std::filesystem::path{gate.string() + ".entered"});
+        std::ofstream{gate} << "hold";
+        set_loader_gate(gate, "DWCUE_TEST_CUE_START_GATE");
+        std::atomic<int> first{-1};
+        std::thread starter([&] { first = via_go ? state.go() == "slow" : state.trigger_item("slow"); });
+        const bool held = wait_gate_entered(gate);
+        clear_loader_gate("DWCUE_TEST_CUE_START_GATE");
+        const bool second = via_go ? state.go() == "slow" : state.trigger_item("slow");
+        std::filesystem::remove(gate);
+        starter.join();
+        std::filesystem::remove(std::filesystem::path{gate.string() + ".entered"});
+        check(held, (label + "first press is reading its media").c_str());
+        check(first == 1 && on_air(state, engine, "slow"), (label + "the start under way still plays").c_str());
+        check(second, (label + "the second press is told the cue is starting").c_str());
+        state.stop_all_cues(0);
+    }
+}
+
 json group_of(const std::string& uuid, const std::string& start, const std::string& end, json children) {
     return json{{"uuid", uuid}, {"type", "group"}, {"startBehavior", {{"action", start}}},
                 {"endBehavior", {{"action", end}}}, {"children", std::move(children)}};
@@ -4320,6 +4350,7 @@ int main() try {
     test_refire_keeps_automation(wav);
     test_manual_stop_arms_up_next(wav);
     test_crossfade_tail_actions(wav);
+    test_second_press_while_starting(wav);
     test_group_end_goes_after_the_group(wav);
     test_nested_play_first_readiness(wav);
     test_start_actions(wav);

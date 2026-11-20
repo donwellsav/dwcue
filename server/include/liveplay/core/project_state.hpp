@@ -637,6 +637,14 @@ private:
     // Repairs to the current show remain visible until a successful save.
     RepairInfo pending_repair_info_;
 
+    // Fingerprint of the show's content as last opened or written to disk
+    // (guarded by mutex_). The header reports edits made since, so a window
+    // that reloads after a crash still knows the show has unsaved changes.
+    std::size_t saved_content_fingerprint_ = 0;
+    void mark_content_saved_locked() { saved_content_fingerprint_ = content_fingerprint(document_); }
+    static void strip_non_content(json& document);
+    static std::size_t content_fingerprint(const json& document);
+
     // uuid → engine cue id, for audio items currently loaded.
     std::unordered_map<std::string, audio::CueId> item_uuid_to_cue_;
     std::unordered_map<std::string, float> group_gains_;
@@ -843,6 +851,25 @@ private:
         std::vector<ScheduledCustomAction> custom_actions;
     };
     std::vector<CrossfadeTail> crossfade_tails_;   // guarded by sequencer_mutex_
+    // Items whose start is under way (it may be reading media or opening an
+    // output with the lifecycle lock released), with the playback intent it
+    // began under. A second press for one still current leaves that start
+    // alone instead of superseding it.
+    mutable std::mutex starting_items_mutex_;
+    std::unordered_map<std::string, std::uint64_t> starting_items_;
+    // Caller holds playback_lifecycle_mutex_.
+    bool item_starting(const std::string& uuid) const;
+    class StartingMark {
+    public:
+        StartingMark(ProjectState& state, const std::string& uuid, std::uint64_t intent, bool active);
+        ~StartingMark();
+        StartingMark(const StartingMark&) = delete;
+        StartingMark& operator=(const StartingMark&) = delete;
+    private:
+        ProjectState& state_;
+        std::string   uuid_;
+        bool          owned_ = false;
+    };
     std::mutex                 sequencer_mutex_;
     // Serializes control-plane playback lifetime changes with unlocked
     // sequencer dispatch. Recursive because a follow action can trigger play.

@@ -1510,6 +1510,7 @@ void ProjectState::reset() {
     project_file_path_.clear();
     document_ = default_empty_document();
     pending_repair_info_ = {};
+    mark_content_saved_locked();
     ++document_generation_;
     ++project_open_revision_;
     project_session_id_ = engine_.new_cue_id().value;
@@ -2099,6 +2100,31 @@ json ProjectState::to_json() const {
     return j;
 }
 
+// What the engine adds when it sends the show out (engine cue ids, derived
+// level targets, a status block) and save metadata are not the show's content.
+void ProjectState::strip_non_content(json& document) {
+    const std::function<void(json&)> strip_items = [&](json& items) {
+        if (!items.is_array()) return;
+        for (auto& item : items) {
+            if (!item.is_object()) continue;
+            item.erase("cueId");
+            if (item.contains("children")) strip_items(item["children"]);
+        }
+    };
+    if (!document.is_object()) return;
+    for (const char* key : {"lastModified", "folderPath", "server"}) document.erase(key);
+    if (document.contains("settings") && document["settings"].is_object())
+        document["settings"].erase("outputTargetLevels");
+    if (document.contains("items")) strip_items(document["items"]);
+    if (document.contains("quickPlayItems")) strip_items(document["quickPlayItems"]);
+}
+
+std::size_t ProjectState::content_fingerprint(const json& document) {
+    json content = document;
+    strip_non_content(content);
+    return std::hash<std::string>{}(content.dump());
+}
+
 bool ProjectState::save(const std::filesystem::path& requested_path,
                         const json* replacement,
                         std::filesystem::path* published_path,
@@ -2138,24 +2164,8 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
                 std::lock_guard lock{mutex_};
                 current = document_;
             }
-            // What the engine adds when it sends the show out (engine cue ids,
-            // derived level targets, a status block) and save metadata are not
-            // the show's content.
-            const std::function<void(json&)> strip_items = [&](json& items) {
-                if (!items.is_array()) return;
-                for (auto& item : items) {
-                    if (!item.is_object()) continue;
-                    item.erase("cueId");
-                    if (item.contains("children")) strip_items(item["children"]);
-                }
-            };
-            for (json* doc : {&incoming.document, &current}) {
-                for (const char* key : {"lastModified", "folderPath", "server"}) doc->erase(key);
-                if (doc->contains("settings") && (*doc)["settings"].is_object())
-                    (*doc)["settings"].erase("outputTargetLevels");
-                if (doc->contains("items")) strip_items((*doc)["items"]);
-                if (doc->contains("quickPlayItems")) strip_items((*doc)["quickPlayItems"]);
-            }
+            strip_non_content(incoming.document);
+            strip_non_content(current);
             if (incoming.document == current) replacement = nullptr;
         }
     }
@@ -2169,6 +2179,7 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
             doc["folderPath"] = util::path_to_utf8(path.parent_path());
         }
         operation_lock.unlock();
+        const auto written_content = content_fingerprint(doc);
         relativize_media_paths(doc);
         std::filesystem::path tmp = path;
         tmp += ".tmp";
@@ -2201,6 +2212,13 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
         // The new document is complete in `tmp`; keep a copy of the file it is
         // about to replace. Runs under save_mutex_ with no project lock held.
         backup_show_file_before_overwrite(path, open_revision);
+        if (!util::flush_file_to_disk(tmp, ec)) {
+            Logger::error("ProjectState::save: could not flush '{}' to disk: {} — previous file left untouched",
+                          util::path_to_utf8(tmp), ec.message());
+            std::error_code rm_ec;
+            std::filesystem::remove(tmp, rm_ec);
+            return false;
+        }
         if (!util::replace_file_atomically(tmp, path, ec)) {
             Logger::error("ProjectState::save: rename '{}' -> '{}' failed: {} — previous file left untouched",
                           util::path_to_utf8(tmp), util::path_to_utf8(path), ec.message());
@@ -2208,6 +2226,7 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
             std::filesystem::remove(tmp, rm_ec);
             return false;
         }
+        util::flush_directory_entry(path);
         {
             operation_lock = lock_project_session(session);
             if (operation_lock.owns_lock()) {
@@ -2216,6 +2235,7 @@ bool ProjectState::save(const std::filesystem::path& requested_path,
                 project_file_path_ = path;
                 document_["folderPath"] = util::path_to_utf8(path.parent_path());
                 pending_repair_info_ = {};
+                saved_content_fingerprint_ = written_content;
                 update_media_root_from_folder_locked();
             }
         }
@@ -2649,6 +2669,8 @@ json ProjectState::header_document() const {
         {"itemCount",    item_count},
         {"needsRepair", pending_repair_info_.repaired},
         {"repairIssues", pending_repair_info_.issues},
+        // Edited since it was opened or last written to disk.
+        {"unsavedChanges", content_fingerprint(document_) != saved_content_fingerprint_},
         // "Open" means a real project landed — either it has items or it
         // was loaded/saved from disk. A fresh server has a default name
         // "Untitled" but no file path and no items, so the welcome screen
@@ -2737,6 +2759,7 @@ bool ProjectState::replace_full_document(const json& doc, bool new_session) {
             ++project_open_revision_;
             project_session_id_ = engine_.new_cue_id().value;
             pending_repair_info_ = {prepared.repair.repaired, std::move(prepared.repair.issues)};
+            mark_content_saved_locked();
         }
         project_name_ = document_.value("name", std::string{"Untitled"});
         update_media_root_from_folder_locked();
@@ -3728,6 +3751,7 @@ bool ProjectState::play_item(const std::string& uuid,
                              std::optional<std::uint64_t> expected_stop_revision) {
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     if (expected_stop_revision && *expected_stop_revision != stop_revision()) return false;
+    if (start_position_override_sec < 0.0 && item_starting(uuid)) return true;
     ++playback_intent_revision_;
     return play_item_impl(lifecycle_lock, uuid, fade_in_override_sec, exclude_from_ducking,
                           start_position_override_sec, ItemPlayPhase::Immediate);
@@ -3763,6 +3787,7 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
     const bool preparing = phase == ItemPlayPhase::Prepare || phase == ItemPlayPhase::Validate ||
                            phase == ItemPlayPhase::PrepareBuffered;
     const bool recovering = phase == ItemPlayPhase::Recovery;
+    const StartingMark starting{*this, uuid, intent, !preparing};
 
     // Snapshot everything we need under the lock, then release before
     // touching the engine (engine calls take their own locks).
@@ -5025,10 +5050,13 @@ json ProjectState::state_summary() const {
 std::string ProjectState::go(std::optional<std::uint64_t> expected_stop_revision) {
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     if (expected_stop_revision && *expected_stop_revision != stop_revision()) return {};
-    ++playback_intent_revision_;
     const auto next = state_summary()["next"];
-    if (!next.is_object()) return {};
-    const auto target = next.value("itemUuid", std::string{});
+    const auto target = next.is_object() ? next.value("itemUuid", std::string{}) : std::string{};
+    // Pressed again while that cue is still starting: the start under way stands.
+    if (!target.empty() && item_starting(target)) return target;
+    // Any other GO is the operator taking over, even with nothing to start
+    // (it supersedes a pending crash recovery).
+    ++playback_intent_revision_;
     if (target.empty()) return {};
     if (!trigger_item_impl(lifecycle_lock, target, -1.0, audio::CueId{}, false, {})) return {};
     if (next.value("source", std::string{}) == "override" && next_item_override() == target)
@@ -5051,6 +5079,27 @@ std::string ProjectState::quick_play_slot_item_uuid(int slot) const {
 // (play-first plays the first child recursively; play-all triggers every
 // child). Mirrors the client's triggerGroup() so auto-next / Up Next
 // override / goto-item behave consistently when the target is a group.
+bool ProjectState::item_starting(const std::string& uuid) const {
+    std::lock_guard lock{starting_items_mutex_};
+    const auto it = starting_items_.find(uuid);
+    // A start superseded since it began (Stop All, another cue) will not play.
+    return it != starting_items_.end() && it->second == playback_intent_revision_;
+}
+
+ProjectState::StartingMark::StartingMark(ProjectState& state, const std::string& uuid,
+                                         std::uint64_t intent, bool active)
+    : state_{state}, uuid_{uuid} {
+    if (!active || uuid_.empty()) return;
+    std::lock_guard lock{state_.starting_items_mutex_};
+    owned_ = state_.starting_items_.emplace(uuid_, intent).second;
+}
+
+ProjectState::StartingMark::~StartingMark() {
+    if (!owned_) return;
+    std::lock_guard lock{state_.starting_items_mutex_};
+    state_.starting_items_.erase(uuid_);
+}
+
 bool ProjectState::trigger_item(const std::string& uuid,
                                 double fade_in_override_sec,
                                 const audio::CueId& exclude_from_ducking,
@@ -5058,6 +5107,8 @@ bool ProjectState::trigger_item(const std::string& uuid,
                                 std::optional<std::uint64_t> expected_stop_revision) {
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     if (expected_stop_revision && *expected_stop_revision != stop_revision()) return false;
+    // Pressed again while that cue is still starting: the start under way stands.
+    if (item_starting(uuid)) return true;
     ++playback_intent_revision_;
     return trigger_item_impl(lifecycle_lock, uuid, fade_in_override_sec, exclude_from_ducking,
                              consume_armed_override, {});
@@ -5071,6 +5122,7 @@ bool ProjectState::trigger_item_impl(std::unique_lock<std::recursive_mutex>& lif
     static thread_local unsigned group_dispatch_depth = 0;
     const auto intent = playback_intent_revision_;
     const auto generation = document_generation_;
+    const StartingMark starting{*this, uuid, intent, true};
   // Guard the whole body: a malformed item field must never throw uncaught
   // into the network layer. (#5)
   try {
@@ -6297,6 +6349,7 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
             project_name_ = document_.value("name", std::string{"Untitled"});
             update_media_root_from_folder_locked();
             pending_repair_info_ = std::move(repair);
+            mark_content_saved_locked();
         }
 
         // Audio mirroring happens off-thread so the client can render the
@@ -6334,6 +6387,7 @@ bool ProjectState::load_from_json(const json& doc_in, const std::filesystem::pat
         document_ = default_empty_document();
         if (project_path.has_parent_path()) document_["folderPath"] = util::path_to_utf8(project_path.parent_path());
         pending_repair_info_ = {};
+        mark_content_saved_locked();
         apply_audio_settings(engine_, document_["settings"]);
         apply_to_engine_locked();
     }

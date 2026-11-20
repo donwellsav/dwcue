@@ -357,6 +357,10 @@ BackupResult backup_before_overwrite(const fs::path& show_file,
         std::error_code date_error;
         fs::last_write_time(staged, fs::file_time_type::clock::now(), date_error);
 
+        // The backup is the copy to fall back on: it must be on the disk.
+        if (!util::flush_file_to_disk(staged, ec))
+            return failed("cannot write the backup to disk: " + ec.message());
+
         bool published = false;
         for (int attempt = 0; attempt < kNameAttempts && !published; ++attempt) {
             const BackupStamp stamp = local_stamp(now + attempt);
@@ -371,6 +375,7 @@ BackupResult backup_before_overwrite(const fs::path& show_file,
             if (!util::replace_file_atomically(staged, target, ec))
                 return failed("cannot publish the backup: " + ec.message());
             published = true;
+            util::flush_directory_entry(target);
             result.name = util::path_to_utf8(target.filename());
         }
         if (!published) return failed("no free backup name for this moment");

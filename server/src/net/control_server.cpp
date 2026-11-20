@@ -2220,8 +2220,18 @@ void ControlServer::install_routes() {
             Logger::api_request("Client ({}) -> Server ({}) : {} /api/transport/go",
                                 req.remote_ip_address, impl_->server_addr,
                                 crow::method_name(req.method));
-            const std::string uuid = state_.go();
+            // A press made before a Stop All must not land after it, even if
+            // it waited behind a start that was reading media.
+            const auto stop_revision = state_.stop_revision();
+            const std::string uuid = state_.go(stop_revision);
             if (uuid.empty()) {
+                if (state_.stop_revision() != stop_revision)
+                    return json_err(409, "Stop All came first; GO was not run");
+                const auto next = state_.state_summary()["next"];
+                if (next.is_object() && !next.value("itemUuid", std::string{}).empty()) {
+                    Logger::warn("GO — Up Next {} could not start", next.value("itemUuid", std::string{}));
+                    return json_err(409, "Up Next could not start");
+                }
                 Logger::warn("GO — nothing armed or derivable to play");
                 return json_err(404, "nothing armed or playing to GO to");
             }
@@ -2280,10 +2290,11 @@ void ControlServer::install_routes() {
     CROW_ROUTE(app, "/api/transport/play_selected")
         .methods(crow::HTTPMethod::Post)
         ([this]{
+            const auto stop_revision = state_.stop_revision();
             const auto uuid = state_.selected_item_uuid();
             if (uuid.empty()) return json_err(404, "nothing is selected");
             Logger::playback("PLAY SELECTED: {}", item_playback_info(uuid, state_));
-            if (!state_.trigger_item(uuid))
+            if (!state_.trigger_item(uuid, -1.0, audio::CueId{}, true, stop_revision))
                 return json_err(404, "item not loaded into engine");
             return json_ok(json({{"ok", true}, {"itemUuid", uuid}}));
         });
@@ -2295,27 +2306,27 @@ void ControlServer::install_routes() {
     CROW_ROUTE(app, "/api/transport/pause_toggle")
         .methods(crow::HTTPMethod::Post)
         ([this]{
+            const auto stop_revision = state_.stop_revision();
             const json summary = state_.state_summary();
             std::vector<std::string> paused, sounding;
             for (const auto& p : summary.value("playing", json::array())) {
                 const auto uuid = p.value("itemUuid", std::string{});
                 if (uuid.empty()) continue;
+                const auto transport = p.value("transport", std::string{});
                 if (p.value("paused", false)) paused.push_back(uuid);
-                else                          sounding.push_back(uuid);
+                // A cue fading out (a stop, Stop All, a crossfade) is on its way
+                // out: holding it would leave it sounding.
+                else if (transport == "playing" || transport == "fading_in") sounding.push_back(uuid);
             }
             if (paused.empty() && sounding.empty())
                 return json_err(404, "nothing is on air");
             const bool resuming = !paused.empty();
-            for (const auto& uuid : resuming ? paused : sounding) {
-                if (auto cue = state_.item_to_cue_id(uuid)) {
-                    if (auto pi = engine_.find_cue(*cue)) {
-                        (void)state_.set_item_paused(uuid, !resuming);
-                    }
-                }
-            }
+            std::size_t changed = 0;
+            for (const auto& uuid : resuming ? paused : sounding)
+                if (state_.set_item_paused(uuid, !resuming, stop_revision)) ++changed;
             Logger::playback("PAUSE TOGGLE: {} {} item(s)",
-                             resuming ? "resumed" : "paused",
-                             resuming ? paused.size() : sounding.size());
+                             resuming ? "resumed" : "paused", changed);
+            if (changed == 0) return json_err(409, "nothing was paused or resumed");
             return json_ok(json({{"ok", true}, {"resumed", resuming}}));
         });
 
@@ -2368,10 +2379,11 @@ void ControlServer::install_routes() {
                 }
                 if (path.empty())
                     return json_err(400, "index must be a non-empty array of child indices");
+                const auto stop_revision = state_.stop_revision();
                 const std::string uuid = state_.item_uuid_by_index(path);
                 if (uuid.empty()) return json_err(404, "no item at that index");
                 Logger::playback("TRIGGER: {}", item_playback_info(uuid, state_));
-                if (!state_.trigger_item(uuid))
+                if (!state_.trigger_item(uuid, -1.0, audio::CueId{}, true, stop_revision))
                     return json_err(404, "item not loaded into engine");
                 return json_ok(json({{"ok", true}, {"uuid", uuid}, {"index", path}}));
             } catch (const std::exception& e) { return json_err(400, e.what()); }
@@ -2384,10 +2396,11 @@ void ControlServer::install_routes() {
             Logger::api_request("Client ({}) -> Server ({}) : {} /api/transport/quickplay/{}/play",
                                 req.remote_ip_address, impl_->server_addr,
                                 crow::method_name(req.method), slot);
+            const auto stop_revision = state_.stop_revision();
             const std::string uuid = state_.quick_play_slot_item_uuid(slot);
             if (uuid.empty()) return json_err(404, "QuickPlay slot is empty");
             Logger::playback("QUICKPLAY {}: {}", slot, item_playback_info(uuid, state_));
-            if (!state_.trigger_item(uuid))
+            if (!state_.trigger_item(uuid, -1.0, audio::CueId{}, true, stop_revision))
                 return json_err(404, "item not loaded into engine");
             return json_ok(json({{"ok", true}, {"slot", slot}, {"uuid", uuid}}));
         });

@@ -1013,7 +1013,10 @@ export const useProject = () => {
     currentProject.value = project;
     updateIndices(project.items);
     projectEpoch.value++;
-    hasUnsavedChanges.value = false;
+    // A window that rejoins after reloading (a renderer crash) learns from the
+    // engine whether the show holds edits not yet written to disk; otherwise
+    // quitting would not offer to save them.
+    hasUnsavedChanges.value = header.unsavedChanges === true;
     saveFailed.value = false;
     return _projectHydration.begin(currentProject.value);
   };
