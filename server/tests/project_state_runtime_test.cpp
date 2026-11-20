@@ -1908,6 +1908,97 @@ void test_group_internal_continuations(const std::filesystem::path& wav) {
              {{"endBehavior", {{"action", "goto-item"}, {"targetUuid", "chain-b"}}}});
 }
 
+// Deleting the cue armed as Up Next (or the group holding it) leaves nothing
+// armed, announced to clients, instead of a pointer to a missing cue that
+// made GO answer "nothing armed" and every follow fail.
+void test_deleting_up_next_clears_it(const std::filesystem::path& wav) {
+    for (const bool in_group : {false, true}) {
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        std::vector<std::string> announced;
+        std::mutex announced_mutex;
+        state.set_next_item_broadcaster([&](const std::string& uuid) {
+            std::lock_guard lock{announced_mutex};
+            announced.push_back(uuid);
+        });
+        json armed = audio("armed", wav);
+        json holder{{"uuid", "holder"}, {"type", "group"},
+                    {"startBehavior", {{"action", "play-first"}}},
+                    {"children", json::array({armed})}};
+        json items = in_group
+            ? json::array({audio("first", wav), holder, audio("after", wav)})
+            : json::array({audio("first", wav), armed, audio("after", wav)});
+        check(state.replace_full_document(document(items)) && wait_ready(state), "deleted Up Next: show ready");
+        close_devices(engine);
+        check(state.set_next_item_override("armed", true), "deleted Up Next: cue armed by hand");
+        { std::lock_guard lock{announced_mutex}; announced.clear(); }
+        check(state.remove_item(in_group ? "holder" : "armed"), "deleted Up Next: cue deleted");
+        bool told = false;
+        { std::lock_guard lock{announced_mutex}; told = !announced.empty() && announced.back().empty(); }
+        check(state.next_item_override().empty() && told,
+              in_group ? "deleted Up Next: deleting its group leaves nothing armed, announced"
+                       : "deleted Up Next: deleting it leaves nothing armed, announced");
+    }
+}
+
+json group_of(const std::string& uuid, const std::string& start, const std::string& end, json children) {
+    return json{{"uuid", uuid}, {"type", "group"}, {"startBehavior", {{"action", start}}},
+                {"endBehavior", {{"action", end}}}, {"children", std::move(children)}};
+}
+
+// The cue that ends a group goes on to what follows the group: Up Next is
+// the item after it, not the show's opening cue, and a group playing its
+// children in turn runs its own end action only after its last child.
+void test_group_end_goes_after_the_group(const std::filesystem::path& wav) {
+    const json brief{{"outPoint", 0.02}};
+    {
+        // The last Nothing cue of a group ends on its own.
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.replace_full_document(document(json::array({
+            audio("opener", wav),
+            group_of("scene-1", "play-first", "nothing", json::array({audio("sfx-1", wav, brief), audio("sfx-3", wav, brief)})),
+            audio("scene-2", wav),
+        }))) && wait_ready(state), "group end: show ready");
+        close_devices(engine);
+        check(state.trigger_item("sfx-3"), "group end: the group's last cue plays");
+        render_to_end(state, engine, "sfx-3");
+        check(state.next_item_override() == "scene-2",
+              "group end: the last cue of a group arms what follows the group, not the opener");
+    }
+    {
+        // A group set to Play Next whose first child ends on Nothing.
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.replace_full_document(document(json::array({
+            group_of("chapter", "play-first", "next", json::array({audio("child-1", wav, brief), audio("child-2", wav)})),
+            audio("after", wav),
+        }))) && wait_ready(state), "group end: chapter ready");
+        close_devices(engine);
+        check(state.trigger_item("chapter"), "group end: the chapter starts its first child");
+        render_to_end(state, engine, "child-1");
+        check(!on_air(state, engine, "child-2") && !on_air(state, engine, "after"),
+              "group end: a child ending on Nothing waits for GO; the group's Play Next does not run yet");
+        check(state.next_item_override() == "child-2", "group end: the next child is armed for GO");
+    }
+    {
+        // The last child of a Play All group to finish.
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.replace_full_document(document(json::array({
+            audio("before", wav),
+            group_of("together", "play-all", "nothing", json::array({audio("long", wav, {{"outPoint", 0.03}}), audio("short", wav, brief)})),
+            audio("following", wav),
+        }))) && wait_ready(state), "group end: Play All group ready");
+        close_devices(engine);
+        check(state.trigger_item("together"), "group end: the Play All group starts");
+        render_to_end(state, engine, "short");
+        render_to_end(state, engine, "long");
+        check(state.next_item_override() == "following",
+              "group end: the last child of a Play All group to finish arms what follows the group");
+    }
+}
+
 void test_external_group_exit(const std::filesystem::path& wav) {
     liveplay::audio::AudioEngine engine;
     liveplay::core::ProjectState state(engine);
@@ -4055,6 +4146,8 @@ int main() try {
     test_group_cancellation(wav);
     test_group_internal_continuations(wav);
     test_external_group_exit(wav);
+    test_deleting_up_next_clears_it(wav);
+    test_group_end_goes_after_the_group(wav);
     test_nested_play_first_readiness(wav);
     test_start_actions(wav);
     test_paused_sequencer(wav);

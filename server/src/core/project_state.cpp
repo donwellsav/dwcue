@@ -3199,6 +3199,7 @@ bool ProjectState::remove_item(const std::string& uuid) {
     std::unique_lock lifecycle_lock{playback_lifecycle_mutex_};
     cancel_group_runs_for_item(uuid);
     bool removed = false;
+    bool cleared_next = false;
     std::vector<audio::CueId> retiring_cues;
     std::function<bool(json&)> erase_from;
     erase_from = [&](json& arr) -> bool {
@@ -3236,6 +3237,20 @@ bool ProjectState::remove_item(const std::string& uuid) {
         if (removed) {
             retiring_cues = retire_missing_item_cues_locked();
             refresh_group_gains_locked();
+            // Up Next on the deleted cue (or inside a deleted group) pointed at
+            // nothing: GO answered "nothing armed" and every follow failed.
+            if (!next_item_override_.empty()) {
+                bool armed_exists = false;
+                for_each_item(document_, [&](json& item, const std::string&) {
+                    if (item.value("uuid", std::string{}) == next_item_override_) armed_exists = true;
+                });
+                if (!armed_exists) {
+                    next_item_override_.clear();
+                    next_item_override_manual_ = false;
+                    next_item_for_go_only_ = false;
+                    cleared_next = true;
+                }
+            }
         }
     }
     if (removed) {
@@ -3258,6 +3273,10 @@ bool ProjectState::remove_item(const std::string& uuid) {
     }
     lifecycle_lock.unlock();
     for (const auto& cue : retiring_cues) engine_.unload_cue(cue);
+    if (cleared_next) {
+        cancel_prepared_follows();
+        announce_cleared_next_item();
+    }
     if (removed) prepare_music_backups();
     return removed;
 }
@@ -6989,6 +7008,32 @@ void ProjectState::complete_group_runs_for_item(std::unique_lock<std::recursive_
             if (stats.transport != audio::TransportState::Stopped) { active = true; break; }
         }
         if (active) return;
+        // A group that plays its children in turn has finished only when the
+        // child holding the cue that ended is its last. One before it ending
+        // on Nothing waits for the operator's GO: the run ends there, without
+        // the group's own end action (which used to start the next child, or
+        // whatever was armed, by itself).
+        bool finished = true;
+        {
+            std::lock_guard lock{mutex_};
+            const json* group = nullptr;
+            for_each_item(document_, [&](json& item, const std::string&) {
+                if (item.value("uuid", std::string{}) == candidate->group_uuid) group = &item;
+            });
+            const bool play_all = group && group->contains("startBehavior") && (*group)["startBehavior"].is_object() &&
+                json_get_or((*group)["startBehavior"], "action", std::string{}) == "play-all";
+            if (group && !play_all && group->contains("children") && (*group)["children"].is_array()) {
+                const auto holds = [&](const auto& self, const json& node) -> bool {
+                    if (json_get_or(node, "uuid", std::string{}) == completed) return true;
+                    if (node.contains("children") && node["children"].is_array())
+                        for (const auto& child : node["children"]) if (self(self, child)) return true;
+                    return false;
+                };
+                const auto& children = (*group)["children"];
+                for (std::size_t i = 0; i < children.size(); ++i)
+                    if (holds(holds, children[i])) finished = i + 1 == children.size();
+            }
+        }
         {
             std::lock_guard lock{sequencer_mutex_};
             const auto before = group_runs_.size();
@@ -7000,12 +7045,16 @@ void ProjectState::complete_group_runs_for_item(std::unique_lock<std::recursive_
                     }), group_runs_.end());
             if (group_runs_.size() == before) return;
         }
+        if (!finished) return;
 
         const auto backup = candidate->end_action == "next" ? music_backup_for(candidate->group_uuid) : std::string{};
         std::string target;
         if (candidate->end_action == "next") {
-            // A child's Nothing can arm the playlist opener for manual GO.
-            target = resolve_advance_target(candidate->group_uuid, !backup.empty());
+            // The group's own Play Next goes after the group. Only an Up Next
+            // the operator armed by hand takes precedence; one the server
+            // armed itself from a child's Nothing points inside the group or
+            // at the top of the show, never where the group continues.
+            target = resolve_advance_target(candidate->group_uuid, /*manual_override_only=*/true);
         } else if (candidate->end_action == "goto-item") {
             target = candidate->target_uuid;
         } else if (candidate->end_action == "goto-index" &&
@@ -7296,19 +7345,39 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
                                  std::string{"nothing"});
         if (action != "nothing") return;
 
-        // Advance to the next sibling in document order.
-        std::vector<int> next_path = stopped_path;
-        if (!next_path.empty()) {
-            next_path.back()++;
-            const std::string nxt = resolve_index_path_locked(next_path);
-            if (!nxt.empty()) {
-                next_to_arm = nxt;
-            } else if (!was_manual) {
-                // Fell off the end on a natural end → wrap to the first playable
-                // item so a single GO restarts the show. A manual stop leaves
-                // the arming empty (operator is holding the show).
-                next_to_arm = first_playable_item_uuid_locked();
+        // Advance to the next item in document order. A cue that is the last
+        // in its group goes on to the item after the group (and so on up),
+        // not to the top of the show; children of a Play All group started
+        // together, so the last of them to finish goes after the group too.
+        const auto node_at = [&](const std::vector<int>& path) -> const json* {
+            if (path.empty() || !document_.contains("items")) return nullptr;
+            const json* node = &document_["items"];
+            const json* found_node = nullptr;
+            for (const int index : path) {
+                if (!node->is_array() || index < 0 || static_cast<std::size_t>(index) >= node->size()) return nullptr;
+                found_node = &(*node)[static_cast<std::size_t>(index)];
+                node = found_node->contains("children") ? &(*found_node)["children"] : found_node;
             }
+            return found_node;
+        };
+        std::vector<int> next_path = stopped_path;
+        while (!next_path.empty()) {
+            std::vector<int> parent_path(next_path.begin(), next_path.end() - 1);
+            const json* parent = node_at(parent_path);
+            const bool play_all = parent && parent->contains("startBehavior") && (*parent)["startBehavior"].is_object() &&
+                json_get_or((*parent)["startBehavior"], "action", std::string{}) == "play-all";
+            if (!play_all) {
+                next_path.back()++;
+                const std::string nxt = resolve_index_path_locked(next_path);
+                if (!nxt.empty()) { next_to_arm = nxt; break; }
+            }
+            next_path = parent_path;
+        }
+        if (next_to_arm.empty() && !was_manual) {
+            // Fell off the end of the show on a natural end → wrap to the first
+            // playable item so a single GO restarts the show. A manual stop
+            // leaves the arming empty (operator is holding the show).
+            next_to_arm = first_playable_item_uuid_locked();
         }
     }
 
