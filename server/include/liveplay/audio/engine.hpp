@@ -495,6 +495,13 @@ private:
         // Watchdog only: when a lost output may next be retried.
         std::chrono::steady_clock::time_point next_auto_recovery{};
         std::unique_ptr<ma_device>  ma_dev;
+        // The native stream's identity, kept apart from ma_dev so an open can
+        // tell outputs apart while one is busy recovering (its native_mutex
+        // held). Set at open and by each reopen, under identity_mutex.
+        mutable std::mutex          identity_mutex;
+        bool                        has_native_identity = false;
+        ma_backend                  native_backend{};
+        ma_device_id                native_id{};
         std::mutex                  native_mutex; // One stop/start/uninit per device.
         mutable std::mutex          state_mutex;  // Short recovery/watchdog publication only.
         std::atomic<bool>           cleanup_done{false};

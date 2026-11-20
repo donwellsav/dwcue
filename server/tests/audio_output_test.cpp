@@ -287,6 +287,63 @@ void test_lost_output_comes_back() {
 // Reading the device list for live state does not rebuild it: a rebuild
 // opens the OS audio system and holds the device lock that opening an
 // output needs. The meter loop reads 30 times a second; rebuilds are rarer.
+// A lost output is retried every 2 s, its native lock held through each
+// reopen. Opening an output meanwhile (a backup chosen in Settings, a cue on
+// its own output) must not fail because that lock is busy.
+void test_open_while_an_output_recovers() {
+    NativeDeviceGate gate;
+    AudioEngine engine;
+    engine.device_test_context_ = &gate.context;
+    const auto first = engine.open_device_by_name("NULL Playback Device", 2);
+    check(!first.empty(), "open while recovering: the chosen output opens");
+    std::shared_ptr<AudioEngine::Device> device;
+    for (const auto& candidate : engine.devices_) if (candidate->id == first) device = candidate;
+    check(device != nullptr, "open while recovering: the output is listed");
+    if (!device) return;
+    DeviceId again;
+    {
+        std::unique_lock recovering{device->native_mutex};  // a reopen in progress
+        auto open = std::async(std::launch::async, [&] { return engine.open_device_by_name("NULL Playback Device", 2); });
+        const bool answered = open.wait_for(std::chrono::seconds{2}) == std::future_status::ready;
+        recovering.unlock();
+        again = open.get();
+        check(answered, "open while recovering: the open does not wait on the busy output");
+    }
+    check(again == first, "open while recovering: the same output is shared, not refused");
+    if (!again.empty()) engine.close_device(again);
+    engine.close_device(first);
+    while (!device->cleanup_done.load(std::memory_order_acquire)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+}
+
+// System Default and a chosen output can run on the same hardware. When the
+// System Default stream is lost, the chosen output still running there stays
+// available, or every GO of a cue routed to it would be refused.
+void test_lost_default_keeps_chosen_output_available() {
+    NativeDeviceGate gate;
+    AudioEngine engine;
+    engine.device_test_context_ = &gate.context;
+    const auto system_default = engine.open_default_device();
+    const auto chosen = engine.open_device_by_name("NULL Playback Device", 2);
+    check(!system_default.empty() && !chosen.empty() && system_default != chosen,
+          "shared hardware: System Default and the chosen output have their own streams");
+    for (const auto& device : engine.devices_) {
+        device->runtime_state.store(device->id == chosen ? DeviceRuntimeState::Running
+                                                         : DeviceRuntimeState::Disconnected);
+    }
+    bool listed = false, available = false;
+    for (const auto& info : engine.enumerate_devices()) {
+        if (info.id != chosen) continue;
+        listed = true;
+        available = info.is_available;
+    }
+    check(listed && available, "shared hardware: a lost System Default stream leaves the chosen output available");
+    const auto opened = engine.devices_;
+    engine.close_device(chosen);
+    engine.close_device(system_default);
+    for (const auto& device : opened)
+        while (!device->cleanup_done.load(std::memory_order_acquire)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+}
+
 void test_device_list_read_without_rebuild() {
     NativeDeviceGate gate;
     AudioEngine engine;
@@ -1125,6 +1182,8 @@ void test_restart_while_playing_declicks(const std::filesystem::path& tone) {
     auto restart = std::async(std::launch::async, [&] { f.item->seek_seconds(0.0); });
     float previous = 0.0f, largest_step = 0.0f;
     bool first = true;
+    // At the output's own pace: a jump held silent past 250 ms of output is
+    // storage that stopped answering, and stops the cue.
     for (int i = 0; i < 40 || restart.wait_for(std::chrono::seconds{0}) != std::future_status::ready; ++i) {
         f.render();
         const auto out = f.drain();
@@ -1133,6 +1192,7 @@ void test_restart_while_playing_declicks(const std::filesystem::path& tone) {
             previous = out[n * 2];
             first = false;
         }
+        std::this_thread::sleep_for(std::chrono::microseconds{block * 1'000'000 / 48'000});
         if (i > 4000) break;
     }
     restart.get();
@@ -1165,6 +1225,7 @@ void test_restart_window_ramps_in_once(const std::filesystem::path& tone) {
             previous = out[n * 2];
             first = false;
         }
+        std::this_thread::sleep_for(std::chrono::microseconds{block * 1'000'000 / 48'000});  // the output's pace
     };
     std::atomic<bool> in_window{false}, window_done{false};
     f.item->after_seek_unlock_for_test_ = [&] {
@@ -1196,6 +1257,166 @@ void test_restart_window_ramps_in_once(const std::filesystem::path& tone) {
     check(window_seen && largest_step < 0.12f && f.item->stats().read_ahead_underruns == misses &&
               f.item->stats().transport == liveplay::audio::TransportState::Playing,
           "restart window: new audio ramps in once, and the jump's wait is not a miss");
+}
+
+// A jump (restart) of a playing cue holds it silent while the file seeks.
+// These run at the output's pace and render without the decode worker, so
+// the test can stand in for storage that stops answering by holding the
+// decoder lock.
+struct JumpRig {
+    Fixture f;
+    float previous = 0.0f, largest_step = 0.0f, peak = 0.0f;
+    bool first = true;
+    explicit JumpRig(const std::filesystem::path& tone) : f(tone) {
+        f.render(3);
+        for (int i = 0; i < 20; ++i) { f.render(); (void)f.drain(); }
+    }
+    void step(bool refill = false) {
+        if (refill) f.item->service_read_ahead(1);
+        const auto topology = f.engine.snapshot_topology();
+        f.engine.render_one_block(*topology);
+        const auto out = f.drain();
+        for (std::size_t n = 0; n < block; ++n) {
+            if (!first) largest_step = std::max(largest_step, std::fabs(out[n * 2] - previous));
+            previous = out[n * 2];
+            peak = std::max(peak, std::fabs(out[n * 2]));
+            first = false;
+        }
+        std::this_thread::sleep_for(std::chrono::microseconds{block * 1'000'000 / 48'000});
+    }
+    void wait_for_hold() {
+        for (int i = 0; i < 200; ++i) {
+            f.item->begin_render_exclusion();
+            const bool held = f.item->seek_hold_revision_ != 0;
+            f.item->end_render_exclusion();
+            if (held) return;
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+    }
+};
+
+void test_stuck_jump_stops(const std::filesystem::path& tone) {
+    using liveplay::audio::TransportState;
+    {
+        JumpRig r(tone);
+        std::unique_lock storage{r.f.item->decoder_mutex_};
+        auto jump = std::async(std::launch::async, [&] { r.f.item->seek_seconds(0.5); });
+        r.wait_for_hold();
+        for (int i = 0; i < 6; ++i) r.step();  // the ramp out plays; the jump waits on storage
+        r.f.item->stop_with_fade(std::chrono::milliseconds{500});  // Stop All with a fade
+        bool stopped = false;
+        for (int i = 0; i < 10 && !stopped; ++i) {
+            r.step();
+            stopped = r.f.item->stats().transport == TransportState::Stopped;
+        }
+        storage.unlock();
+        jump.get();
+        r.peak = 0.0f;
+        for (int i = 0; i < 10; ++i) r.step();
+        check(stopped && r.f.item->stats().transport == TransportState::Stopped && r.peak < 1e-6f,
+              "stuck jump: a fading Stop All still stops the cue, and it stays silent");
+    }
+    {
+        JumpRig r(tone);
+        std::unique_lock storage{r.f.item->decoder_mutex_};
+        auto jump = std::async(std::launch::async, [&] { r.f.item->seek_seconds(0.5); });
+        r.wait_for_hold();
+        int blocks = 0;
+        while (blocks < 120 && r.f.item->stats().transport != TransportState::Stopped) { r.step(); ++blocks; }
+        const auto stats = r.f.item->stats();
+        storage.unlock();
+        jump.get();
+        r.peak = 0.0f;
+        for (int i = 0; i < 10; ++i) r.step();
+        std::printf("stuck jump: stopped after %d blocks\n", blocks);
+        check(stats.transport == TransportState::Stopped && stats.decoder_result == MA_TIMEOUT &&
+                  blocks <= 60 && r.peak < 1e-6f,
+              "stuck jump: storage that never lets a jump finish stops the cue at about 250 ms");
+    }
+}
+
+void test_ramps_turn_round_from_their_level(const std::filesystem::path& tone) {
+    using liveplay::audio::TransportState;
+    {
+        // A pause while a jump holds the cue silent stays silent.
+        JumpRig r(tone);
+        std::unique_lock storage{r.f.item->decoder_mutex_};
+        auto jump = std::async(std::launch::async, [&] { r.f.item->seek_seconds(0.5); });
+        r.wait_for_hold();
+        for (int i = 0; i < 6; ++i) r.step();
+        r.f.item->pause();
+        r.peak = 0.0f;
+        for (int i = 0; i < 6; ++i) r.step();
+        storage.unlock();
+        jump.get();
+        check(r.peak < 1e-6f, "ramps: a pause during a jump's silent hold plays nothing");
+    }
+    {
+        // A second restart during the first one's ramp in ramps out from
+        // the level it had reached.
+        JumpRig r(tone);
+        std::atomic<int> unlocks{0};
+        std::atomic<bool> in_window{false}, window_done{false};
+        r.f.item->after_seek_unlock_for_test_ = [&] {
+            if (unlocks.fetch_add(1) != 0) return;
+            in_window.store(true);
+            for (int i = 0; i < 1000 && !window_done.load(); ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        };
+        auto restart = std::async(std::launch::async, [&] { r.f.item->seek_seconds(0.25); });
+        std::future<void> second;
+        for (int i = 0; i < 400; ++i) {
+            if (!second.valid() && in_window.load()) {
+                r.f.item->service_read_ahead(4);
+                r.step(false);             // part way up the first restart's ramp in
+                second = std::async(std::launch::async, [&] { r.f.item->seek_seconds(0.5); });
+                r.wait_for_hold();         // it turns round before the next block
+                window_done.store(true);
+                continue;
+            }
+            r.step(second.valid());
+            if (second.valid() && i > 60 &&
+                second.wait_for(std::chrono::seconds{0}) == std::future_status::ready &&
+                restart.wait_for(std::chrono::seconds{0}) == std::future_status::ready) break;
+        }
+        restart.get();
+        if (second.valid()) second.get();
+        r.f.item->after_seek_unlock_for_test_ = {};
+        std::printf("ramps: second restart largest step %.3f\n", r.largest_step);
+        check(r.largest_step < 0.12f && r.f.item->stats().transport == TransportState::Playing,
+              "ramps: a restart during a ramp in turns round from its level, no click");
+    }
+}
+
+void test_fading_jump_keeps_its_ramp_in(const std::filesystem::path& tone) {
+    JumpRig r(tone);
+    r.f.item->stop_with_fade(std::chrono::milliseconds{2'000});
+    for (int i = 0; i < 4; ++i) r.step(true);
+    std::atomic<bool> in_window{false}, window_done{false};
+    r.f.item->after_seek_unlock_for_test_ = [&] {
+        in_window.store(true);
+        for (int i = 0; i < 1000 && !window_done.load(); ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    };
+    // A quarter of a cycle into the tone: the new audio starts at its peak.
+    auto jump = std::async(std::launch::async, [&] { r.f.item->seek_seconds(12'012.0 / 48'000.0); });
+    bool seen = false;
+    for (int i = 0; i < 40 || jump.wait_for(std::chrono::seconds{0}) != std::future_status::ready; ++i) {
+        if (!seen && in_window.load()) {
+            seen = true;
+            for (int k = 0; k < 4; ++k) r.step(false);  // slow storage: nothing to play yet
+            r.f.item->service_read_ahead(4);
+            for (int k = 0; k < 4; ++k) r.step(false);
+            window_done.store(true);
+            continue;
+        }
+        r.step(seen);
+        if (i > 400) break;
+    }
+    jump.get();
+    r.f.item->after_seek_unlock_for_test_ = {};
+    std::printf("fading jump: largest step %.3f\n", r.largest_step);
+    check(seen && r.largest_step < 0.12f, "fading jump: slow storage does not use up the ramp in");
 }
 
 // Arming Cue to Continue (loop off) on a playing loop, away from its seam,
@@ -1781,6 +2002,8 @@ int main() {
     test_initial_device_start_keeps_controls();
     test_held_device_recovery_lifetime();
     test_lost_output_comes_back();
+    test_open_while_an_output_recovers();
+    test_lost_default_keeps_chosen_output_available();
     test_device_list_read_without_rebuild();
     test_device_catalog_survives_native_stall();
     test_catalog_follows_native_reroute();
@@ -1804,6 +2027,9 @@ int main() {
     test_rego_during_fade_ramps(tone);
     test_restart_while_playing_declicks(tone);
     test_restart_window_ramps_in_once(tone);
+    test_stuck_jump_stops(tone);
+    test_ramps_turn_round_from_their_level(tone);
+    test_fading_jump_keeps_its_ramp_in(tone);
     test_cue_to_continue_keeps_playing(seamless_44k(dir));
     test_mixer_changes_ramp(tone);
     test_stop_without_output(tone);

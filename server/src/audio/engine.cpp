@@ -483,7 +483,10 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices(bool refresh_catalog) con
     const auto opened = snapshot_devices();
     std::vector<bool> opened_matched(opened ? opened->size() : 0, false);
 
-    const auto overlay_runtime = [](DeviceInfo& info, const Device& dev) {
+    // `listed`: whether the hardware itself is there. The last stream laid
+    // over an entry decides it, so a lost System Default stream cannot hide
+    // a chosen output running on the same hardware.
+    const auto overlay_runtime = [](DeviceInfo& info, const Device& dev, bool listed) {
         std::lock_guard state_lock{dev.state_mutex};
         // API mutations use the engine's opened-instance id, not the
         // enumeration-only hardware-name id.
@@ -499,8 +502,8 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices(bool refresh_catalog) con
             runtime_state == DeviceRuntimeState::Running &&
             dev.clock_master.load(std::memory_order_acquire);
         info.runtime_state = device_runtime_state_name(runtime_state);
-        if (runtime_state == DeviceRuntimeState::Disconnected || runtime_state == DeviceRuntimeState::Closing ||
-            runtime_state == DeviceRuntimeState::Interrupted) info.is_available = false;
+        info.is_available = listed && runtime_state != DeviceRuntimeState::Disconnected &&
+            runtime_state != DeviceRuntimeState::Closing && runtime_state != DeviceRuntimeState::Interrupted;
         info.underrun_count +=
             dev.underrun_count.load(std::memory_order_acquire);
         info.underrun_frames +=
@@ -530,18 +533,22 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices(bool refresh_catalog) con
 
     for (const auto& entry : hardware) {
         auto info = entry.info;
+        const bool listed = entry.info.is_available;
         // A chosen output's stream goes last so its id wins over a System
         // Default stream on the same hardware; health adds up from both.
+        // Matched by the identity each output keeps, so one busy recovering
+        // is still listed against its hardware.
         for (const bool default_pass : {true, false})
         if (opened) for (std::size_t i = 0; i < opened->size(); ++i) {
             const auto& dev = (*opened)[i];
             if (dev->follows_default != default_pass) continue;
-            if (dev->closing.load(std::memory_order_acquire) || !dev->ma_dev) continue;
-            std::unique_lock native_lock{dev->native_mutex, std::try_to_lock};
-            if (!native_lock.owns_lock() ||
-                !ma_device_id_equal(&dev->ma_dev->playback.id, &entry.native_id)) continue;
+            if (dev->closing.load(std::memory_order_acquire)) continue;
+            {
+                std::lock_guard identity{dev->identity_mutex};
+                if (!dev->has_native_identity || !ma_device_id_equal(&dev->native_id, &entry.native_id)) continue;
+            }
             opened_matched[i] = true;
-            overlay_runtime(info, *dev);
+            overlay_runtime(info, *dev, listed);
         }
         out.emplace_back(std::move(info));
     }
@@ -553,7 +560,7 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices(bool refresh_catalog) con
         info.channel_count = dev->channels;
         info.sample_rate = dev->sample_rate;
         info.is_available = !has_snapshot;
-        overlay_runtime(info, *dev);
+        overlay_runtime(info, *dev, !has_snapshot);
         out.emplace_back(std::move(info));
     }
     return out;
@@ -623,6 +630,12 @@ void AudioEngine::ma_notification_callback(
         }
         case ma_device_notification_type_rerouted:
             device->reroute_count.fetch_add(1, std::memory_order_relaxed);
+            {
+                // The OS moved the stream (System Default following a new
+                // default): its identity is now the new hardware's.
+                std::lock_guard identity{device->identity_mutex};
+                device->native_id = notification->pDevice->playback.id;
+            }
             await_verified_callback(DeviceRuntimeState::Disconnected);
             device->reset_requested.store(true, std::memory_order_release);
             break;
@@ -957,6 +970,12 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     const auto backend = dev->ma_dev->pContext->backend;
     const auto native_id = dev->ma_dev->playback.id;
     const bool follows_default = dev->follows_default;
+    {
+        std::lock_guard identity{dev->identity_mutex};
+        dev->native_backend = backend;
+        dev->native_id = native_id;
+        dev->has_native_identity = true;
+    }
     // Every System Default stream follows the same default, wherever the OS
     // has moved it, so only a chosen output compares hardware ids.
     const auto same_stream = [&](const StartingDevice& start) {
@@ -966,15 +985,16 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     const auto same_hardware = [&](const StartingDevice& start) {
         return start.backend == backend && ma_device_id_equal(&start.id, &native_id);
     };
-    bool identity_pending = false;
+    // An output busy recovering (its native_mutex held through a reopen) is
+    // still compared, by the identity it keeps: an open never fails or waits
+    // because some other output is being retried.
     const auto acquire_duplicate_locked = [&]() -> DeviceId {
         const auto existing = std::find_if(devices_.begin(), devices_.end(), [&](const auto& candidate) {
-            if (candidate->closing.load(std::memory_order_acquire) || !candidate->ma_dev) return false;
+            if (candidate->closing.load(std::memory_order_acquire)) return false;
             if (candidate->follows_default != follows_default) return false;
-            std::unique_lock native_lock{candidate->native_mutex, std::try_to_lock};
-            if (!native_lock.owns_lock()) { identity_pending = true; return false; }
-            return candidate->ma_dev->pContext->backend == backend &&
-                (follows_default || ma_device_id_equal(&candidate->ma_dev->playback.id, &native_id) != MA_FALSE);
+            std::lock_guard identity{candidate->identity_mutex};
+            return candidate->has_native_identity && candidate->native_backend == backend &&
+                (follows_default || ma_device_id_equal(&candidate->native_id, &native_id) != MA_FALSE);
         });
         if (existing == devices_.end()) return {};
         (*existing)->open_references.acquire();
@@ -988,11 +1008,11 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         const auto deadline = std::chrono::steady_clock::now() + kDeviceBusyWait;
         for (;;) {
             const auto duplicate = acquire_duplicate_locked();
-            if (!duplicate.empty() || identity_pending || starting_locked(same_stream)) {
+            if (!duplicate.empty() || starting_locked(same_stream)) {
                 lock.unlock();
                 if (lifecycle_lock.owns_lock()) lifecycle_lock.unlock();
                 retire_device(dev);
-                if (!duplicate.empty() || identity_pending) return duplicate;
+                if (!duplicate.empty()) return duplicate;
                 lock.lock();
                 if (device_started_.wait_until(lock, deadline, [&] { return !starting_locked(same_stream); }))
                     return acquire_duplicate_locked();
@@ -1841,6 +1861,12 @@ bool AudioEngine::reopen_native_device(Device& device) noexcept {
         if (ma_device_init(device.native_context, &cfg, fresh.get()) != MA_SUCCESS) return false;
         ma_device_uninit(device.ma_dev.get());
         device.ma_dev = std::move(fresh);
+        {
+            std::lock_guard identity{device.identity_mutex};
+            device.native_backend = device.ma_dev->pContext->backend;
+            device.native_id = device.ma_dev->playback.id;
+            device.has_native_identity = true;
+        }
         device.native_reopens.fetch_add(1, std::memory_order_relaxed);
         Logger::info("Output '{}' reopened after it was lost", device.display_name);
         return true;
