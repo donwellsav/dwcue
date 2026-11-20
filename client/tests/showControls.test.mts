@@ -117,3 +117,10 @@ test('a lost or interrupted output is announced, in every language', () => {
     assert.match(messages.audioHealth.lost, /\{name\}/, `${code} names the output`);
   }
 });
+
+test('restoring a backup gets the time a large show needs', () => {
+  const client = source('../app/composables/useLiveplayServer.ts');
+  const restore = client.slice(client.indexOf('const RESTORE_TIMEOUT_MS'), client.indexOf('// Close the project on the server'));
+  assert.match(restore, /const RESTORE_TIMEOUT_MS = 2 \* 60 \* 1000;/);
+  assert.match(restore, /'\/api\/project\/backups\/restore'[\s\S]*signal: AbortSignal\.timeout\(RESTORE_TIMEOUT_MS\)/);
+});

@@ -891,8 +891,14 @@ function createClient() {
     return Array.isArray(result?.backups) ? result.backups : [];
   }
   // The engine backs up the show as it is now, then reloads it from `name`.
+  // A restore reopens the whole show; a large one on a slow drive can take
+  // longer than an ordinary request is given, and giving up early would
+  // report a failure for a restore the engine still completes.
+  const RESTORE_TIMEOUT_MS = 2 * 60 * 1000;
   async function restoreShowBackup(name: string): Promise<void> {
-    await rest<any>('/api/project/backups/restore', { method: 'POST', body: JSON.stringify({ name }) });
+    await rest<any>('/api/project/backups/restore', {
+      method: 'POST', body: JSON.stringify({ name }), signal: AbortSignal.timeout(RESTORE_TIMEOUT_MS),
+    });
   }
   // Close the project on the server (reset to no-project state). Mirrors the
   // local closeProject() in useProject so the server doesn't keep playing /
