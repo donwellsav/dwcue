@@ -344,6 +344,30 @@ void test_lost_default_keeps_chosen_output_available() {
         while (!device->cleanup_done.load(std::memory_order_acquire)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
 }
 
+// When the clock master's queue is reset, render refills it with three
+// blocks at once, and they land on every other output too. An output must
+// have room for them on top of a callback burst, so it plays on and catches
+// up instead of overflowing into a hard resync, with its latency unchanged.
+void test_outputs_have_room_for_a_master_refill() {
+    NativeDeviceGate gate;
+    AudioEngine engine;
+    engine.device_test_context_ = &gate.context;
+    const auto id = engine.open_device_by_name("NULL Playback Device", 2);
+    std::shared_ptr<AudioEngine::Device> device;
+    for (const auto& candidate : engine.devices_) if (candidate->id == id) device = candidate;
+    check(device != nullptr, "refill room: the output opens");
+    if (!device) return;
+    const auto block_frames = static_cast<std::uint32_t>(block);
+    const auto capacity = static_cast<std::uint32_t>(ma_pcm_rb_get_subbuffer_size(device->ring.get()));
+    const auto target = device->clock_controller.target_frames();
+    std::printf("refill room: ring %u frames, clock target %u frames\n", capacity, target);
+    check(target == block_frames * 9 / 2, "refill room: the output's latency target stays at 4.5 blocks");
+    check(capacity >= target + block_frames * (AudioEngine::kMasterQueueBlocks + 2),
+          "refill room: a master refill on top of a two-block burst fits without overflowing");
+    engine.close_device(id);
+    while (!device->cleanup_done.load(std::memory_order_acquire)) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+}
+
 void test_device_list_read_without_rebuild() {
     NativeDeviceGate gate;
     AudioEngine engine;
@@ -2092,6 +2116,7 @@ int main() {
     test_lost_output_comes_back();
     test_open_while_an_output_recovers();
     test_lost_default_keeps_chosen_output_available();
+    test_outputs_have_room_for_a_master_refill();
     test_device_list_read_without_rebuild();
     test_device_catalog_survives_native_stall();
     test_catalog_follows_native_reroute();

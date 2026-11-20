@@ -447,7 +447,14 @@ public:
 #ifndef LIVEPLAY_TEST_ACCESS
 private:
 #endif
-    static constexpr FrameCount kDeviceRingBlocks = 8;
+    // An output's ring holds kDeviceRingBlocks. Its clock is matched around
+    // the middle of kDeviceClockBlocks (target 4.5 blocks); the rest is
+    // headroom. When the clock master's queue is reset (a reroute, a lost
+    // stream), render refills it with three blocks back to back, which land
+    // on every other output too: those play on and catch up, at most 0.5%
+    // fast for a few seconds, instead of overflowing into a hard resync.
+    static constexpr FrameCount kDeviceRingBlocks = 12;
+    static constexpr FrameCount kDeviceClockBlocks = 8;
     static constexpr FrameCount kMasterQueueBlocks = 3;
 
     struct OutputChannelState {

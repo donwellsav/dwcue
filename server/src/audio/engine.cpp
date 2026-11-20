@@ -880,11 +880,13 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         return {};
     }
     dev->clock_resampler_initialized = true;
-    // Center pre-callback occupancy above the half-ring by half a block,
-    // leaving equal room for independently scheduled writes and drains.
+    // Center pre-callback occupancy above the middle of the clock span by
+    // half a block, leaving equal room for independently scheduled writes and
+    // drains; the ring beyond that span is headroom (see kDeviceRingBlocks).
+    const auto clock_frames = static_cast<ma_uint32>(cfg_.render_block * kDeviceClockBlocks);
     dev->clock_controller.configure(
-        ring_frames,
-        (ring_frames + static_cast<ma_uint32>(cfg_.render_block)) / 2);
+        clock_frames,
+        (clock_frames + static_cast<ma_uint32>(cfg_.render_block)) / 2);
 
     ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
     cfg.playback.format    = ma_format_f32;

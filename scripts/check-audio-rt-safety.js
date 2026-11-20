@@ -76,8 +76,14 @@ assert.match(deviceReset, /ma_pcm_rb_reset/,
   'hard re-lock must explicitly reset stale device-ring state');
 assert.match(renderLoop, /reset_device_if_requested\(\*clock_master\)/,
   'clock master must complete a pending reset before advancing the timeline');
-assert.match(engineHeader, /kDeviceRingBlocks = 8;/,
-  'device ring capacity must stay within eight render blocks');
+// The ring is bounded; latency is set by the clock target inside an
+// eight-block span, the rest of the ring being headroom for a master refill.
+assert.match(engineHeader, /kDeviceRingBlocks = 12;/,
+  'device ring capacity must stay within twelve render blocks');
+assert.match(engineHeader, /kDeviceClockBlocks = 8;/,
+  'output clock matching must stay centred in an eight-block span');
+assert.match(openDevice, /clock_frames = static_cast<ma_uint32>\(cfg_\.render_block \* kDeviceClockBlocks\)/,
+  'the clock target must not grow with the ring');
 assert.match(openDevice, /render_block \* kDeviceRingBlocks\)/,
   'device output must allocate the bounded ring capacity');
 assert.match(renderBlock, /kMasterQueueBlocks\s*:\s*dev->clock_controller\.target_frames\(\)/,
