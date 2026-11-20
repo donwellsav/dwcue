@@ -985,6 +985,8 @@ void test_live_ceiling(const std::filesystem::path& tone) {
     check(peak <= db_to_linear_precise(-12.0f) + 1e-6f,
           "live ceiling change protects already-queued device audio");
     f.engine.set_limiter_enabled(false);
+    // A bypass brings the level up over 20 ms rather than in one click.
+    for (int i = 0; i < 6; ++i) { f.render(); (void)f.drain(); }
     f.render();
     const auto bypassed = f.drain();
     peak = 0;

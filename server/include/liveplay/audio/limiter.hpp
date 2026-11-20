@@ -67,6 +67,7 @@ private:
     SampleRate sample_rate_   = kDefaultMixSampleRate;
     std::atomic<float> ceiling_lin_{1.0f};
     float      release_coef_  = 0.0f;
+    float      bypass_step_   = 1.0f;   // per sample: a bypass reaches unity in 20 ms
     std::size_t lookahead_    = 0;
 
     // Sliding maximum of the true-peak detector output.
@@ -82,6 +83,9 @@ private:
 
     // Current gain (linear). Audio-thread state.
     float current_gain_ = 1.0f;
+    // Gain actually applied: the limiter's while enabled; while bypassed, it
+    // ramps to unity over 20 ms instead of stepping there. Audio-thread state.
+    float applied_gain_ = 1.0f;
 
     // Published UI value.
     std::atomic<float> gain_reduction_db_{0.0f};
