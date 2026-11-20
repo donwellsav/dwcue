@@ -123,6 +123,19 @@ detail::MediaPaths media_paths(const json& item, const std::string& folder) {
 }
 
 #ifdef LIVEPLAY_TEST_HOOKS
+// Stands in for storage that stops answering while a cue starts.
+void hold_cue_start_for_test() {
+    if (const char* value = std::getenv("DWCUE_TEST_CUE_START_GATE"); value && *value) {
+        std::error_code ec;
+        const std::filesystem::path gate{value};
+        if (!std::filesystem::exists(gate, ec)) return;
+        std::ofstream{gate.string() + ".entered"} << "held";
+        const auto release = std::chrono::steady_clock::now() + std::chrono::seconds{10};
+        while (std::filesystem::exists(gate, ec) && std::chrono::steady_clock::now() < release)
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+}
+
 void hold_path_probe_for_test(const std::filesystem::path& path) {
     if (const char* value = std::getenv("DWCUE_TEST_PATH_PROBE_GATE"); value && *value) {
         std::error_code ec;
@@ -136,6 +149,10 @@ void hold_path_probe_for_test(const std::filesystem::path& path) {
     }
 }
 #endif
+
+// A cue whose media takes longer than this to read on its start is not
+// started: the operator's GO has already been reported as unconfirmed.
+constexpr auto kLateCueStart = std::chrono::milliseconds{2000};
 
 std::filesystem::path resolve_media_path(const detail::MediaPaths& paths) {
     if (paths.fallback.empty() || paths.preferred == paths.fallback) return paths.preferred;
@@ -3936,10 +3953,19 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
             if (quick_play_restarts && phase == ItemPlayPhase::Immediate &&
                 playback->stats().transport != audio::TransportState::Stopped)
                 playback->seek_seconds(play_start);
+            const auto prime_started = std::chrono::steady_clock::now();
+#ifdef LIVEPLAY_TEST_HOOKS
+            hold_cue_start_for_test();
+#endif
             const bool primed = playback->prime(2.0, play_start);
             lifecycle_lock.lock();
             if (!current()) return false;
             if (!primed) return reject_preparation();
+            // Storage that answered only after the operator had given up on
+            // this start (the client stops waiting at 2.5 s) must not start
+            // the cue now, late, perhaps after another GO.
+            if (std::chrono::steady_clock::now() - prime_started > kLateCueStart)
+                return reject_preparation("The media took too long to read, so the cue was not started late. Check the drive it plays from.");
             ownership.unlock();
         }
     }

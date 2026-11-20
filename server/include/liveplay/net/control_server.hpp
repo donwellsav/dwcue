@@ -114,6 +114,7 @@ private:
     void install_routes();
     void broadcast_loop();
     void waveform_worker();   // drains the async waveform-generation queue
+    void ws_command_worker(); // runs WebSocket commands off the connection threads
     void http_action_worker();
 
     // Fan-out helper for multi-client mutation sync. Mutating REST routes

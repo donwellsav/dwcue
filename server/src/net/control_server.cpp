@@ -240,6 +240,29 @@ struct ControlServer::Impl {
     std::unordered_map<std::string, std::shared_future<std::string>> ws_commands_inflight;
     std::deque<std::string>                     ws_command_order;
 
+    // WebSocket commands run on their own workers, never on the server's
+    // connection threads. A GO waiting on storage (a drive that stopped
+    // answering) then holds only its own connection: a Stop All, which may
+    // be handled on the same connection thread, and every other client go
+    // on. One connection's commands still run one at a time, in order.
+    // Connections are told apart by id, so a reply never reaches another
+    // connection that took a closed one's address.
+    struct WsCommand {
+        crow::websocket::connection* conn = nullptr;
+        std::uint64_t id = 0;
+        std::string remote_ip;
+        std::string data;
+    };
+    std::unordered_map<crow::websocket::connection*, std::uint64_t> ws_client_ids; // ws_mutex
+    std::uint64_t                               ws_next_client_id{0};              // ws_mutex
+    std::mutex                                  ws_work_mutex;
+    std::condition_variable                     ws_work_cv;
+    std::unordered_map<std::uint64_t, std::deque<WsCommand>> ws_work_queues;
+    std::deque<std::uint64_t>                   ws_work_ready;
+    std::unordered_set<std::uint64_t>           ws_work_busy;
+    std::vector<std::thread>                    ws_workers;
+    bool                                        ws_work_stop{false};
+
     // Async waveform-generation queue. REST handler enqueues a task and
     // returns immediately; waveform_worker() processes them one at a time and
     // broadcasts a waveform_ready doc_patch when each finishes.
@@ -814,6 +837,13 @@ bool ControlServer::start() {
     }
     impl_->waveform_thread  = std::thread([this] { waveform_worker(); });
     impl_->http_thread = std::thread([this] { http_action_worker(); });
+    {
+        std::lock_guard lock{impl_->ws_work_mutex};
+        impl_->ws_work_stop = false;
+    }
+    constexpr int kWsCommandWorkers = 4;
+    for (int i = 0; i < kWsCommandWorkers; ++i)
+        impl_->ws_workers.emplace_back([this] { ws_command_worker(); });
     Logger::success("Control server listening on {}:{}", cfg_.bind_address, cfg_.port);
     return true;
 }
@@ -837,6 +867,15 @@ void ControlServer::stop() {
         impl_->http_generation.fetch_add(1);
     }
     impl_->http_cv.notify_one();
+    {
+        std::lock_guard lock{impl_->ws_work_mutex};
+        impl_->ws_work_stop = true;
+        impl_->ws_work_queues.clear();
+        impl_->ws_work_ready.clear();
+    }
+    impl_->ws_work_cv.notify_all();
+    for (auto& worker : impl_->ws_workers) if (worker.joinable()) worker.join();
+    impl_->ws_workers.clear();
     if (impl_->broadcast_thread.joinable()) impl_->broadcast_thread.join();
     if (impl_->waveform_thread.joinable())  impl_->waveform_thread.join();
     if (impl_->http_thread.joinable()) impl_->http_thread.join();
@@ -1422,7 +1461,7 @@ static std::vector<std::string> selection_anchors(audio::AudioEngine& engine,
 // Returns a non-empty string if a direct reply to this specific client is
 // needed (pong, error). The caller sends it under ws_mutex so it doesn't
 // race with broadcast_loop's concurrent send_text calls on the same conn.
-static std::string handle_ws_message(crow::websocket::connection& conn,
+static std::string handle_ws_message(const std::string& remote_ip,
                                      const std::string& msg,
                                      audio::AudioEngine& engine,
                                      core::ProjectState& state,
@@ -1431,7 +1470,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                                      std::unordered_map<std::string, std::string>& command_results,
                                      std::unordered_map<std::string, std::shared_future<std::string>>& commands_inflight,
                                      std::deque<std::string>& command_order) {
-    Logger::api_request("Client ({}) -> Server ({}) : {}", conn.get_remote_ip(), server_addr, msg);
+    Logger::api_request("Client ({}) -> Server ({}) : {}", remote_ip, server_addr, msg);
 
     json j;
     try { j = json::parse(msg); }
@@ -1676,7 +1715,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                     return command_error("gain: cue not loaded into engine");
                 const float db = j.value("db", 0.0f);
                 Logger::api_request("Client ({}) -> Server ({}) : WS gain cue_id={} db={:.1f}",
-                                    conn.get_remote_ip(), server_addr, cue->value, db);
+                                    remote_ip, server_addr, cue->value, db);
                 state.set_cue_gain_db(*cue, db);
             } else return command_error("gain: no valid cue target");
         }
@@ -1688,7 +1727,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                 const auto in_ms  = j.value("in_ms",  (long long)0);
                 const auto out_ms = j.value("out_ms", (long long)0);
                 Logger::api_request("Client ({}) -> Server ({}) : WS fade cue_id={} in={}ms out={}ms",
-                                    conn.get_remote_ip(), server_addr, cue->value, in_ms, out_ms);
+                                    remote_ip, server_addr, cue->value, in_ms, out_ms);
                 state.set_cue_fade_in (*cue, std::chrono::milliseconds{in_ms});
                 state.set_cue_fade_out(*cue, std::chrono::milliseconds{out_ms});
             } else return command_error("fade: no valid cue target");
@@ -4653,6 +4692,7 @@ void ControlServer::install_routes() {
       .onopen([this](crow::websocket::connection& conn) {
           std::lock_guard lock{impl_->ws_mutex};
           impl_->ws_clients.insert(&conn);
+          impl_->ws_client_ids[&conn] = ++impl_->ws_next_client_id;
           // Mark this client for a playback_snapshot push on the next
           // broadcast tick. The snapshot can't be sent inline here because
           // build_playback_snapshot takes both engine and project locks
@@ -4666,6 +4706,14 @@ void ControlServer::install_routes() {
           std::lock_guard lock{impl_->ws_mutex};
           impl_->ws_clients.erase(&conn);
           impl_->ws_clients_pending_snapshot.erase(&conn);
+          if (const auto id = impl_->ws_client_ids.find(&conn); id != impl_->ws_client_ids.end()) {
+              {
+                  // Its commands not yet started go with it.
+                  std::lock_guard work{impl_->ws_work_mutex};
+                  impl_->ws_work_queues.erase(id->second);
+              }
+              impl_->ws_client_ids.erase(id);
+          }
           Logger::info("WS client disconnected ({}); {} remaining",
                        reason, impl_->ws_clients.size());
       })
@@ -4673,35 +4721,81 @@ void ControlServer::install_routes() {
                         const std::string& data,
                         bool is_binary) {
           if (is_binary) return;
-          std::string direct_reply;
-          try {
-              direct_reply = handle_ws_message(
-                  conn, data, engine_, state_, impl_->server_addr,
-                  impl_->ws_command_mutex, impl_->ws_command_results,
-                  impl_->ws_commands_inflight, impl_->ws_command_order);
-          } catch (const std::exception& e) {
-              Logger::error("WS onmessage threw past handler: {}", e.what());
-          } catch (...) {
-              Logger::error("WS onmessage caught unknown exception.");
-          }
-          // Send any direct reply (pong, error) under ws_mutex so it is
-          // serialised with broadcast_loop's concurrent send_text calls.
-          // Calling send_text from the ASIO thread without the mutex while
-          // broadcast_loop is also writing to the same conn causes the
-          // "not safe for concurrent writes" crash described in the Impl comment.
-          if (!direct_reply.empty()) {
+          // Hand the command to the workers (see Impl::WsCommand): the
+          // connection thread is free again at once.
+          Impl::WsCommand command{&conn, 0, conn.get_remote_ip(), data};
+          {
               std::lock_guard lock{impl_->ws_mutex};
-              try { conn.send_text(direct_reply); } catch (...) {}
+              const auto id = impl_->ws_client_ids.find(&conn);
+              if (id == impl_->ws_client_ids.end()) return;
+              command.id = id->second;
           }
-          // After applying any state-mutating WS message, fan out the
-          // relevant change to every other client so multi-client mirroring
-          // stays consistent (the originating client gets the echo too —
-          // its local state already matches so the apply is a no-op).
+          {
+              std::lock_guard lock{impl_->ws_work_mutex};
+              if (impl_->ws_work_stop) return;
+              const auto id = command.id;
+              auto& queue = impl_->ws_work_queues[id];
+              const bool idle = queue.empty() && !impl_->ws_work_busy.contains(id);
+              queue.push_back(std::move(command));
+              if (idle) impl_->ws_work_ready.push_back(id);
+          }
+          impl_->ws_work_cv.notify_one();
           // Note: set_next_item fan-out is handled centrally by the
           // next_item_broadcaster installed on ProjectState (it fires for both
           // client-requested and server-armed changes), so we don't broadcast
           // it again here.
       });
+}
+
+void ControlServer::ws_command_worker() {
+    for (;;) {
+        Impl::WsCommand command;
+        {
+            std::unique_lock lock{impl_->ws_work_mutex};
+            impl_->ws_work_cv.wait(lock, [this] {
+                return impl_->ws_work_stop || !impl_->ws_work_ready.empty();
+            });
+            if (impl_->ws_work_stop) return;
+            const auto id = impl_->ws_work_ready.front();
+            impl_->ws_work_ready.pop_front();
+            const auto queue = impl_->ws_work_queues.find(id);
+            if (queue == impl_->ws_work_queues.end() || queue->second.empty()) continue;
+            command = std::move(queue->second.front());
+            queue->second.pop_front();
+            impl_->ws_work_busy.insert(id);
+        }
+        std::string direct_reply;
+        try {
+            direct_reply = handle_ws_message(
+                command.remote_ip, command.data, engine_, state_, impl_->server_addr,
+                impl_->ws_command_mutex, impl_->ws_command_results,
+                impl_->ws_commands_inflight, impl_->ws_command_order);
+        } catch (const std::exception& e) {
+            Logger::error("WS command threw past handler: {}", e.what());
+        } catch (...) {
+            Logger::error("WS command caught unknown exception.");
+        }
+        // Send any direct reply (ack, pong, error) under ws_mutex so it is
+        // serialised with broadcast_loop's concurrent send_text calls, and
+        // only to the connection that sent the command, if still open.
+        if (!direct_reply.empty()) {
+            std::lock_guard lock{impl_->ws_mutex};
+            const auto id = impl_->ws_client_ids.find(command.conn);
+            if (id != impl_->ws_client_ids.end() && id->second == command.id) {
+                try { command.conn->send_text(direct_reply); } catch (...) {}
+            }
+        }
+        {
+            std::lock_guard lock{impl_->ws_work_mutex};
+            impl_->ws_work_busy.erase(command.id);
+            const auto queue = impl_->ws_work_queues.find(command.id);
+            if (queue != impl_->ws_work_queues.end()) {
+                if (queue->second.empty()) impl_->ws_work_queues.erase(queue);
+                else impl_->ws_work_ready.push_back(command.id);
+            }
+        }
+        impl_->ws_work_cv.notify_one();
+    }
 }
 
 } // namespace liveplay::net
