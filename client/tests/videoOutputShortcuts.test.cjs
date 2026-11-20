@@ -338,6 +338,7 @@ function createVideoWindowHarness() {
     videoOutputPlaybackError: null, videoOutputTestCardConnection: null,
     videoOutputRendererReady: false, videoOutputRendererResponsive: true,
     videoOutputRecoveryRequired: false, videoOutputRestarting: false, videoOutputDiagnostics: [], URL,
+    videoOutputAutoRestarts: [], videoOutputAutoRestartTimer: null, quitConfirmed: false,
     videoOutputPowerSaveId: null,
     videoOutputWindowsPreservingSession: new WeakSet(),
     readVideoOutputConfig: () => ({}), resolveVideoOutputDisplay: () => null,
@@ -381,7 +382,7 @@ function createVideoWindowHarness() {
   vm.runInNewContext([
     mainSource.slice(geometryStart, geometryEnd),
     productionFunctionSource('resetVideoOutputGeometry'),
-    ...['sanitizeVideoPlaybackErrorMessage', 'loadVideoOutputWindow', 'failVideoOutputRenderer', 'markVideoOutputReady', 'restartVideoOutputWindow', 'requireVideoOutputIpc']
+    ...['sanitizeVideoPlaybackErrorMessage', 'loadVideoOutputWindow', 'failVideoOutputRenderer', 'markVideoOutputReady', 'scheduleVideoOutputRestart', 'restartVideoOutputWindow', 'requireVideoOutputIpc']
       .filter(name => mainSource.includes('function ' + name + '(')).map(productionFunctionSource),
     productionFunctionSource('createVideoOutputWindow'),
     ...['parkVideoOutputWindow', 'restoreVideoOutputWindow', 'installVideoOutputWatchdog']
@@ -494,9 +495,42 @@ test('responsive events and old ready handshakes cannot uncover a failed output'
   output.webContents.emit('responsive');
   h.context.markVideoOutputReady(event);
   assert.equal(h.context.videoOutputRendererResponsive, true);
-  assert.equal(output.videoOutputCover.visible, true, 'recovery requires deliberate restart');
+  assert.equal(output.videoOutputCover.visible, true, 'answering again alone cannot uncover it; it restarts first');
   assert.throws(() => h.context.markVideoOutputReady({ ...event, senderFrame: {} }), /frame/i);
+  clearTimeout(h.context.videoOutputAutoRestartTimer);
 });
+
+// The audience screen recovers by itself: nobody has to find Restart Output
+// in the middle of a show.
+for (const failure of ['crash', 'hang']) {
+  test(`an output that ${failure === 'crash' ? 'crashes' : 'hangs, then answers again,'} restarts by itself behind its cover`, async () => {
+    const h = createVideoWindowHarness();
+    const output = h.open();
+    let loads = 0;
+    output.loadURL = () => { loads++; return Promise.resolve(); };
+    output.webContents.isCrashed = () => failure === 'crash';
+    output.webContents.forcefullyCrashRenderer = () =>
+      output.webContents.emit('render-process-gone', {}, { reason: 'killed', exitCode: 1 });
+    output.webContents.mainFrame = {};
+    const ready = () => h.context.markVideoOutputReady({ sender: output.webContents, senderFrame: output.webContents.mainFrame });
+    ready();
+    if (failure === 'crash') {
+      output.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 7 });
+    } else {
+      output.webContents.emit('unresponsive');
+      await new Promise(resolve => setTimeout(resolve, 400));
+      assert.equal(loads, 0, 'a window that has not answered is not restarted under itself');
+      output.webContents.emit('responsive');
+    }
+    assert.equal(output.videoOutputCover.visible, true);
+    await new Promise(resolve => setTimeout(resolve, 400));
+    assert.equal(loads, 1, 'the output reloaded without the operator');
+    assert.equal(h.context.videoOutputRecoveryRequired, false);
+    ready();
+    assert.equal(output.videoOutputCover.visible, false, 'the picture returns once the output is back');
+    assert.deepEqual(h.powerStops, []);
+  });
+}
 
 test('operator restart kills a hung renderer behind the same cover before loading', async () => {
   const h = createVideoWindowHarness();

@@ -1476,6 +1476,11 @@ function createClient() {
     });
   }
 
+  // A copy of a long video from a slow USB drive or network share can take
+  // minutes. The engine keeps copying whatever the window does, so giving up
+  // early only leaves the operator unsure, or copying the file twice.
+  const MEDIA_COPY_TIMEOUT_MS = 60 * 60 * 1000;
+
   // Copy a server-side file into the project's media root. Returns the
   // absolute path of the copy. A no-op (returns the same path) if the file
   // is already inside the media root.
@@ -1504,8 +1509,8 @@ function createClient() {
         expected_media_root: `${folder}/media`,
       }),
       signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
-        : undefined,
+        ? AbortSignal.any([signal, AbortSignal.timeout(MEDIA_COPY_TIMEOUT_MS)])
+        : AbortSignal.timeout(MEDIA_COPY_TIMEOUT_MS),
     });
     return {
       destPath: result.dest_path,
@@ -1538,12 +1543,17 @@ function createClient() {
       : null;
     if (osPath && isLocalServer.value) {
       try {
-        const path = await copyToMedia(osPath);
+        // An identical file already in the show's media is used again, as the
+        // file picker does, instead of a second copy beside it.
+        const path = (await copyToMediaResult(osPath, 'reuse')).destPath;
         if (!isCurrent()) throw new DOMException('Project changed during import', 'AbortError');
         return path;
       } catch (e) {
         if (!isCurrent()) throw new DOMException('Project changed during import', 'AbortError');
         if (e instanceof Error && /^4\d\d\b/.test(e.message) && !/^404\b/.test(e.message)) throw e;
+        // A copy that ran out of time may still be running in the engine:
+        // uploading now would land the same file twice.
+        if (e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError')) throw e;
         console.warn('[import] copyToMedia failed, uploading bytes instead:', e);
       }
     }

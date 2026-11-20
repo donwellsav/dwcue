@@ -489,7 +489,7 @@ assert.match(
 );
 assert.match(
   videoConvert,
-  /if \(!parsed\.name \|\| parsed\.name\.endsWith\(CONVERTED_SUFFIX\)\) return null;[\s\S]*const partial = `\$\{output\}\.part`;[\s\S]*PRIORITY_BELOW_NORMAL[\s\S]*if \(result\.status !== 'converted'\) fs\.rmSync\(partial, \{ force: true \}\);[\s\S]*await publishCopy\(partial, output\);/,
+  /if \(!parsed\.name \|\| parsed\.name\.endsWith\(CONVERTED_SUFFIX\)\) return null;[\s\S]*const partial = `\$\{output\}\.part`;[\s\S]*PRIORITY_BELOW_NORMAL[\s\S]*const removePartial = \(\) => \{\s*try \{ fs\.rmSync\(partial, \{ force: true \}\); \}[\s\S]*if \(!converted\) removePartial\(\);[\s\S]*if \(!converted\) removePartial\(\);[\s\S]*await publishCopy\(partial, output\);/,
   'a conversion writes a new copy beside the original at low priority, leaves nothing half-made, and never converts a copy again',
 );
 assert.match(
@@ -2221,8 +2221,8 @@ assert.match(
 );
 assert.match(
   liveplayClient,
-  /async function saveProjectTo[\s\S]*AbortSignal\.any\(\[signal, AbortSignal\.timeout\(30000\)\]\)[\s\S]*async function fetchMetadata[\s\S]*AbortSignal\.any\(\[signal, AbortSignal\.timeout\(30000\)\]\)[\s\S]*async function copyToMediaResult[\s\S]*AbortSignal\.any\(\[signal, AbortSignal\.timeout\(30000\)\]\)/,
-  'cancellable Spotify REST requests must retain their normal hard timeout',
+  /async function saveProjectTo[\s\S]*AbortSignal\.any\(\[signal, AbortSignal\.timeout\(30000\)\]\)[\s\S]*async function fetchMetadata[\s\S]*AbortSignal\.any\(\[signal, AbortSignal\.timeout\(30000\)\]\)[\s\S]*async function copyToMediaResult[\s\S]*AbortSignal\.any\(\[signal, AbortSignal\.timeout\(MEDIA_COPY_TIMEOUT_MS\)\]\)\s*: AbortSignal\.timeout\(MEDIA_COPY_TIMEOUT_MS\)/,
+  'cancellable Spotify REST requests must retain a hard timeout (a media copy gets the long one a large file needs)',
 );
 const restHelper = liveplayClient.slice(
   liveplayClient.indexOf('async function rest'),

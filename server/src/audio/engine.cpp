@@ -40,6 +40,12 @@ namespace liveplay::audio {
 namespace {
 
 constexpr auto kDeviceBusyWait = std::chrono::milliseconds{500};
+// A device-list refresh holds the native device lock while the OS answers,
+// slow with many or Bluetooth outputs, and opening an output often starts
+// one just before. An open waits that out, still inside the operator's
+// 2.5 s for a GO, before its own bounded wait for the lock. (A cue start
+// waits with its playback lock released, so Stop All is never held up.)
+constexpr auto kCatalogRefreshWait = std::chrono::milliseconds{1500};
 
 // The render thread feeds every output with only a few blocks of headroom:
 // on macOS it runs under the time-constraint (real-time) policy audio
@@ -903,6 +909,11 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
 #endif
     dev->native_context = device_context;
 
+    {
+        std::unique_lock catalog_lock{device_catalog_->mutex};
+        device_catalog_->ready.wait_for(catalog_lock, kCatalogRefreshWait,
+                                        [&] { return !device_catalog_->refreshing; });
+    }
     std::unique_lock lifecycle_lock{*device_lifecycle_mutex_, std::defer_lock};
     if (!lifecycle_lock.try_lock_for(kDeviceBusyWait)) {
         Logger::warn("Audio device initialization or cleanup is busy; could not open '{}'.", dev->display_name);

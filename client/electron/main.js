@@ -2795,6 +2795,9 @@ let videoOutputRendererReady = false;
 let videoOutputRendererResponsive = true;
 let videoOutputRecoveryRequired = false;
 let videoOutputRestarting = false;
+// Automatic Restart Output after a crash or a hang (see scheduleVideoOutputRestart).
+const videoOutputAutoRestarts = [];
+let videoOutputAutoRestartTimer = null;
 let videoOutputPictureHealth = null;
 const videoOutputDiagnostics = [];
 let capturingVideoStandby = false;
@@ -3267,6 +3270,21 @@ function reportVideoPictureHealth(event, payload) {
   broadcastVideoOutputStatus();
 }
 
+// A crashed or hung output restarts by itself behind its black cover, as
+// Restart Output would, and rejoins the cue playing. One that keeps crashing
+// restarts less often.
+function scheduleVideoOutputRestart(outputWindow) {
+  if (quitConfirmed || videoOutputRestarting || videoOutputAutoRestartTimer) return;
+  if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed()) return;
+  const now = Date.now();
+  while (videoOutputAutoRestarts.length && now - videoOutputAutoRestarts[0] > 60_000) videoOutputAutoRestarts.shift();
+  videoOutputAutoRestarts.push(now);
+  videoOutputAutoRestartTimer = setTimeout(() => {
+    videoOutputAutoRestartTimer = null;
+    if (videoOutputWindow === outputWindow && !outputWindow.isDestroyed()) void restartVideoOutputWindow();
+  }, videoOutputAutoRestarts.length > 3 ? 10_000 : 250);
+}
+
 async function restartVideoOutputWindow() {
   const outputWindow = videoOutputWindow;
   if (!outputWindow || outputWindow.isDestroyed() || videoOutputRestarting) return videoOutputStatus();
@@ -3294,6 +3312,8 @@ async function restartVideoOutputWindow() {
     if (videoOutputWindow === outputWindow) {
       videoOutputRestarting = false;
       broadcastVideoOutputStatus();
+      // A restart that failed is tried again (less often if it keeps failing).
+      if (videoOutputRecoveryRequired) scheduleVideoOutputRestart(outputWindow);
     }
   }
   return videoOutputStatus();
@@ -3489,7 +3509,8 @@ function createVideoOutputWindow() {
     if (videoOutputWindow !== outputWindow) return;
     console.error('[video-output] Failed to load:', errorCode, errorDescription);
     if (isMainFrame && errorCode !== -3) {
-      failVideoOutputRenderer(outputWindow, `Video Output could not load (${errorCode}). Restart Output to retry.`);
+      failVideoOutputRenderer(outputWindow, `Video Output could not load (${errorCode}). Audience output is held black while it retries.`);
+      scheduleVideoOutputRestart(outputWindow);
     }
   });
 
@@ -3504,17 +3525,21 @@ function createVideoOutputWindow() {
     const exitCode = details?.exitCode ?? 'unknown';
     console.error('[video-output] Renderer stopped:', reason, exitCode);
     videoOutputRendererResponsive = false;
-    failVideoOutputRenderer(outputWindow, `Video Output renderer stopped (${reason}, exit code ${exitCode}). Audience output is held black. Restart Output to retry.`);
+    if (videoOutputRestarting) return;   // the restart stopped it on purpose
+    failVideoOutputRenderer(outputWindow, `Video Output renderer stopped (${reason}, exit code ${exitCode}). Audience output is held black while it restarts.`);
+    scheduleVideoOutputRestart(outputWindow);
   });
   outputWindow.webContents.on('unresponsive', () => {
     if (videoOutputWindow !== outputWindow) return;
     videoOutputRendererResponsive = false;
-    failVideoOutputRenderer(outputWindow, 'Video Output is unresponsive. Audience output is held black. Restart Output to retry.');
+    failVideoOutputRenderer(outputWindow, 'Video Output is not responding. Audience output is held black; it restarts when it answers.');
   });
   outputWindow.webContents.on('responsive', () => {
     if (videoOutputWindow !== outputWindow) return;
     videoOutputRendererResponsive = true;
     broadcastVideoOutputStatus();
+    // Answering again is not enough to trust its picture: restart it.
+    if (videoOutputRecoveryRequired) scheduleVideoOutputRestart(outputWindow);
   });
 
   // The passive output renderer otherwise owns keyboard focus on Windows.

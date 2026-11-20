@@ -125,3 +125,38 @@ test('a cue\'s file is found in the show folder first, then where it links to', 
   assert.equal(cueSourcePath('', { mediaPath: 'media/Film.mov', mediaServerPath: linked }, here(linked)), linked);
   assert.equal(cueSourcePath(show, null, here(copied)), null);
 });
+
+// On Windows a stopped converter can still hold its unfinished file, so
+// removing it throws. The conversion must still report back, or every later
+// conversion is refused as "already running" until the app restarts.
+test('a cancelled conversion reports back even when its unfinished file cannot be removed yet',
+  { skip: process.platform === 'win32' }, async () => {
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const { convertVideoForOutput } = require('../electron/video-convert');
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'dwcue-convert-'));
+    const ffmpeg = path.join(folder, 'ffmpeg');
+    fs.writeFileSync(ffmpeg, [
+      '#!/bin/sh',
+      'case "$*" in',
+      '  *-encoders*) echo " V....D libx264              H.264";;',
+      '  *-progress*) exec sleep 30;;',
+      '  *) echo "Duration: 00:00:10.00" >&2; echo "Stream #0:0: Video: prores, yuv422p, 1920x1080" >&2;;',
+      'esac',
+    ].join('\n'), { mode: 0o755 });
+    const source = path.join(folder, 'Opening film.mov');
+    fs.writeFileSync(source, 'not really a film');
+    const controller = new AbortController();
+    const realRemove = fs.rmSync;
+    fs.rmSync = () => { throw Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' }); };
+    try {
+      const conversion = convertVideoForOutput({ ffmpegPath: ffmpeg, sourcePath: source, signal: controller.signal });
+      setTimeout(() => controller.abort(), 300);
+      const result = await Promise.race([conversion,
+        new Promise(resolve => setTimeout(() => resolve({ status: 'never reported' }), 3000))]);
+      assert.equal(result.status, 'canceled');
+    } finally {
+      fs.rmSync = realRemove;
+      fs.rmSync(folder, { recursive: true, force: true });
+    }
+  });

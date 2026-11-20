@@ -1203,6 +1203,28 @@ test('keeps the outgoing picture across an automatic stop until the new video su
   } finally { h.stop(); }
 });
 
+test('a looping video armed with Cue to Continue keeps its last frame up into the next cue', async () => {
+  const h = createHarness(project([
+    { ...audioItem('loop', { hasVideo: true, outPoint: 0, loop: true }), duration: 32 },
+    audioItem('incoming', { hasVideo: true }),
+  ]));
+  const canvas = {
+    width: 0, height: 0, getContext: () => ({ drawImage() {} }),
+  } as unknown as HTMLCanvasElement;
+  try {
+    await flush();
+    if (h.controller.heldFrameEl) h.controller.heldFrameEl.value = canvas;
+    h.emitCue(snapshotCue('loop', 'cue-a', 1, 31.9));
+    h.element.currentSrc = h.controller.videoSrc.value!;
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 31.9, presentedFrames: 955 });
+    h.emitPatch({ op: 'cue_follow_set', itemUuid: 'loop', follow: 'armed' });
+    h.emitCue(snapshotCue('loop', 'cue-a', 1, 32, 0));
+    await flush();
+    assert.equal(h.controller.showHeldFrame.value, true, 'no standby flash before the next cue starts');
+  } finally { h.stop(); }
+});
+
 test('Stop All and an incoming decoder failure can always clear the held picture', async () => {
   const h = createHarness(project([
     audioItem('from', { hasVideo: true }),

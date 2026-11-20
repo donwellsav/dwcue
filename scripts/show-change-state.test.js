@@ -99,13 +99,18 @@ test('opening another show tells clients its playing cue stopped and Up Next cle
   socket.send(JSON.stringify({ type: 'play', item_uuid: 'opening', command_id: 'play-opening' }));
   await until(() => messages.some(m => m.type === 'cue_state' && m.item_uuid === 'opening' && m.transport !== 0),
     'the cue did not start');
-  const playingCue = messages.find(m => m.type === 'cue_state' && m.item_uuid === 'opening' && m.transport !== 0).cue_id;
+  const playing = messages.find(m => m.type === 'cue_state' && m.item_uuid === 'opening' && m.transport !== 0);
+  const playingCue = playing.cue_id;
   messages.length = 0;
 
   const switched = await rest('/api/project/load', { path: empty });
   assert.equal(switched.status, 200, switched.body);
   await until(() => messages.some(m => m.type === 'cue_state' && m.cue_id === playingCue && m.transport === 0),
     'clients were never told the retired cue stopped');
+  // The video output matches a stop to the pass it ends by its firing order;
+  // without it, a retired video stays frozen on screen.
+  const retired = messages.find(m => m.type === 'cue_state' && m.cue_id === playingCue && m.transport === 0);
+  assert.equal(retired.trigger_seq, playing.trigger_seq, 'the stop names the pass it ends');
 
   // A show with its first cue armed as Up Next, replaced before anything plays.
   messages.length = 0;

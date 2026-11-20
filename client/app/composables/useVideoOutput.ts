@@ -558,7 +558,11 @@ export function useVideoOutput(
 
   function holdAtFollowEnd(playheadSeconds: number): boolean {
     const item = doc.value?.items.get(activeItemUuid.value ?? '');
-    if (diagnosticCue || !item?.hasVideo || !item.followsAtEnd
+    // Cue to Continue, set for this pass, decides over the saved ending: a
+    // looping video armed to continue hands over like a Play Next one.
+    const override = item ? followOverrides.get(item.uuid) : undefined;
+    const follows = override === 'armed' || (override !== 'suppressed' && !!item?.followsAtEnd);
+    if (diagnosticCue || !item?.hasVideo || !follows
       || activeTriggerSeq <= stoppedThroughTriggerSeq) return false;
     const end = item.outPoint !== null && item.outPoint > item.inPoint ? item.outPoint : item.duration;
     if (end <= 0 || playheadSeconds < end - FOLLOW_END_TOLERANCE_S) return false;
@@ -642,6 +646,10 @@ export function useVideoOutput(
   function activeCueKey(active: ActiveCue): string {
     return active.cueId ? `cue:${active.cueId}` : `item:${active.itemUuid}`;
   }
+
+  // Cue to Continue for the pass on air, per item (cue_follow_set patches and
+  // the snapshot); it belongs to that pass and is dropped when it stops.
+  const followOverrides = new Map<string, 'armed' | 'suppressed'>();
 
   function newestActiveCue(): ActiveCue | null {
     if (diagnosticCue) return diagnosticCue;
@@ -816,6 +824,7 @@ export function useVideoOutput(
         ? state.playheadSeconds : undefined;
       removeMatchingActive(state);
       renderNewestActive(false, stoppedAt);
+      followOverrides.delete(state.itemUuid);
       return;
     }
 
@@ -1061,6 +1070,7 @@ export function useVideoOutput(
     highestTriggerSeqSeen = -1;
     stoppedThroughTriggerSeq = -1;
     stopRevision = null;
+    followOverrides.clear();
     clearHeldFrame();
     acceptNextSnapshot = true;
     if (!diagnosticCue) {
@@ -1101,6 +1111,12 @@ export function useVideoOutput(
     observeStopRevision(snapshot.stop_revision);
     nextItemUuid.value = readString(snapshot.next_item_uuid);
     applyPreviewState(preview ? { ...preview, cueId: preview.cue_id ?? preview.cueId } : null, true);
+    followOverrides.clear();
+    for (const entry of Array.isArray(snapshot.cues) ? snapshot.cues : []) {
+      const cue = entry as Record<string, unknown> | null;
+      const uuid = readString(cue?.item_uuid);
+      if (uuid && (cue?.follow === 'armed' || cue?.follow === 'suppressed')) followOverrides.set(uuid, cue.follow);
+    }
 
     const candidates: ActiveCue[] = [];
     for (const entry of Array.isArray(snapshot.cues) ? snapshot.cues : []) {
@@ -1141,6 +1157,13 @@ export function useVideoOutput(
         case 'next_item_set':
           nextItemUuid.value = readString(patch.itemUuid);
           break;
+        case 'cue_follow_set': {
+          const uuid = readString(patch.itemUuid);
+          if (!uuid) return;
+          if (patch.follow === 'armed' || patch.follow === 'suppressed') followOverrides.set(uuid, patch.follow);
+          else followOverrides.delete(uuid);
+          return;
+        }
         case 'preview_started': {
           if (!applyPreviewState(patch)) return;
           if (previewCueId && activeCues.delete(`cue:${previewCueId}`)) {

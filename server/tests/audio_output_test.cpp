@@ -147,6 +147,38 @@ struct NativeDeviceGate {
     }
 };
 
+// A device-list refresh holds the native device lock while the OS answers,
+// which takes long with many or Bluetooth outputs. A cue's first GO on a
+// cold output waits it out instead of being refused.
+void test_open_waits_out_device_list_refresh() {
+    NativeDeviceGate gate;
+    AudioEngine engine;
+    engine.device_test_context_ = &gate.context;
+    std::atomic<bool> held{false};
+    const auto catalog = engine.device_catalog_;
+    std::thread refresh([&] {   // as refresh_device_catalog does it, slowly
+        {
+            std::lock_guard lock{*engine.device_lifecycle_mutex_};
+            { std::lock_guard state{catalog->mutex}; catalog->refreshing = true; }
+            held.store(true);
+            std::this_thread::sleep_for(std::chrono::milliseconds{900});
+        }
+        std::lock_guard state{catalog->mutex};
+        catalog->refreshing = false;
+        catalog->ready.notify_all();
+    });
+    while (!held.load()) std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    const auto id = engine.open_default_device();
+    refresh.join();
+    check(!id.empty(), "a cold output opens once a slow device-list refresh finishes");
+    if (!id.empty()) {
+        const auto device = engine.devices_.front();
+        engine.close_device(id);
+        while (!device->cleanup_done.load(std::memory_order_acquire))
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+}
+
 void test_initial_device_start_keeps_controls() {
   for (const int mode : {0, 1, 2}) { // Start, duplicate cleanup, failed-start cleanup.
     NativeDeviceGate gate;
@@ -1508,8 +1540,11 @@ void test_fading_jump_keeps_its_ramp_in(const std::filesystem::path& tone) {
             window_done.store(true);
             continue;
         }
+        // Until the jump reaches its window, give its thread time to get
+        // there: a busy machine must not let the loop run out first.
+        if (!seen) std::this_thread::sleep_for(std::chrono::milliseconds{2});
         r.step(seen);
-        if (i > 400) break;
+        if (i > 300) break;
     }
     jump.get();
     r.f.item->after_seek_unlock_for_test_ = {};
@@ -2185,6 +2220,7 @@ int main() {
     const auto center = wav(dir, "center.wav", 0.7f, true, 0.0f, 6, 2);
     const auto left = wav(dir, "left.wav", 0.3f, true, 0.0f, 2, 0);
     const auto ramp = wav(dir, "ramp.wav", 0.125f, true, 1.0f / 131'072.0f);
+    test_open_waits_out_device_list_refresh();
     test_initial_device_start_keeps_controls();
     test_held_device_recovery_lifetime();
     test_lost_output_comes_back();

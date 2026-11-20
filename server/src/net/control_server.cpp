@@ -1069,6 +1069,8 @@ void ControlServer::broadcast_loop() {
                     };
                     if (const auto uuid = prev_cue_items.find(it->first); uuid != prev_cue_items.end())
                         evt["item_uuid"] = uuid->second;
+                    // The pass it ends: the video output ignores a stop without it.
+                    if (it->second.second) evt["trigger_seq"] = *it->second.second;
                     cue_state_events.push_back(evt.dump());
                 }
                 prev_cue_items.erase(it->first);
@@ -1287,10 +1289,12 @@ void ControlServer::http_action_worker() {
 // (which can take a few seconds for long files) then broadcasts a
 // waveform_ready doc_patch so every connected client can update its UI.
 void ControlServer::waveform_worker() {
-#if defined(__APPLE__)
     // Waveform and loudness analysis is background work: on a first open it
     // decodes every file in the show while cues may already be playing.
+#if defined(__APPLE__)
     pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
+#elif defined(_WIN32)
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
 #endif
     for (;;) {
         Impl::WaveformTask task;
