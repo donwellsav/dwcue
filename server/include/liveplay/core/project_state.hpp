@@ -832,6 +832,17 @@ private:
     std::vector<GroupRun> group_runs_;
     std::uint64_t next_group_generation_ = 0;
     std::vector<SequencedItem> sequenced_items_;
+    // A cue crossfading out still plays the end of its file: the custom
+    // actions timed there run as it passes them. Its playback generation stays
+    // current until it ends, so a stop, replay or new show cancels it.
+    struct CrossfadeTail {
+        std::string  uuid;
+        audio::CueId cue_id;
+        detail::PlaybackGenerationFence::Generation playback_generation = 0;
+        double       effective_end = 0.0;
+        std::vector<ScheduledCustomAction> custom_actions;
+    };
+    std::vector<CrossfadeTail> crossfade_tails_;   // guarded by sequencer_mutex_
     std::mutex                 sequencer_mutex_;
     // Serializes control-plane playback lifetime changes with unlocked
     // sequencer dispatch. Recursive because a follow action can trigger play.

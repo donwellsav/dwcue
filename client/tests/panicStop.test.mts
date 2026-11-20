@@ -959,7 +959,7 @@ function loadMidiContinuous(dependencies: Record<string, unknown>): (action: str
   return factory(dependencies);
 }
 
-test('Up Next follows playlist order when active cues arrived in reverse order', () => {
+test('Up Next follows the cue fired last, then playlist order', () => {
   const source = readFileSync(new URL('../app/composables/useAudioEngine.ts', import.meta.url), 'utf8');
   const start = source.indexOf('  const autoNextItemUuid =');
   const end = source.indexOf('  // ---- WS / REST plumbing', start);
@@ -981,6 +981,12 @@ test('Up Next follows playlist order when active cues arrived in reverse order',
     findItemByIndex: ([index]: number[]) => currentProject.value.items[index],
   });
   assert.equal(next.value, 'b');
+  // With both on air, GO continues after the cue fired last, as the engine does.
+  activeCues.value = new Map([['quickplay', { triggerSeq: 9 }], ['c', { triggerSeq: 5 }], ['a', { triggerSeq: 4 }]]);
+  assert.equal(next.value, 'd', 'c was fired after a');
+  activeCues.value = new Map([['quickplay', { triggerSeq: 9 }], ['c', { triggerSeq: 5 }], ['a', { triggerSeq: 6 }]]);
+  assert.equal(next.value, 'b', 'a was fired again after c');
+  activeCues.value = new Map(['quickplay', 'c', 'a'].map(uuid => [uuid, {}]));
   currentProject.value.items[0].endBehavior.action = 'loop';
   assert.equal(next.value, 'a');
   activeCues.value = new Map([['a', {}]]);

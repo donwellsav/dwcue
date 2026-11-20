@@ -1941,6 +1941,155 @@ void test_deleting_up_next_clears_it(const std::filesystem::path& wav) {
     }
 }
 
+// With two cues on air, GO continues after the one fired last: a stinger
+// fired under a bed moves the operator's place to after the stinger.
+void test_up_next_follows_last_fired(const std::filesystem::path& wav) {
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    const json layered{{"duckingBehavior", {{"mode", "no-ducking"}}}};
+    check(state.replace_full_document(document(json::array({audio("bed", wav, layered), audio("second", wav),
+              audio("stinger", wav, layered), audio("after", wav)}))) && wait_ready(state), "overlap: show ready");
+    close_devices(engine);
+    check(state.trigger_item("bed") && state.trigger_item("stinger") &&
+          on_air(state, engine, "bed") && on_air(state, engine, "stinger"), "overlap: bed and stinger on air");
+    const auto next = state.state_summary()["next"];
+    check(next.is_object() && next.value("itemUuid", std::string{}) == "after",
+          "overlap: Up Next follows the stinger, fired last, not the bed above it");
+    check(state.trigger_item("bed") && on_air(state, engine, "stinger"), "overlap: bed fired again");
+    check(state.state_summary()["next"].value("itemUuid", std::string{}) == "second",
+          "overlap: firing the bed again moves Up Next back after the bed");
+    state.stop_all_cues(0);
+}
+
+// A start aimed at a cue already on air carries on the pass in progress: the
+// custom actions it has passed and its start actions do not run again,
+// whether it was playing, paused, or brought back up during its stop fade.
+void test_refire_keeps_automation(const std::filesystem::path& wav) {
+    std::mutex received_mutex;
+    std::vector<std::string> received;
+    liveplay::audio::AudioEngine engine;
+    liveplay::core::ProjectState state(engine);
+    state.set_external_action_handler([&](const json& action) {
+        std::lock_guard lock{received_mutex};
+        received.push_back(action.value("marker", ""));
+    });
+    const auto heard = [&] { std::lock_guard lock{received_mutex}; return received.size(); };
+    const json layered{{"duckingBehavior", {{"mode", "no-ducking"}}}};
+    auto lead = audio("refire", wav, {{"duckingBehavior", {{"mode", "no-ducking"}}}, {"fadeOutDuration", 1.0},
+        {"startBehavior", {{"action", "play-item"}, {"targetUuid", "side"}}},
+        {"customActions", json::array({{{"timePoint", 0.05}, {"action", {{"type", "http-request"}, {"marker", "once"}}}}})}});
+    check(state.replace_full_document(document(json::array({lead, audio("side", wav, layered)}))) && wait_ready(state),
+          "re-fire: show ready");
+    close_devices(engine);
+    check(state.trigger_item("refire") && on_air(state, engine, "refire") && on_air(state, engine, "side"),
+          "re-fire: cue and its start action on air");
+    const auto item = engine.find_cue(*state.item_to_cue_id("refire"));
+    std::array<float, 256> left{}, right{};
+    float* channels[]{left.data(), right.data()};
+    for (int i = 0; i < 20; ++i) {
+        item->service_read_ahead(1);
+        item->render_block(channels, 2, 256);
+    }
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (heard() == 0 && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(5ms);
+    check(heard() == 1, "re-fire: the custom action runs once as the cue passes it");
+    const auto side_seq = state.item_trigger_seq("side");
+    const double played = item->stats().playhead_seconds;
+
+    check(state.trigger_item("refire") && on_air(state, engine, "refire"), "re-fire: playing cue fired again");
+    std::this_thread::sleep_for(200ms);
+    check(std::abs(item->stats().playhead_seconds - played) < 0.01, "re-fire: playing cue plays on where it was");
+    check(heard() == 1, "re-fire: a playing cue fired again does not repeat the action it passed");
+    check(state.item_trigger_seq("side") == side_seq, "re-fire: a playing cue fired again does not re-run its start action");
+
+    check(state.set_item_paused("refire", true), "re-fire: paused");
+    check(state.trigger_item("refire") &&
+          item->stats().transport != liveplay::audio::TransportState::Paused, "re-fire: firing a paused cue resumes it");
+    std::this_thread::sleep_for(200ms);
+    check(heard() == 1 && state.item_trigger_seq("side") == side_seq,
+          "re-fire: a paused cue fired again repeats neither its action nor its start action");
+
+    check(state.stop_item("refire") && item->stats().transport == liveplay::audio::TransportState::FadingOut,
+          "re-fire: stop starts its fade");
+    check(state.trigger_item("refire") && on_air(state, engine, "refire"), "re-fire: fired again during its stop fade");
+    std::this_thread::sleep_for(200ms);
+    check(heard() == 1 && state.item_trigger_seq("side") == side_seq,
+          "re-fire: a cue brought back during its fade repeats neither its action nor its start action");
+    state.stop_all_cues(0);
+}
+
+// Stopping a cue by hand takes it out of the sequencer, so its ending never
+// runs; GO must still have somewhere to go.
+void test_manual_stop_arms_up_next(const std::filesystem::path& wav) {
+    const std::vector<std::pair<json, std::string>> cases{
+        {{{"action", "next"}}, "y"},
+        {{{"action", "loop"}}, "y"},
+        {{{"action", "goto-item"}, {"targetUuid", "z"}}, "z"},
+    };
+    for (const auto& [ending, expected] : cases) {
+        const auto label = "manual stop: a cue ending in " + ending.value("action", std::string{}) +
+                           " leaves Up Next on " + expected;
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        check(state.replace_full_document(document(json::array({audio("x", wav, {{"endBehavior", ending}}),
+                  audio("y", wav), audio("z", wav)}))) && wait_ready(state), "manual stop: show ready");
+        close_devices(engine);
+        check(state.trigger_item("x") && on_air(state, engine, "x"), "manual stop: cue on air");
+        check(state.stop_item("x"), "manual stop: stopped by hand");
+        check(state.next_item_override() == expected, label.c_str());
+        state.stop_all_cues(0);
+    }
+}
+
+// A cue crossfading into the next still plays the end of its file, and the
+// custom actions timed there run as it passes them — unless Stop All ends it.
+void test_crossfade_tail_actions(const std::filesystem::path& wav) {
+    for (const bool stop_all : {false, true}) {
+        std::mutex received_mutex;
+        std::vector<std::string> received;
+        liveplay::audio::AudioEngine engine;
+        liveplay::core::ProjectState state(engine);
+        state.set_external_action_handler([&](const json& action) {
+            std::lock_guard lock{received_mutex};
+            received.push_back(action.value("marker", ""));
+        });
+        auto source = audio("xfade-out", wav, {{"outPoint", 0.1}, {"crossFade", 0.05},
+            {"endBehavior", {{"action", "next"}}}, {"duckingBehavior", {{"mode", "no-ducking"}}},
+            {"customActions", json::array({
+                {{"timePoint", 0.02}, {"action", {{"type", "http-request"}, {"marker", "before"}}}},
+                {{"timePoint", 0.095}, {"action", {{"type", "http-request"}, {"marker", "tail"}}}},
+                {{"timePoint", 0.2}, {"action", {{"type", "http-request"}, {"marker", "outside"}}}},
+            })}});
+        check(state.replace_full_document(document(json::array({source, audio("xfade-in", wav)}))) &&
+              wait_ready(state), "crossfade tail: show ready");
+        close_devices(engine);
+        check(state.trigger_item("xfade-out"), "crossfade tail: source starts");
+        const auto item = engine.find_cue(*state.item_to_cue_id("xfade-out"));
+        std::array<float, 256> left{}, right{};
+        float* channels[]{left.data(), right.data()};
+        bool crossfaded = false;
+        for (int i = 0; i < 100 && item->stats().transport != liveplay::audio::TransportState::Stopped; ++i) {
+            item->service_read_ahead(1);
+            item->render_block(channels, 2, 256);
+            std::this_thread::sleep_for(15ms);
+            if (!crossfaded && on_air(state, engine, "xfade-in")) {
+                crossfaded = true;
+                if (stop_all) state.stop_all_cues(0);
+            }
+        }
+        check(crossfaded, "crossfade tail: the next cue came in on the crossfade");
+        std::this_thread::sleep_for(200ms);
+        std::lock_guard lock{received_mutex};
+        if (stop_all)
+            check(received == std::vector<std::string>{"before"},
+                  "crossfade tail: Stop All during the crossfade cancels the actions still ahead");
+        else
+            check(received == std::vector<std::string>{"before", "tail"},
+                  "crossfade tail: an action inside the crossfade runs once, after the one before it");
+        state.stop_all_cues(0);
+    }
+}
+
 json group_of(const std::string& uuid, const std::string& start, const std::string& end, json children) {
     return json{{"uuid", uuid}, {"type", "group"}, {"startBehavior", {{"action", start}}},
                 {"endBehavior", {{"action", end}}}, {"children", std::move(children)}};
@@ -3253,7 +3402,8 @@ void test_group_levels() {
 
 void test_music_backup(const std::filesystem::path& wav) {
     for (const auto mode : {"off", "intentional-stop", "root", "folder", "group-ending", "busy-target",
-                           "stalled-read", "ready-target", "normal-next", "stop-all", "already-air"}) {
+                           "stalled-read", "ready-target", "normal-next", "stop-all", "already-air",
+                           "paused-air", "quick-play-air"}) {
         liveplay::audio::AudioEngine engine;
         liveplay::core::ProjectState state(engine);
         const std::string_view scenario{mode};
@@ -3263,15 +3413,19 @@ void test_music_backup(const std::filesystem::path& wav) {
         const bool busy_target = scenario == "busy-target" || stale_read;
         const bool ready_target = scenario == "ready-target";
         const bool normal_next = scenario == "normal-next";
+        // Another cue that does not keep Program sounding: paused, or a QuickPlay.
+        const bool silent_air = scenario == "paused-air" || scenario == "quick-play-air";
+        const bool layered = scenario == "already-air" || silent_air;
         const auto source = audio("music-out", wav, {{"outPoint", 0.06},
             {"crossFade", stale_read ? 0.025 : 0.0},
-            {"duckingBehavior", {{"mode", scenario == "already-air" ? "no-ducking" : "stop-all"}}},
+            {"duckingBehavior", {{"mode", layered ? "no-ducking" : "stop-all"}}},
             {"endBehavior", {{"action", scenario == "intentional-stop" || group_ending ? "nothing" : "next"}}}});
         const json backup{{"uuid", "backup-group"}, {"type", "group"},
             {"displayName", "Backup Music"}, {"startBehavior", {{"action", "play-first"}}},
             {"children", json::array({audio("music-backup", wav, {{"endBehavior", {{"action", "next"}}}})})}};
         json items = json::array({backup});
-        if (busy_target || ready_target || scenario == "already-air") items.push_back(audio("operator-next", wav));
+        if (busy_target || ready_target || scenario == "already-air" || scenario == "paused-air")
+            items.push_back(audio("operator-next", wav));
         items.push_back(group_scope ? json{{"uuid", "walk-in"}, {"type", "group"},
             {"keepMusicGoing", true}, {"backupMusicGroup", "backup-group"},
             {"endBehavior", {{"action", group_ending ? "next" : "nothing"}}},
@@ -3280,6 +3434,8 @@ void test_music_backup(const std::filesystem::path& wav) {
         auto show = document(items);
         show["settings"]["keepMusicGoing"] = scenario != "off" && !group_scope;
         show["settings"]["backupMusicGroup"] = "backup-group";
+        if (scenario == "quick-play-air")
+            show["quickPlayItems"] = json::array({audio("pad", wav, {{"quickPlay", {{"order", 0}}}})});
         state.replace_full_document(show);
         check(wait_ready(state), "music backup: media ready"); close_devices(engine);
         std::mutex notice_mutex;
@@ -3300,6 +3456,10 @@ void test_music_backup(const std::filesystem::path& wav) {
                 on_air(state, engine, "music-backup");
         };
         if (scenario == "already-air") check(state.trigger_item("operator-next"), "music backup: other bed is playing");
+        if (scenario == "paused-air")
+            check(state.trigger_item("operator-next") && state.set_item_paused("operator-next", true),
+                  "music backup: other bed is paused");
+        if (scenario == "quick-play-air") check(state.trigger_item("pad"), "music backup: a QuickPlay is playing");
         const auto target_id = state.item_to_cue_id("operator-next");
         const auto target = target_id ? engine.find_cue(*target_id) : nullptr;
         std::unique_lock<std::mutex> held;
@@ -3327,7 +3487,7 @@ void test_music_backup(const std::filesystem::path& wav) {
         }
         if (scenario == "stop-all") state.stop_all_cues(0);
         else render_to_end(state, engine, "music-out");
-        const bool expect_backup = scenario == "root" || group_scope || busy_target;
+        const bool expect_backup = scenario == "root" || group_scope || busy_target || silent_air;
         const bool followed = !(ready_target || normal_next) || wait_for_on_air(state, engine, "operator-next");
         const bool backup_ok = expect_backup ? wait_for_backup()
             : !on_air(state, engine, "music-backup") && !notice.load();
@@ -4147,6 +4307,10 @@ int main() try {
     test_group_internal_continuations(wav);
     test_external_group_exit(wav);
     test_deleting_up_next_clears_it(wav);
+    test_up_next_follows_last_fired(wav);
+    test_refire_keeps_automation(wav);
+    test_manual_stop_arms_up_next(wav);
+    test_crossfade_tail_actions(wav);
     test_group_end_goes_after_the_group(wav);
     test_nested_play_first_readiness(wav);
     test_start_actions(wav);

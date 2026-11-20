@@ -253,8 +253,13 @@ export const useAudioEngine = () => {
   // ---- autoNextItemUuid (derived) -----------------------------------
   const autoNextItemUuid = computed((): string | null => {
     if (!currentProject.value) return null;
-    for (const item of getAllItemsFlat(currentProject.value.items)) {
-      if (!activeCues.value.has(item.uuid) || item.type !== 'audio') continue;
+    // The engine's GO continues from the cue fired last (highest triggerSeq);
+    // document order breaks ties, as it does there.
+    const firedLast = getAllItemsFlat(currentProject.value.items)
+      .filter((item) => activeCues.value.has(item.uuid) && item.type === 'audio')
+      .map((item, order) => ({ item, order, seq: activeCues.value.get(item.uuid)?.triggerSeq ?? 0 }))
+      .sort((a, b) => b.seq - a.seq || a.order - b.order);
+    for (const { item } of firedLast) {
       const audioItem = item as AudioItem;
       // QuickPlay-only cues live outside the playlist tree (sentinel index
       // [-1, 0]): there is no "next playlist item" after one, so they never

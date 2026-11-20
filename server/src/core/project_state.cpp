@@ -3761,7 +3761,6 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
     const bool preparing = phase == ItemPlayPhase::Prepare || phase == ItemPlayPhase::Validate ||
                            phase == ItemPlayPhase::PrepareBuffered;
     const bool recovering = phase == ItemPlayPhase::Recovery;
-    if (!preparing && !buffered) cancel_prepared_follows(uuid);
 
     // Snapshot everything we need under the lock, then release before
     // touching the engine (engine calls take their own locks).
@@ -3921,6 +3920,75 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
                 item_uuids_by_cue.emplace(cue.value, item_uuid);
         }
     }
+
+    // Playback moving somewhere the server's own guess didn't predict drops a
+    // stale auto-arming — the clients then fall back to the "Up Next" derived
+    // from what is actually on air (e.g. the group child that follows the one
+    // just started) instead of the item armed before the operator jumped. An
+    // arming the OPERATOR made is left alone: they chose it and GO must still
+    // honour it. QuickPlay items are excluded: firing an SFX pad is not
+    // "moving the playlist", and blanking the arming there would leave GO with
+    // nothing to fire until the next cue ended.
+    const auto drop_stale_auto_arming = [&] {
+        bool stale = false;
+        {
+            std::lock_guard lock{mutex_};
+            if (!quick_play && !next_item_override_.empty() &&
+                !next_item_override_manual_ &&
+                next_item_override_ != uuid) {
+                std::function<bool(const json&)> in_playlist = [&](const json& arr) -> bool {
+                    if (!arr.is_array()) return false;
+                    for (const auto& it : arr) {
+                        if (!it.is_object()) continue;
+                        if (it.value("uuid", std::string{}) == uuid) return true;
+                        if (it.value("type", std::string{}) == "group" &&
+                            it.contains("children") && in_playlist(it["children"])) return true;
+                    }
+                    return false;
+                };
+                stale = document_.contains("items") && in_playlist(document_["items"]);
+            }
+        }
+        if (stale) (void)set_next_item_override("", /*manual=*/false);
+    };
+    // Stamp the item with a monotonic trigger sequence. Control surfaces read
+    // this back from the state summary to answer "what did the operator fire
+    // LAST?" — with several cues on air (a bed under a stinger, say), document
+    // order is the wrong answer for a "currently playing" display, and GO
+    // continues from the cue fired last.
+    const auto stamp_fired = [&] {
+        std::lock_guard lock{mutex_};
+        item_trigger_seq_[uuid] = ++trigger_seq_counter_;
+    };
+
+    // A start aimed at a cue already on air carries on the pass in progress
+    // (prime() and play() leave a sounding cue where it is); only a QuickPlay
+    // set to Restart starts over. Its automation stays as it is: registering
+    // it afresh would fire again the custom actions and Start Next it has
+    // already passed, and re-run its start actions. A paused cue resumes.
+    const auto sounding_at_start = [&] {
+        const auto pi = engine_.find_cue(target_cue);
+        return pi ? pi->stats().transport : audio::TransportState::Stopped;
+    }();
+    const bool continues_pass = phase == ItemPlayPhase::Immediate && !quick_play_restarts &&
+                                sounding_at_start != audio::TransportState::Stopped;
+    if (continues_pass && sounding_at_start != audio::TransportState::FadingOut) {
+        bool registered = false;
+        {
+            std::lock_guard slock{sequencer_mutex_};
+            registered = std::any_of(sequenced_items_.begin(), sequenced_items_.end(),
+                                     [&](const SequencedItem& x) { return x.uuid == uuid; });
+        }
+        if (registered) {
+            if (sounding_at_start == audio::TransportState::Paused) {
+                if (const auto pi = engine_.find_cue(target_cue)) pi->resume();
+            }
+            stamp_fired();
+            drop_stale_auto_arming();
+            return intent == playback_intent_revision_ && generation == document_generation_;
+        }
+    }
+    if (!preparing && !buffered) cancel_prepared_follows(uuid);
 
     if (phase == ItemPlayPhase::Prepare) {
         const auto cue = engine_.find_cue(target_cue);
@@ -4130,14 +4198,10 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
         return false;
     }
 
-    // Stamp the item with a monotonic trigger sequence. Control surfaces read
-    // this back from the state summary to answer "what did the operator fire
-    // LAST?" — with several cues on air (a bed under a stinger, say), document
-    // order is the wrong answer for a "currently playing" display.
-    {
-        std::lock_guard lock{mutex_};
-        item_trigger_seq_[uuid] = ++trigger_seq_counter_;
-    }
+    stamp_fired();
+    // A cue brought back up during its stop fade plays on from where it is:
+    // what it already passed has run.
+    const double pass_position = continues_pass && playback ? playback->stats().playhead_seconds : play_start;
 
     // Register with the sequencer so it can handle end-behaviour, crossfade,
     // and stop-fade autonomously — even when the client is disconnected.
@@ -4178,14 +4242,15 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
         si.duck_release_sec = duck_release_sec;
         si.custom_actions = std::move(custom_actions_snapshot);
         si.quick_play = quick_play;
-        if (recovering) {
+        if (recovering || continues_pass) {
+            const double from = recovering ? play_start : pass_position;
             for (auto& action : si.custom_actions)
-                action.triggered = action.time_point <= play_start;
-            si.start_next_triggered = si.start_next_time > 0.0 && si.start_next_time <= play_start;
+                action.triggered = action.time_point <= from;
+            si.start_next_triggered = si.start_next_time > 0.0 && si.start_next_time <= from;
             si.crossfade_triggered = si.crossfade_sec > 0.0 &&
-                play_start >= effective_end - si.crossfade_sec;
+                from >= effective_end - si.crossfade_sec;
             si.stop_fade_triggered = si.stop_fade_sec > 0.0 &&
-                play_start >= effective_end - si.stop_fade_sec;
+                from >= effective_end - si.stop_fade_sec;
         }
 
         std::lock_guard slock{sequencer_mutex_};
@@ -4203,39 +4268,10 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
     // Cue to Continue belongs to one pass; a replay starts from the saved ending.
     if (replaced_follow_override) broadcast_cue_follow(uuid, "");
 
-    // Playback just moved somewhere the server's own guess didn't predict, so
-    // drop a stale auto-arming — the clients then fall back to the "Up Next"
-    // derived from what is actually on air (e.g. the group child that follows
-    // the one we just started) instead of showing the item armed before the
-    // operator jumped. An arming the OPERATOR made is left alone: they chose it
-    // deliberately and GO must still honour it.
-    // QuickPlay items are excluded: firing an SFX pad is not "moving the
-    // playlist", and blanking the arming there would leave GO with nothing to
-    // fire until the next cue ended.
-    {
-        bool stale = false;
-        {
-            std::lock_guard lock{mutex_};
-            if (!quick_play && !next_item_override_.empty() &&
-                !next_item_override_manual_ &&
-                next_item_override_ != uuid) {
-                std::function<bool(const json&)> in_playlist = [&](const json& arr) -> bool {
-                    if (!arr.is_array()) return false;
-                    for (const auto& it : arr) {
-                        if (!it.is_object()) continue;
-                        if (it.value("uuid", std::string{}) == uuid) return true;
-                        if (it.value("type", std::string{}) == "group" &&
-                            it.contains("children") && in_playlist(it["children"])) return true;
-                    }
-                    return false;
-                };
-                stale = document_.contains("items") && in_playlist(document_["items"]);
-            }
-        }
-        if (stale) (void)set_next_item_override("", /*manual=*/false);
-    }
+    drop_stale_auto_arming();
 
-    // Start actions run only after the primary Program cue was accepted.
+    // Start actions run only after the primary Program cue was accepted, and
+    // once per pass.
     std::string secondary;
     const bool start_requested = start_behavior_action == "play-next" ||
                                  start_behavior_action == "play-item" ||
@@ -4249,7 +4285,7 @@ bool ProjectState::play_item_impl(std::unique_lock<std::recursive_mutex>& lifecy
         std::lock_guard lock{mutex_};
         secondary = resolve_index_path_locked(start_behavior_target_index);
     }
-    if (!recovering && start_requested &&
+    if (!recovering && !continues_pass && start_requested &&
         (secondary.empty() || !trigger_sequence_item(lifecycle_lock, uuid, secondary, -1.0, target_cue, false, buffered))) {
         if (intent != playback_intent_revision_ || generation != document_generation_) return false;
         Logger::warn("START BEHAVIOUR: secondary item '{}' was not ready; "
@@ -4905,8 +4941,16 @@ json ProjectState::state_summary() const {
     std::string next_uuid   = override_uuid;
     std::string next_source = next_uuid.empty() ? "" : "override";
     if (next_uuid.empty() && !on_air.empty()) {
+        // GO continues from the cue fired last: a stinger fired under a bed
+        // moves the operator's place to after the stinger.
+        auto by_firing = on_air;
+        std::stable_sort(by_firing.begin(), by_firing.end(), [&](const OnAir& a, const OnAir& b) {
+            const auto ta = trigger_seq.find(a.uuid);
+            const auto tb = trigger_seq.find(b.uuid);
+            return (ta == trigger_seq.end() ? 0LL : ta->second) > (tb == trigger_seq.end() ? 0LL : tb->second);
+        });
         std::lock_guard lock{mutex_};
-        for (const auto& e : on_air) {
+        for (const auto& e : by_firing) {
             if (facts[e.uuid].index.empty()) continue; // QuickPlay cues have no playlist successor.
             const auto n = resolve_next_item_locked(e.uuid, /*manual_go=*/true);
             if (!n.empty()) { next_uuid = n; next_source = "auto"; break; }
@@ -6597,6 +6641,37 @@ void ProjectState::sequencer_loop() {
                 }
             }
 
+            std::erase_if(crossfade_tails_, [&](CrossfadeTail& tail) {
+                if (!playback_generations_.is_current(tail.uuid, tail.playback_generation)) return true;
+                const auto pi = engine_.find_cue(tail.cue_id);
+                if (!pi) {
+                    (void)playback_generations_.claim_terminal(tail.uuid, tail.playback_generation);
+                    return true;
+                }
+                const auto transport = pi->stats().transport;
+                if (transport == audio::TransportState::Paused) return false;
+                const double pos = pi->stats().playhead_seconds;
+                const double end = tail.effective_end > 0.0 ? std::min(pos, tail.effective_end) : pos;
+                bool queued = false;
+                for (auto& action : tail.custom_actions) {
+                    if (action.triggered || action.time_point > end) continue;
+                    action.triggered = true;
+                    queued = true;
+                    SequencedItem source;
+                    source.uuid = tail.uuid;
+                    source.cue_id = tail.cue_id;
+                    source.playback_generation = tail.playback_generation;
+                    pending.push_back({std::move(source), PendingAction::Kind::CustomAction, action.action});
+                }
+                const bool finished = transport == audio::TransportState::Stopped ||
+                    std::all_of(tail.custom_actions.begin(), tail.custom_actions.end(),
+                                [](const ScheduledCustomAction& action) { return action.triggered; });
+                // Actions queued this tick are checked against the generation,
+                // so it is retired on a later tick.
+                if (!finished || queued) return false;
+                (void)playback_generations_.claim_terminal(tail.uuid, tail.playback_generation);
+                return true;
+            });
         }
 
         // Execute pending actions with the sequencer lock released. Playback
@@ -6721,8 +6796,17 @@ void ProjectState::sequencer_loop() {
                         static_cast<long long>(p.item.crossfade_sec * 1000.0)});
                 }
                 std::lock_guard slock{sequencer_mutex_};
-                (void)playback_generations_.claim_terminal(
-                    p.item.uuid, p.item.playback_generation);
+                const auto live = std::find_if(sequenced_items_.begin(), sequenced_items_.end(),
+                    [&](const SequencedItem& item) {
+                        return item.uuid == p.item.uuid && item.playback_generation == p.item.playback_generation;
+                    });
+                CrossfadeTail tail{p.item.uuid, p.item.cue_id, p.item.playback_generation, p.item.effective_end, {}};
+                if (live != sequenced_items_.end()) {
+                    for (auto& action : live->custom_actions)
+                        if (!action.triggered) tail.custom_actions.push_back(std::move(action));
+                }
+                if (!tail.custom_actions.empty()) crossfade_tails_.push_back(std::move(tail));
+                else (void)playback_generations_.claim_terminal(p.item.uuid, p.item.playback_generation);
                 std::erase_if(sequenced_items_, [&](const SequencedItem& item) {
                     return item.uuid == p.item.uuid &&
                            item.playback_generation == p.item.playback_generation;
@@ -7217,11 +7301,21 @@ bool ProjectState::start_music_backup(std::unique_lock<std::recursive_mutex>& li
     std::function<void(const json&)> notify;
     {
         std::lock_guard lock{mutex_};
-        constexpr auto is_active = [](const std::shared_ptr<audio::PlaybackItem>& item) {
-            return item && item->stats().transport != audio::TransportState::Stopped;
+        // Only playlist music that plays on covers the ending. A paused cue or
+        // one fading out leaves Program silent, and a QuickPlay is a one-off
+        // over the top: when it ends the room would fall silent.
+        constexpr auto plays_on = [](const std::shared_ptr<audio::PlaybackItem>& item) {
+            if (!item) return false;
+            const auto transport = item->stats().transport;
+            return transport == audio::TransportState::Playing || transport == audio::TransportState::FadingIn;
         };
-        for (const auto& [_, cue] : item_uuid_to_cue_) {
-            if (is_active(engine_.find_cue(cue))) return true; // Another Program cue covers the ending.
+        std::unordered_set<std::string> quick_plays;
+        for_each_item(document_, [&](json& item, const std::string&) {
+            if (is_quick_play_cue(item)) quick_plays.insert(item.value("uuid", std::string{}));
+        });
+        for (const auto& [uuid, cue] : item_uuid_to_cue_) {
+            if (!quick_plays.contains(uuid) && plays_on(engine_.find_cue(cue)))
+                return true; // Another Program cue covers the ending.
         }
         for_each_item(document_, [&](json& item, const std::string&) {
             const auto uuid = item.value("uuid", std::string{});
@@ -7264,12 +7358,14 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
     {
         std::lock_guard lock{mutex_};
 
-        // Setting gate (default ON — undefined/true both enable).
+        // Setting gate for cues with no ending (default ON — undefined/true
+        // both enable).
+        bool cue_next_without_ending = true;
         if (document_.contains("settings") && document_["settings"].is_object()) {
             const auto& s = document_["settings"];
             if (s.contains("autoCueNextWithoutEndBehavior") &&
                 s["autoCueNextWithoutEndBehavior"].is_boolean() &&
-                !s["autoCueNextWithoutEndBehavior"].get<bool>()) return;
+                !s["autoCueNextWithoutEndBehavior"].get<bool>()) cue_next_without_ending = false;
         }
 
         // An arming the OPERATOR made wins — never clobber it. An arming the
@@ -7337,13 +7433,18 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
         // A QuickPlay is an anytime trigger. Stopping or finishing it must not
         // advance, replace, or otherwise disturb the Program Up Next pointer.
         if (is_quick_play_cue(*found)) return;
-        // Only the "nothing" end behaviour is armed here — every other action
-        // is auto-advanced by the sequencer itself.
+        // The natural end of a cue with an ending is advanced by the sequencer
+        // itself. A manual stop takes the cue out of the sequencer, so it arms
+        // what GO would start: a Go To ending's target, otherwise (Play Next,
+        // Loop) the next cue in order.
         std::string action = "nothing";
         if (found->contains("endBehavior") && (*found)["endBehavior"].is_object())
             action = json_get_or((*found)["endBehavior"], "action",
                                  std::string{"nothing"});
-        if (action != "nothing") return;
+        if (action == "nothing" && !cue_next_without_ending) return;
+        if (action != "nothing" && !was_manual) return;
+        if (action == "goto-item" || action == "goto-index")
+            next_to_arm = resolve_next_item_locked(stopped_uuid, /*manual_go=*/false);
 
         // Advance to the next item in document order. A cue that is the last
         // in its group goes on to the item after the group (and so on up),
@@ -7361,7 +7462,7 @@ void ProjectState::arm_next_after_stop(const std::string& stopped_uuid,
             return found_node;
         };
         std::vector<int> next_path = stopped_path;
-        while (!next_path.empty()) {
+        while (next_to_arm.empty() && !next_path.empty()) {
             std::vector<int> parent_path(next_path.begin(), next_path.end() - 1);
             const json* parent = node_at(parent_path);
             const bool play_all = parent && parent->contains("startBehavior") && (*parent)["startBehavior"].is_object() &&
