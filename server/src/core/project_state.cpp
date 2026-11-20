@@ -2450,6 +2450,34 @@ ProjectState::RestoreBackupResult ProjectState::restore_show_backup(
             return refuse(Status::InvalidBackup, "That backup cannot be read as a show. Nothing was changed.");
         }
 
+        // Edits the engine holds that are not on disk yet go into the show file
+        // first, so the copy kept for undo has them: a restore never loses
+        // unsaved work.
+        {
+            json unsaved;
+            {
+                std::lock_guard lock{mutex_};
+                if (content_fingerprint(document_) != saved_content_fingerprint_) {
+                    unsaved = document_;
+                    unsaved["lastModified"] = now_iso();
+                    unsaved["folderPath"] = util::path_to_utf8(path.parent_path());
+                }
+            }
+            if (!unsaved.is_null()) {
+                const auto written_content = content_fingerprint(unsaved);
+                relativize_media_paths(unsaved);
+                std::string unsaved_error;
+                if (!write_file_atomically(path, unsaved.dump(2), unsaved_error)) {
+                    Logger::warn("Show backup: restore of '{}' refused, unsaved changes could not be kept: {}",
+                                 backup_name, unsaved_error);
+                    return refuse(Status::Failed,
+                        "The show's unsaved changes could not be kept first, so nothing was changed.");
+                }
+                std::lock_guard lock{mutex_};
+                saved_content_fingerprint_ = written_content;
+            }
+        }
+
         // Keep the file as it is now, whatever was backed up recently, so the
         // restore itself can be undone. Without that copy the restore stops.
         std::error_code ec;

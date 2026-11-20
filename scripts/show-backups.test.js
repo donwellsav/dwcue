@@ -344,6 +344,17 @@ test('the engine keeps automatic backups of the show file and can restore them',
       assert.deepEqual(await readdir(extracted), ['My Show.dwcue']);
       assert.ok((await backupFiles()).length >= 10, 'the backups themselves stay where they are');
     });
+
+    await t.test('a restore keeps edits that were never saved in its undo backup', async () => {
+      await settled();
+      const target = (await list()).at(-1).name;
+      const edited = await request(baseUrl, '/api/project/items/bed', {
+        method: 'PATCH', body: JSON.stringify({ displayName: 'Bed, renamed and never saved' }) });
+      assert.equal(edited.status, 200, await edited.text());
+      const restored = await ok(await restore(target));
+      assert.match(await readFile(path.join(backupsFolder, restored.undoBackup), 'utf8'),
+        /Bed, renamed and never saved/, 'the undo backup holds the unsaved edit');
+    });
   } catch (error) { error.message += `\nNative server diagnostics:\n${diagnostics}`; throw error; }
 });
 
