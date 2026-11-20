@@ -334,15 +334,45 @@ test('the engine keeps automatic backups of the show file and can restore them',
       assert.match(diagnostics, /Show backup: skipped/, 'the failure is logged as a warning');
     });
 
-    await t.test('a project archive leaves the Backups folder out', async () => {
+    await t.test('a project archive leaves the Backups folder out and carries media linked from outside', async () => {
       await ok(await post('/api/project/load', { path: showFile }));
       await settled();
       const archive = path.join(temporary, 'My Show.dwcuepack');
       const extracted = path.join(temporary, 'extracted');
       await ok(await post('/api/project/export', { folderPath: showFolder, outputPath: archive }));
       await ok(await post('/api/project/import', { archivePath: archive, extractPath: extracted }));
-      assert.deepEqual(await readdir(extracted), ['My Show.dwcue']);
       assert.ok((await backupFiles()).length >= 10, 'the backups themselves stay where they are');
+      // The bed is linked from outside the show folder: it travels in the archive.
+      assert.deepEqual((await readdir(extracted)).sort(), ['My Show.dwcue', 'media']);
+      assert.deepEqual(await readdir(path.join(extracted, 'media')), ['bed.wav']);
+      assert.deepEqual(await readFile(path.join(extracted, 'media', 'bed.wav')), await readFile(media));
+      const packed = JSON.parse(await readFile(path.join(extracted, 'My Show.dwcue'), 'utf8'));
+      assert.equal(packed.items[0].mediaPath, 'media/bed.wav', 'the packed show points at its packed copy');
+      assert.equal(packed.items[0].mediaServerPath, undefined, 'and no longer at the original drive');
+      const original = JSON.parse(await readFile(showFile, 'utf8'));
+      assert.equal(original.items[0].mediaServerPath, media, 'the show on this computer is unchanged');
+      // Opened from where it was unpacked, the show finds its media there.
+      await ok(await post('/api/project/load', { path: path.join(extracted, 'My Show.dwcue') }));
+      await settled();
+      const readiness = (await (await request(baseUrl, '/api/project/header')).json()).server.audioReadiness;
+      assert.equal(readiness.ready, true, JSON.stringify(readiness));
+      await ok(await post('/api/project/load', { path: showFile }));
+      await settled();
+
+      // A file of the same name already in the show's media keeps its name;
+      // the linked one is packed beside it under another.
+      await mkdir(path.join(showFolder, 'media'));
+      await writeFile(path.join(showFolder, 'media', 'bed.wav'), 'a different file');
+      const second = path.join(temporary, 'Second.dwcuepack');
+      const unpacked = path.join(temporary, 'unpacked');
+      await ok(await post('/api/project/export', { folderPath: showFolder, outputPath: second }));
+      await ok(await post('/api/project/import', { archivePath: second, extractPath: unpacked }));
+      assert.deepEqual((await readdir(path.join(unpacked, 'media'))).sort(), ['bed (2).wav', 'bed.wav']);
+      assert.equal(await readFile(path.join(unpacked, 'media', 'bed.wav'), 'utf8'), 'a different file');
+      assert.deepEqual(await readFile(path.join(unpacked, 'media', 'bed (2).wav')), await readFile(media));
+      assert.equal(JSON.parse(await readFile(path.join(unpacked, 'My Show.dwcue'), 'utf8')).items[0].mediaPath,
+        'media/bed (2).wav');
+      await rm(path.join(showFolder, 'media'), { recursive: true });
     });
 
     await t.test('a restore keeps edits that were never saved in its undo backup', async () => {

@@ -16,9 +16,13 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -467,6 +471,122 @@ OperationResult reserve_and_publish(const fs::path& staging,
     return {true, 200, {}};
 }
 
+// Media linked from outside the show folder (imported with Link, or played
+// from a music drive) travels in the bundle: each file is packed once under
+// media/, and the packed show file points at it there, so the show plays
+// wherever the bundle is unpacked.
+struct LinkedMedia {
+    fs::path    source;
+    std::string entry;
+};
+
+struct PackedShow {
+    std::string             document;   // the show file to pack, rewritten
+    std::vector<LinkedMedia> linked;
+};
+
+bool lies_inside(const fs::path& path, const fs::path& canonical_folder) {
+    std::error_code error;
+    const auto canonical = fs::weakly_canonical(path, error);
+    const auto relative = fs::relative(error ? path : canonical, canonical_folder, error);
+    return !error && !relative.empty() && *relative.begin() != fs::path{".."};
+}
+
+std::optional<PackedShow> pack_linked_media(const fs::path& project_folder,
+                                            const fs::path& canonical_folder,
+                                            const fs::path& active_project) {
+    std::ifstream input{active_project, std::ios::binary};
+    if (!input) return std::nullopt;
+    const std::string bytes{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+    nlohmann::json show = nlohmann::json::parse(bytes, nullptr, false);
+    if (show.is_discarded() || !show.is_object()) return std::nullopt;
+
+    PackedShow packed;
+    std::unordered_map<std::string, std::string> entry_by_source;
+    std::unordered_set<std::string> taken;   // lower case: the bundle may be unpacked on Windows
+    const auto key = [](std::string text) {
+        std::transform(text.begin(), text.end(), text.begin(),
+                       [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        return text;
+    };
+    const auto entry_for = [&](const fs::path& source) -> std::optional<std::string> {
+        std::error_code error;
+        if (!fs::is_regular_file(source, error)) {
+            Logger::warn("project archive: linked media '{}' is missing; it is not in the archive",
+                         util::path_to_utf8(source));
+            return std::nullopt;
+        }
+        const auto canonical = fs::weakly_canonical(source, error);
+        const auto source_key = util::path_to_utf8(error ? source : canonical);
+        if (const auto found = entry_by_source.find(source_key); found != entry_by_source.end())
+            return found->second;
+        const auto stem = util::path_to_utf8(source.stem());
+        const auto extension = util::path_to_utf8(source.extension());
+        for (int n = 1; n < 1000; ++n) {
+            const auto name = n == 1 ? stem + extension : stem + " (" + std::to_string(n) + ")" + extension;
+            const auto entry = "media/" + name;
+            std::error_code probe;
+            if (taken.contains(key(entry)) ||
+                fs::exists(project_folder / "media" / util::utf8_to_path(name), probe)) continue;
+            taken.insert(key(entry));
+            entry_by_source.emplace(source_key, entry);
+            packed.linked.push_back({source, entry});
+            return entry;
+        }
+        return std::nullopt;
+    };
+    const auto outside = [&](const nlohmann::json& value) -> std::optional<fs::path> {
+        if (!value.is_string() || value.get_ref<const std::string&>().empty()) return std::nullopt;
+        const auto path = util::utf8_to_path(value.get<std::string>());
+        if (!path.is_absolute() || lies_inside(path, canonical_folder)) return std::nullopt;
+        return path;
+    };
+    const std::function<void(nlohmann::json&)> visit = [&](nlohmann::json& item) {
+        if (!item.is_object()) return;
+        if (item.value("type", std::string{}) == "audio") {
+            // A cue whose media is in the show folder keeps it there.
+            const auto media_path = item.value("mediaPath", std::string{});
+            std::error_code error;
+            const bool in_folder = !media_path.empty() &&
+                fs::is_regular_file(project_folder / util::utf8_to_path(media_path), error);
+            const auto server = item.find("mediaServerPath");
+            if (!in_folder && server != item.end()) {
+                if (const auto source = outside(*server)) {
+                    if (const auto entry = entry_for(*source)) {
+                        item["mediaPath"] = *entry;
+                        item.erase("mediaServerPath");
+                    }
+                }
+            }
+            const auto image = item.find("imagePath");
+            if (image != item.end()) {
+                if (const auto source = outside(*image)) {
+                    if (const auto entry = entry_for(*source)) *image = *entry;
+                }
+            }
+        }
+        const auto children = item.find("children");
+        if (children != item.end() && children->is_array())
+            for (auto& child : *children) visit(child);
+    };
+    for (const char* list : {"items", "quickPlayItems"}) {
+        const auto found = show.find(list);
+        if (found != show.end() && found->is_array())
+            for (auto& item : *found) visit(item);
+    }
+    const auto settings = show.find("settings");
+    if (settings != show.end() && settings->is_object()) {
+        const auto standby = settings->find("videoStandbyImage");
+        if (standby != settings->end()) {
+            if (const auto source = outside(*standby)) {
+                if (const auto entry = entry_for(*source)) *standby = *entry;
+            }
+        }
+    }
+    packed.document = packed.linked.empty() ? bytes : show.dump(2);
+    return packed;
+}
+
 } // namespace
 
 OperationResult export_project(const fs::path& project_folder,
@@ -501,8 +621,18 @@ OperationResult export_project(const fs::path& project_folder,
         return {false, 500, "failed to initialize archive"};
     }
 
-    bool ok = add_zip_file(
-        zip, active_project, util::path_to_utf8(active_project.filename()));
+    const auto show_entry = util::path_to_utf8(active_project.filename());
+    const auto packed = pack_linked_media(project_folder, canonical_folder, active_project);
+    bool ok = packed && !packed->linked.empty()
+        ? mz_zip_writer_add_mem(&zip, show_entry.c_str(), packed->document.data(),
+                                packed->document.size(), MZ_DEFAULT_LEVEL) != MZ_FALSE
+        : add_zip_file(zip, active_project, show_entry);
+    if (packed) {
+        for (const auto& media : packed->linked) {
+            if (!ok) break;
+            ok = add_zip_file(zip, media.source, media.entry);
+        }
+    }
     try {
         for (fs::recursive_directory_iterator it{project_folder}, end;
              ok && it != end; ++it) {

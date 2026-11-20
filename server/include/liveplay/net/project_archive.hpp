@@ -19,6 +19,9 @@ struct ImportResult : OperationResult {
 // plus the rest of the project folder. Other root .dwcue/.liveplay documents
 // and the root "Backups" folder (any letter case; see core/show_backups.hpp)
 // are excluded; other nested content and media keep their relative paths.
+// Media the show links from outside the folder (cue media, cue images, the
+// standby image) is packed under media/, and the packed show file points
+// there instead of at the original locations.
 OperationResult export_project(
     const std::filesystem::path& project_folder,
     const std::filesystem::path& active_project,
