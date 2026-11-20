@@ -509,3 +509,24 @@ test('a playlist file drop cannot carry imported paths into a different project'
   await handleDrop({ preventDefault() {}, dataTransfer: { getData: () => '', files: [{ name: 'original.wav' }] } });
   assert.equal(imported, 0);
 });
+
+test('restoring a backup lets the restored show replace an unsaved one', async () => {
+  const list = read('components/ShowBackupsList.vue');
+  const build = (restoreShowBackup: () => Promise<void>) => {
+    const state = { hasUnsavedChanges: { value: true }, seenUnsaved: [] as boolean[] };
+    const restore = compile(section(list, 'async function restore(', '// Listed when Settings'), {
+      restoring: { value: false }, restoreError: { value: '' }, confirming: { value: 'x' },
+      hasUnsavedChanges: state.hasUnsavedChanges, showHeaderWarning() {}, t: (key: string) => key,
+      formatWhen: () => '', reason: (error: unknown) => String(error), refresh: async () => {},
+      server: { restoreShowBackup: async () => { state.seenUnsaved.push(state.hasUnsavedChanges.value); await restoreShowBackup(); } },
+    }, 'restore');
+    return { state, restore };
+  };
+  const done = build(async () => {});
+  await done.restore({ name: 'My Show 2026-11-20 10.00.00.dwcue', savedAt: 0, size: 1 });
+  assert.deepEqual(done.state.seenUnsaved, [false], 'the show it replaces is no longer held as unsaved');
+  assert.equal(done.state.hasUnsavedChanges.value, false);
+  const refused = build(async () => { throw new Error('A cue is playing.'); });
+  await refused.restore({ name: 'My Show 2026-11-20 10.00.00.dwcue', savedAt: 0, size: 1 });
+  assert.equal(refused.state.hasUnsavedChanges.value, true, 'a refused restore leaves the edits unsaved');
+});

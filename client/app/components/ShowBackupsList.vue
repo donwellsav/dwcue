@@ -35,7 +35,7 @@ interface ShowBackup { name: string; savedAt: number; size: number }
 
 const { t, currentLocale } = useLocalization();
 const server = useLiveplayServer();
-const { currentProject, projectHydrationStatus } = useProject();
+const { currentProject, projectHydrationStatus, hasUnsavedChanges } = useProject();
 const { showHeaderWarning } = useHeaderWarnings();
 
 const backups = ref<ShowBackup[]>([]);
@@ -77,11 +77,17 @@ async function restore(backup: ShowBackup) {
   if (restoring.value) return;
   restoring.value = true;
   restoreError.value = '';
+  // The engine keeps this show's unsaved edits in the restore's undo backup,
+  // so the restored show replaces it here too, instead of the window asking
+  // whose show should win (where keeping its own would undo the restore).
+  const wasUnsaved = hasUnsavedChanges.value;
+  hasUnsavedChanges.value = false;
   try {
     await server.restoreShowBackup(backup.name);
     confirming.value = null;
     showHeaderWarning(t('backups.restored', { when: formatWhen(backup.savedAt) }));
   } catch (error) {
+    hasUnsavedChanges.value = wasUnsaved;
     restoreError.value = reason(error);
   } finally {
     restoring.value = false;
