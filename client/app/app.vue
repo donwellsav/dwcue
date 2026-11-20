@@ -249,7 +249,25 @@ watch(() => unsavedDialogBlocked.value && !unsavedDialogVisible.value, (waiting)
   if (waiting) showHeaderWarning(t('unsavedModal.waitForSave'));
 });
 
+// Opening or creating another show stops everything that is playing (a
+// double-clicked show file mid-show, File > Open, New Show): ask first.
+const replacePlayingVisible = ref(false);
+let _replacePlayingResolve: ((switchShows: boolean) => void) | null = null;
+function confirmStopPlayback(): Promise<boolean> {
+  if (useAudioEngine().activeCues.value.size === 0) return Promise.resolve(true);
+  if (_replacePlayingResolve) return Promise.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    _replacePlayingResolve = (switchShows) => {
+      replacePlayingVisible.value = false;
+      _replacePlayingResolve = null;
+      resolve(switchShows);
+    };
+    replacePlayingVisible.value = true;
+  });
+}
+
 const openProjectGuard = createProjectOpenGuard({
+  confirmStopPlayback,
   confirmUnsavedChanges,
   openProject(path) {
     useLiveplayServer().clearLastError();
@@ -291,7 +309,7 @@ const newShowError = ref<string | null>(null);
 const canCreateNewShow = computed(() => !!newShowName.value.trim() && !!newShowLocation.value.trim());
 
 function showNewProjectDialog(fallbackFolder: string) {
-  if (projectFileDialogOpen.value || unsavedDialogVisible.value) return;
+  if (projectFileDialogOpen.value || unsavedDialogVisible.value || replacePlayingVisible.value) return;
   projectPickerFallback.value = fallbackFolder;
   newShowName.value = '';
   newShowError.value = null;
@@ -302,7 +320,7 @@ function showNewProjectDialog(fallbackFolder: string) {
 }
 
 function showOpenProjectPicker(fallbackFolder: string) {
-  if (projectFileDialogOpen.value || unsavedDialogVisible.value) return;
+  if (projectFileDialogOpen.value || unsavedDialogVisible.value || replacePlayingVisible.value) return;
   projectPickerFallback.value = fallbackFolder;
   projectPicker.value = 'open';
 }
@@ -344,6 +362,7 @@ async function createNewShow() {
   newShowError.value = null;
   try {
     const created = await runExclusivePendingAction('project-file-change', 'create', async () => {
+      if (!await confirmStopPlayback()) return false;
       if (!await confirmUnsavedChanges()) return false;
       const server = useLiveplayServer();
       server.clearLastError();
@@ -676,6 +695,15 @@ let _quitServerResolve:  ((choice: 'server'  | 'client' | 'cancel') => void) | n
 let quitFlowActive = false;
 
 const projectDecision = computed(() => {
+  if (replacePlayingVisible.value) return {
+    title: t('replacePlaying.title'),
+    message: t('replacePlaying.message'),
+    buttons: [
+      { key: 'keep', label: t('replacePlaying.keep'), variant: 'primary' as const },
+      { key: 'switch', label: t('replacePlaying.switch'), variant: 'danger' as const },
+    ],
+    pick: (choice: string) => _replacePlayingResolve?.(choice === 'switch'),
+  };
   if (unsavedDialogVisible.value) {
     const quitting = unsavedDialogReason.value === 'quit';
     return {

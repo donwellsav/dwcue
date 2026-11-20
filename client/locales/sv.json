@@ -1308,5 +1308,11 @@
     "trash": "Papperskorg",
     "recycleBin": "Papperskorg",
     "editModeOnly": "Rensa media är tillgängligt i redigeringsläge."
+  },
+  "replacePlaying": {
+    "title": "En föreställning spelas",
+    "message": "Att byta till en annan föreställning stoppar allt som spelas.",
+    "keep": "Fortsätt spela",
+    "switch": "Stoppa och byt"
   }
 }

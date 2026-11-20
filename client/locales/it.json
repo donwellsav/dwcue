@@ -1308,5 +1308,11 @@
     "trash": "Cestino",
     "recycleBin": "Cestino",
     "editModeOnly": "Pulisci media è disponibile in Modalità Modifica."
+  },
+  "replacePlaying": {
+    "title": "Uno spettacolo è in riproduzione",
+    "message": "Passare a un altro spettacolo ferma tutto ciò che è in riproduzione.",
+    "keep": "Continua la riproduzione",
+    "switch": "Ferma e cambia"
   }
 }

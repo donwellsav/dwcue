@@ -1308,5 +1308,11 @@
     "trash": "Çöp Sepeti",
     "recycleBin": "Geri Dönüşüm Kutusu",
     "editModeOnly": "Medyayı Temizle, Düzenleme Modunda kullanılabilir."
+  },
+  "replacePlaying": {
+    "title": "Bir gösteri çalıyor",
+    "message": "Başka bir gösteriye geçmek çalan her şeyi durdurur.",
+    "keep": "Çalmaya devam et",
+    "switch": "Durdur ve geç"
   }
 }

@@ -1308,5 +1308,11 @@
     "trash": "Trash",
     "recycleBin": "Recycle Bin",
     "editModeOnly": "Clean Up Media is available in Edit Mode."
+  },
+  "replacePlaying": {
+    "title": "A show is playing",
+    "message": "Switching to another show stops everything that is playing.",
+    "keep": "Keep playing",
+    "switch": "Stop and switch"
   }
 }

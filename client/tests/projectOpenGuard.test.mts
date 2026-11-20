@@ -116,3 +116,37 @@ test('New and Open menu cancellation and a rejected recent file keep the active 
   await callbacks.get('onMenuOpenRecentProject')!(null, '/shows/valid.dwcue');
   assert.equal(currentProject.value?.folderPath, '/shows/valid');
 });
+
+test('switching shows while something plays asks first, before the unsaved-changes choice', async () => {
+  const asked: string[] = [];
+  const opened: string[] = [];
+  let keepPlaying = true;
+  const guard = createProjectOpenGuard({
+    async confirmStopPlayback() { asked.push('playing'); return !keepPlaying; },
+    async confirmUnsavedChanges() { asked.push('unsaved'); return true; },
+    async openProject(path) { opened.push(path); return true; },
+    onOpenFailed() { assert.fail('keeping the show playing is not a failed open'); },
+  });
+  assert.equal(await guard('/shows/b.dwcue'), false, 'Keep playing leaves the show running');
+  assert.deepEqual(asked, ['playing'], 'nothing else is asked once the operator keeps playing');
+  assert.deepEqual(opened, []);
+  keepPlaying = false;
+  asked.length = 0;
+  assert.equal(await guard('/shows/b.dwcue'), true);
+  assert.deepEqual(asked, ['playing', 'unsaved']);
+  assert.deepEqual(opened, ['/shows/b.dwcue']);
+});
+
+test('the operator window asks before Open, a double-clicked show file and New Show replace a playing show', () => {
+  const app = readFileSync(new URL('../app/app.vue', import.meta.url), 'utf8');
+  assert.match(app, /function confirmStopPlayback\(\): Promise<boolean> \{\s*if \(useAudioEngine\(\)\.activeCues\.value\.size === 0\) return Promise\.resolve\(true\);/,
+    'nothing playing: no question');
+  assert.match(app, /createProjectOpenGuard\(\{\s*confirmStopPlayback,/, 'every guarded open asks');
+  assert.match(app, /'create', async \(\) => \{\s*if \(!await confirmStopPlayback\(\)\) return false;/, 'New Show asks');
+  assert.match(app, /if \(replacePlayingVisible\.value\) return \{[\s\S]*?key: 'keep'[\s\S]*?variant: 'primary'[\s\S]*?key: 'switch'[\s\S]*?variant: 'danger'/,
+    'Keep playing is the primary choice; switching is marked as the dangerous one');
+  for (const code of ['ar', 'bn', 'de', 'el', 'en', 'es', 'fa', 'fr', 'hi', 'it', 'ja', 'ko', 'no', 'pt', 'ro', 'ru', 'sq', 'sv', 'tr', 'ur', 'zh']) {
+    const messages = JSON.parse(readFileSync(new URL(`../locales/${code}.json`, import.meta.url), 'utf8'));
+    for (const key of ['title', 'message', 'keep', 'switch']) assert.ok(messages.replacePlaying?.[key], `${code} replacePlaying.${key}`);
+  }
+});

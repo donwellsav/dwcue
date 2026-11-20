@@ -1308,5 +1308,11 @@
     "trash": "Corbeille",
     "recycleBin": "Corbeille",
     "editModeOnly": "Nettoyer les médias est disponible en Mode Édition."
+  },
+  "replacePlaying": {
+    "title": "Un spectacle est en cours",
+    "message": "Passer à un autre spectacle arrête tout ce qui est en lecture.",
+    "keep": "Continuer la lecture",
+    "switch": "Arrêter et changer"
   }
 }

@@ -1,4 +1,6 @@
 export interface ProjectOpenGuardDependencies {
+  // Something is playing: switching shows stops it, so ask first.
+  confirmStopPlayback?(): Promise<boolean>;
   confirmUnsavedChanges(): Promise<boolean>;
   openProject(path: string): Promise<boolean>;
   onOpenFailed(path: string): void;
@@ -13,6 +15,7 @@ export function createProjectOpenGuard(dependencies: ProjectOpenGuardDependencie
     if (activeAttempt) return activeTarget === target ? activeAttempt : Promise.resolve(false);
     activeTarget = target;
     activeAttempt = (async () => {
+      if (dependencies.confirmStopPlayback && (!await dependencies.confirmStopPlayback() || !canOpen())) return false;
       if (!await dependencies.confirmUnsavedChanges() || !canOpen()) return false;
       const opened = await dependencies.openProject(target);
       if (!opened) dependencies.onOpenFailed(target);

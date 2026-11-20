@@ -1308,5 +1308,11 @@
     "trash": "Papirkurv",
     "recycleBin": "Papirkurv",
     "editModeOnly": "Rydd opp i medier er tilgjengelig i redigeringsmodus."
+  },
+  "replacePlaying": {
+    "title": "Et show spilles",
+    "message": "Å bytte til et annet show stopper alt som spilles.",
+    "keep": "Fortsett å spille",
+    "switch": "Stopp og bytt"
   }
 }

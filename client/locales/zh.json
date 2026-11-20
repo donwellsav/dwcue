@@ -1308,5 +1308,11 @@
     "trash": "废纸篓",
     "recycleBin": "回收站",
     "editModeOnly": "清理媒体在编辑模式下可用。"
+  },
+  "replacePlaying": {
+    "title": "演出正在播放",
+    "message": "切换到其他演出会停止正在播放的所有内容。",
+    "keep": "继续播放",
+    "switch": "停止并切换"
   }
 }

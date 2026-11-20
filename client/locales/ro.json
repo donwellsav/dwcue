@@ -1308,5 +1308,11 @@
     "trash": "Coș de gunoi",
     "recycleBin": "Coș de reciclare",
     "editModeOnly": "Curățarea media este disponibilă în modul Editare."
+  },
+  "replacePlaying": {
+    "title": "Un spectacol rulează",
+    "message": "Trecerea la alt spectacol oprește tot ce rulează.",
+    "keep": "Continuă redarea",
+    "switch": "Oprește și schimbă"
   }
 }

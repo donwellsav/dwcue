@@ -1308,5 +1308,11 @@
     "trash": "Koshi i mbeturinave",
     "recycleBin": "Koshi i riciklimit",
     "editModeOnly": "Pastrimi i medias është i disponueshëm në modalitetin e redaktimit."
+  },
+  "replacePlaying": {
+    "title": "Një shfaqje po luhet",
+    "message": "Kalimi në një shfaqje tjetër ndal gjithçka që po luhet.",
+    "keep": "Vazhdo luajtjen",
+    "switch": "Ndalo dhe kalo"
   }
 }

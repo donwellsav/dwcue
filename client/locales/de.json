@@ -1308,5 +1308,11 @@
     "trash": "Papierkorb",
     "recycleBin": "Papierkorb",
     "editModeOnly": "Medien aufräumen ist im Bearbeitungsmodus verfügbar."
+  },
+  "replacePlaying": {
+    "title": "Eine Show läuft",
+    "message": "Der Wechsel zu einer anderen Show stoppt alles, was gerade spielt.",
+    "keep": "Weiterspielen",
+    "switch": "Stoppen und wechseln"
   }
 }

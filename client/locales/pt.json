@@ -1308,5 +1308,11 @@
     "trash": "Lixeira",
     "recycleBin": "Lixeira",
     "editModeOnly": "Limpar mídia está disponível no Modo de Edição."
+  },
+  "replacePlaying": {
+    "title": "Um show está tocando",
+    "message": "Mudar para outro show para tudo o que está tocando.",
+    "keep": "Continuar tocando",
+    "switch": "Parar e mudar"
   }
 }

@@ -1308,5 +1308,11 @@
     "trash": "Papelera",
     "recycleBin": "Papelera de reciclaje",
     "editModeOnly": "Limpiar medios está disponible en el Modo Edición."
+  },
+  "replacePlaying": {
+    "title": "Hay un espectáculo en reproducción",
+    "message": "Cambiar a otro espectáculo detiene todo lo que se está reproduciendo.",
+    "keep": "Seguir reproduciendo",
+    "switch": "Detener y cambiar"
   }
 }
