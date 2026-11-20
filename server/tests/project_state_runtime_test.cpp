@@ -2331,7 +2331,11 @@ void test_paused_sequencer(const std::filesystem::path& wav) {
         if (follows) {
             check(wait_for_on_air(state, engine, "pause-b"), "paused sequence: target starts after Resume");
         } else {
-            std::this_thread::sleep_for(160ms);
+            // The sequencer starts it on one of its polls, however slow the machine.
+            const auto deadline = std::chrono::steady_clock::now() + 3s;
+            while (source->stats().transport != liveplay::audio::TransportState::FadingOut &&
+                   std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(5ms);
             check(source->stats().transport == liveplay::audio::TransportState::FadingOut,
                   "paused sequence: stop fade starts after Resume");
         }
@@ -4153,7 +4157,8 @@ void test_healthy_loader_siblings() {
         check(wait_gate_entered(gate), "Sibling loader: source reached held decoder or fallback lookup");
         if (queued) for (std::size_t i = 1; i < show["items"].size(); ++i) state.add_item(show["items"][i]);
 
-        const auto deadline = std::chrono::steady_clock::now() + 750ms;
+        // Stops as soon as the healthy cues are in; a slow machine gets longer.
+        const auto deadline = std::chrono::steady_clock::now() + 5s;
         json progress;
         do {
             progress = state.audio_readiness();
