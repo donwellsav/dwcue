@@ -2668,7 +2668,12 @@ json ProjectState::audio_readiness() const {
 }
 
 json ProjectState::header_document() const {
+    json content;
+    std::size_t saved_content = 0;
+    json header = [&] {
     std::lock_guard lock{mutex_};
+    content = document_;
+    saved_content = saved_content_fingerprint_;
     // QuickPlay items carry waveform data is already lazy, but the array
     // itself is small relative to the full playlist. We DO include it
     // because the QuickPlay slots reference these items and the workspace
@@ -2699,8 +2704,6 @@ json ProjectState::header_document() const {
         {"itemCount",    item_count},
         {"needsRepair", pending_repair_info_.repaired},
         {"repairIssues", pending_repair_info_.issues},
-        // Edited since it was opened or last written to disk.
-        {"unsavedChanges", content_fingerprint(document_) != saved_content_fingerprint_},
         // "Open" means a real project landed — either it has items or it
         // was loaded/saved from disk. A fresh server has a default name
         // "Untitled" but no file path and no items, so the welcome screen
@@ -2717,6 +2720,12 @@ json ProjectState::header_document() const {
             {"audioReadiness",  audio_readiness_locked()},
         }},
     };
+    }();
+    // Edited since it was opened or last written to disk. Serialising a large
+    // show is done with the lock released, so a GO is not held up behind it.
+    strip_non_content(content);
+    header["unsavedChanges"] = std::hash<std::string>{}(content.dump()) != saved_content;
+    return header;
 }
 
 json ProjectState::items_page(std::size_t offset, std::size_t limit) const {
