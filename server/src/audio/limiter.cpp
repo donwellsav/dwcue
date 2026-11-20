@@ -76,6 +76,7 @@ void Limiter::reset() noexcept {
     peak_window_max_val_ = 0.0f;
     delay_pos_           = 0;
     current_gain_        = 1.0f;
+    applied_gain_        = 1.0f;
     true_peak_detector_.reset();
     gain_reduction_db_.store(0.0f, std::memory_order_relaxed);
 }

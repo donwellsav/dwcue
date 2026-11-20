@@ -135,6 +135,20 @@ void test_bypass_releases_instead_of_jumping() {
     std::vector<Sample> later(48'000, 1.0f);
     limiter.process(later.data(), later.size(), false);
     check(later.back() > 0.99f, "and releases to full level");
+
+    // A reset (an output reopened) starts clean, not partway up a ramp.
+    Limiter reopened;
+    reopened.configure(48'000, -6.0f, 5.0f, 50.0f);
+    std::vector<Sample> held_down(4'800, 1.0f);
+    reopened.process(held_down.data(), held_down.size(), true);
+    std::vector<Sample> ramping(48, 1.0f);
+    reopened.process(ramping.data(), ramping.size(), false);
+    reopened.reset();
+    std::vector<Sample> fresh(4'800, 0.25f);
+    reopened.process(fresh.data(), fresh.size(), false);
+    const auto first = std::find_if(fresh.begin(), fresh.end(), [](Sample x) { return x != 0.0f; });
+    check(first != fresh.end() && std::fabs(*first - 0.25f) < 1e-6f,
+          "a reset clears a bypass ramp in progress");
 }
 
 void test_limits_intersample_true_peak() {
