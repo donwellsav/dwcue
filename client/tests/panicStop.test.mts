@@ -820,6 +820,9 @@ function loadNextItemFeedback(dependencies: Record<string, unknown>): {
     function buildNextItemFeedback(dependencies: Record<string, any>) {
       const { executeHttpRequest, masterGainDb, nextItemOverrideUuid } = dependencies;
       const cueFollowOverrides = dependencies.cueFollowOverrides ?? { value: new Map() };
+      const activeCues = dependencies.activeCues ?? { value: new Map() };
+      const removeActiveCue = (uuid: string) => { activeCues.value.delete(uuid); };
+      const recomputeActiveGroups = () => {};
       let snapshot;
       let patch;
       const server = {
@@ -851,6 +854,21 @@ test('only server patch and reconnect snapshot change the displayed next target'
   assert.equal(masterGainDb.value, -4.5);
   feedback.patch({ op: 'next_item_set', itemUuid: '' });
   assert.equal(nextItemOverrideUuid.value, null);
+});
+
+test('a reconnect snapshot drops a cue it does not list, which is no longer playing', () => {
+  const activeCues = { value: new Map<string, any>([
+    ['ghost', { uuid: 'ghost', serverCueId: 'cue-ghost' }],
+    ['live', { uuid: 'live', serverCueId: 'cue-live' }],
+  ]) };
+  const feedback = loadNextItemFeedback({
+    executeHttpRequest() {},
+    masterGainDb: { value: 0 },
+    nextItemOverrideUuid: { value: null },
+    activeCues,
+  });
+  feedback.snapshot({ cues: [{ cue_id: 'cue-live', item_uuid: 'live', transport: 1 }] });
+  assert.deepEqual([...activeCues.value.keys()], ['live'], 'the retired cue is no longer shown as playing');
 });
 
 test('the Cue to Continue toggle mirrors only server patches and reconnect snapshots', () => {

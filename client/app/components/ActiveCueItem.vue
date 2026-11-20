@@ -87,7 +87,7 @@
             <span class="material-symbols-rounded" aria-hidden="true">skip_next</span>
             {{ segueCountdown.toFixed(1) }}s
           </span>
-          <span>-{{ formatTime(cue.duration - cue.currentTime) }}</span>
+          <span>-{{ formatTime(secondsLeft(cue.duration - cue.currentTime)) }}</span>
         </div>
 
         <div class="progress-bar">
@@ -135,6 +135,7 @@
 </template>
 
 <script setup lang="ts">
+import { secondsLeft } from '~/utils/countdown';
 import type { AudioItem } from '~/types/project';
 
 // Projection of the server's view of an active cue. Owned by useAudioEngine
@@ -171,9 +172,12 @@ const isLooping = computed(() => audioItem.value?.endBehavior?.action === 'loop'
 const isQuickPlayCue = computed(() => !!audioItem.value?.quickPlay);
 
 // Start Next marker (absolute file time) from the project item, if armed.
+// A looping cue never segues (the engine turns Start Next off while it
+// loops), so it shows no countdown.
 const startNextTime = computed<number | null>(() => {
   const item = findItemByUuid(props.cue.uuid) as any;
   if (!item || item.type !== 'audio') return null;
+  if (item.endBehavior?.action === 'loop') return null;
   if (!item.startNextEnabled || !(item.startNextTime > 0)) return null;
   return item.startNextTime as number;
 });

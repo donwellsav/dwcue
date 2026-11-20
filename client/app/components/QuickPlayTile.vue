@@ -199,6 +199,7 @@
 </template>
 
 <script setup lang="ts">
+import { secondsLeft } from '~/utils/countdown';
 import { useDetachedQuickPlayMutation } from '~/composables/useDetachedQuickPlayMutation';
 import ItemLevel from './ItemLevel.vue';
 import type { AudioItem, QuickPlaySlotKeyBinding } from '~/types/project';
@@ -322,7 +323,7 @@ const progressStyle = computed(() => {
 });
 const currentTimeLabel = computed(() => {
   if (!activeCue.value) return formatDuration(Math.max(0, props.item.outPoint - props.item.inPoint || props.item.duration));
-  return `−${formatDuration(Math.max(0, activeCue.value.duration - activeCue.value.currentTime))}`;
+  return `−${formatDuration(secondsLeft(activeCue.value.duration - activeCue.value.currentTime))}`;
 });
 
 function formatDuration(seconds: number): string {

@@ -993,8 +993,8 @@ assert.match(
 );
 assert.match(
   projectHeader,
-  /const primaryActiveCue = computed\(\(\) => \[\.\.\.activeCues\.value\.values\(\)\]\.at\(-1\)[\s\S]*const displayedRemainingSeconds = computed<number \| null>[\s\S]*Number\.isFinite\(cue\.duration\)[\s\S]*Number\.isFinite\(cue\.currentTime\)[\s\S]*Math\.max\(0, Math\.ceil\(cue\.duration - cue\.currentTime\)\)/,
-  'the header countdown must follow the newest active cue and never go negative',
+  /const primaryActiveCue = computed\(\(\) => \{[\s\S]{0,300}return playlist\.at\(-1\) \?\? cues\.at\(-1\) \?\? null;[\s\S]*const displayedRemainingSeconds = computed<number \| null>[\s\S]*Number\.isFinite\(cue\.duration\)[\s\S]*Number\.isFinite\(cue\.currentTime\)[\s\S]*return secondsLeft\(cue\.duration - cue\.currentTime\);/,
+  'the header countdown must follow the newest active show cue (a QuickPlay only when nothing else plays) and never go negative',
 );
 assert.match(
   projectHeader,

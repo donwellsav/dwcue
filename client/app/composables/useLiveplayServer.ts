@@ -453,6 +453,7 @@ function createClient() {
             };
             cue.transport = state.transport as any;
             cue.playhead_seconds = state.playhead_seconds;
+            noteCueEdge(state);
             for (const cb of cueStateSubscribers) cb(state);
             notified.add(cue.id);
           }
@@ -474,6 +475,7 @@ function createClient() {
           // holds a reference to the old cue object; in-place mutation lets Vue
           // track the narrower `transport` / `playhead_seconds` dependencies
           // and avoids a broad re-render cascade across all PlaylistItems.
+          noteCueEdge(payload);
           const idx = cues.value.findIndex(c => c.id === payload.cue_id);
           if (idx >= 0) {
             cues.value[idx].transport        = payload.transport;
@@ -730,8 +732,24 @@ function createClient() {
     return parsed;
   }
 
+  // The catalogue reply carries each cue's transport as it was when the engine
+  // answered. A cue_state that arrived after the request went out is newer:
+  // a slow reply must not bring a stopped cue back as playing.
+  let cueEdgeCount = 0;
+  const cueEdges = new Map<string, { at: number; transport: number; playhead_seconds: number }>();
+  function noteCueEdge(state: { cue_id: string; transport: number; playhead_seconds: number }) {
+    cueEdges.set(state.cue_id, { at: ++cueEdgeCount, transport: state.transport, playhead_seconds: state.playhead_seconds });
+  }
   async function fetchCues() {
+    const requestedAt = cueEdgeCount;
     const next = await rest<ServerCue[]>('/api/cues');
+    for (const cue of next) {
+      const edge = cueEdges.get(cue.id);
+      if (edge && edge.at > requestedAt) {
+        cue.transport = edge.transport as any;
+        cue.playhead_seconds = edge.playhead_seconds;
+      }
+    }
     cues.value = next;
     const failed = next.find(c => c.decode_error);
     if (failed) {
