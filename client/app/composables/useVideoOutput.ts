@@ -566,7 +566,13 @@ export function useVideoOutput(
     return showHeldFrame.value;
   }
 
-  function applyItem(item: OutputItem, playheadSeconds: number, seekImmediately = true) {
+  // Where the picture is for an engine position: ahead of the sound by the
+  // operator's picture offset.
+  function pictureAt(playheadSeconds: number): number {
+    return playheadSeconds + pictureOffset();
+  }
+
+  function applyItem(item: OutputItem, playheadSeconds: number, seekImmediately = true, cut = false) {
     assignedCueImageSrc.value = pathMediaUrl(item.imagePath);
 
     if (!item.hasVideo) {
@@ -585,8 +591,13 @@ export function useVideoOutput(
       return;
     }
 
-    pendingSeekSeconds = playheadSeconds + (startPending ? startLead + pictureOffset() : 0);
+    // A video replacing a still keeps the held frame until its own first frame.
+    clearTimeout(imageHoldTimer);
+    imageHoldTimer = undefined;
+    const target = pictureAt(playheadSeconds);
     const url = itemMediaUrl(item);
+    const parked = cut && url === videoSrc.value && videoReady.value;
+    pendingSeekSeconds = target + (startPending ? startLead : 0);
     if (url !== videoSrc.value) {
       pauseVideo();
       videoSrc.value = url;
@@ -598,9 +609,17 @@ export function useVideoOutput(
       beginNativeClockGrace(activeCueId.value, playheadSeconds);
     }
 
-    const atOutPoint = isAtOutPoint(item, playheadSeconds);
+    const atOutPoint = isAtOutPoint(item, target);
     showVideo.value = !atOutPoint && !videoFailed.value;
     const element = videoEl.value;
+    // A cut to a picture already loaded and waiting where this start begins
+    // (a preloaded cue at its In point) plays from there: a seek would hold
+    // its first frame and then jump. The chase takes up what is left.
+    if (parked && startPending && element && !element.seeking
+      && Math.abs(element.currentTime - target) <= CHASE_START_S) {
+      startPending = false;
+      pendingSeekSeconds = element.currentTime;
+    }
     if (element && videoReady.value && seekImmediately
       && Math.abs(element.currentTime - pendingSeekSeconds) > CHASE_DEADBAND_S) {
       element.currentTime = pendingSeekSeconds;
@@ -659,7 +678,7 @@ export function useVideoOutput(
     const item = active === diagnosticCue ? diagnosticItem : doc.value?.items.get(active?.itemUuid ?? '');
     syncMetadataRecovery(item ? null : active);
     if (!active) {
-      if (activeItemUuid.value) clearActive(stoppedAt !== undefined && holdAtFollowEnd(stoppedAt));
+      if (activeItemUuid.value) clearActive(stoppedAt !== undefined && holdAtFollowEnd(pictureAt(stoppedAt)));
       return;
     }
     if (!item || (active !== diagnosticCue && active.triggerSeq <= stoppedThroughTriggerSeq
@@ -670,6 +689,8 @@ export function useVideoOutput(
 
     const sourceChanged = active.itemUuid !== activeItemUuid.value
       || active.triggerSeq !== activeTriggerSeq;
+    // Paused, the picture shows the paused frame: no start lead.
+    if (active.transport === TRANSPORT_PAUSED) startPending = false;
     if (sourceChanged) {
       // Keep the outgoing frame up until the incoming picture (a video's
       // first frame, or a still once it has loaded) can replace it.
@@ -687,8 +708,8 @@ export function useVideoOutput(
       beginNativeClockGrace(active.cueId, active.playheadSeconds);
       startPending = active.transport !== TRANSPORT_PAUSED;
       if (item.hasVideo && active !== diagnosticCue) adoptSpare(item);
-      applyItem(item, active.playheadSeconds);
-      if (active !== diagnosticCue && item.hasVideo && !isAtOutPoint(item, active.playheadSeconds)
+      applyItem(item, active.playheadSeconds, true, true);
+      if (active !== diagnosticCue && item.hasVideo && !isAtOutPoint(item, pictureAt(active.playheadSeconds))
         && (videoSrc.value !== previousSource || showHeldFrame.value || !videoReady.value)) {
         awaitingFirstFrame = true;
         presentedAt = presentedMediaTime = presentedFrames = null;
@@ -701,8 +722,8 @@ export function useVideoOutput(
     } else if (active.cueId !== activeCueId.value) {
       activeCueId.value = active.cueId;
     }
-    if (active.transport !== TRANSPORT_PAUSED && isAtOutPoint(item, active.playheadSeconds)) {
-      holdAtFollowEnd(active.playheadSeconds);
+    if (active.transport !== TRANSPORT_PAUSED && isAtOutPoint(item, pictureAt(active.playheadSeconds))) {
+      holdAtFollowEnd(pictureAt(active.playheadSeconds));
     }
     if (!sourceChanged) applyItem(item, active.playheadSeconds, seekImmediately);
     applyTransport(active.transport);
@@ -879,10 +900,17 @@ export function useVideoOutput(
     chaseSamples.push(drift);
     if (chaseSamples.length > CHASE_WINDOW) chaseSamples.shift();
     const steady = steadyDrift();
-    // Seek only for a real jump or a gap two readings agree on: one stray
-    // reading must not make the picture jump.
-    if (Math.abs(drift) > CHASE_JUMP_S || (Math.abs(drift) > CHASE_HARD_SEEK_S
-      && chaseSamples.length >= 2 && Math.abs(steady) > CHASE_HARD_SEEK_S)) {
+    const previous = chaseSamples.length >= 2 ? chaseSamples[chaseSamples.length - 2]! : null;
+    // Seek only for a real jump or a gap two readings each show, the same
+    // way: one stray reading must not make the picture jump.
+    const lastingGap = previous !== null && Math.abs(drift) > CHASE_HARD_SEEK_S
+      && Math.abs(previous) > CHASE_HARD_SEEK_S && Math.sign(previous) === Math.sign(drift);
+    if (Math.abs(drift) > CHASE_JUMP_S || lastingGap) {
+      // A start or seek that landed this far off teaches the lead now:
+      // waiting for a full window would repeat the same miss. A real jump
+      // in the sound (a loop, a scrub) is far larger and teaches nothing.
+      const landing = lastingGap ? (previous! + drift) / 2 : drift;
+      if (startPending && Math.abs(landing) <= START_LEAD_MAX_S + CHASE_HARD_SEEK_S) learnStartLead(landing);
       // Aim ahead by the learned lead: a seek takes time, and landing late
       // by that much would set off another seek. Its landing teaches the lead.
       element.currentTime = heard + startLead;
@@ -924,12 +952,15 @@ export function useVideoOutput(
     slotSources.value[1 - liveSlot.value] = mediaUrlFor(item, version);
   }
 
-  // The spare is ready once it has its first frame at the cue's In point.
+  // The spare is ready once it has its first frame where the cue's picture
+  // starts: its In point, ahead by the picture offset, within the clip.
   function onSpareEvent() {
     const element = spareElement();
     if (!spare || !element || element.readyState < 1) return;
-    if (!element.seeking && Math.abs(element.currentTime - spare.inPoint) > CHASE_DEADBAND_S) {
-      element.currentTime = spare.inPoint;
+    const duration = Number.isFinite(element.duration) && element.duration > 0 ? element.duration : Infinity;
+    const parkAt = Math.min(pictureAt(spare.inPoint), duration);
+    if (!element.seeking && Math.abs(element.currentTime - parkAt) > CHASE_DEADBAND_S) {
+      element.currentTime = parkAt;
       return;
     }
     if (element.readyState >= 2 && !element.seeking && element.videoWidth > 0) spare.ready = true;
@@ -999,12 +1030,13 @@ export function useVideoOutput(
     if (!item?.hasVideo) return;
     const url = itemMediaUrl(item);
     const sourceChanged = url !== videoSrc.value;
-    if (!sourceChanged && pendingSeekSeconds === item.inPoint) return;
+    const parkAt = pictureAt(item.inPoint);
+    if (!sourceChanged && pendingSeekSeconds === parkAt) return;
     pauseVideo();
-    pendingSeekSeconds = item.inPoint;
+    pendingSeekSeconds = parkAt;
     if (!sourceChanged) {
       const element = currentVideoEventElement();
-      if (element && videoReady.value) element.currentTime = item.inPoint;
+      if (element && videoReady.value) element.currentTime = parkAt;
       return;
     }
     videoSrc.value = url;

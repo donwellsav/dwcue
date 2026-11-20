@@ -898,6 +898,165 @@ test('picture sync runs the picture ahead of the sound by the operator offset', 
   } finally { h.stop(); }
 });
 
+test('with picture sync, the picture stops at the Out point by its own position, ahead of the sound', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true, inPoint: 0, outPoint: 5 })]), true, {}, '0', 200);
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    assert.equal(h.controller.showVideo.value, true);
+    // The sound is at 4.85, so the picture (200 ms ahead) is past the 5 s Out point.
+    h.element.currentTime = 5.05;
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 4.85 }] });
+    assert.equal(h.controller.showVideo.value, false, 'the picture does not play past its trim');
+  } finally { h.stop(); }
+});
+
+test('with picture sync, a pause shows the frame the offset puts with the paused sound, and resume does not jump', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, '0.06', 300);
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    let seeks = 0;
+    let position = 2.3;
+    Object.defineProperty(h.element, 'currentTime', {
+      get: () => position, set: (value: number) => { seeks += 1; position = value; }, configurable: true,
+    });
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 3, 4));  // paused at 3 s of sound
+    assert.ok(Math.abs(position - 3.3) < 1e-9, `paused on the frame 300 ms ahead (${position}), no start lead`);
+    seeks = 0;
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 3, 1));  // resumed
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 3.03, audible_seconds: 3.01 }] });
+    assert.equal(seeks, 0, 'resume carries on from the paused frame');
+  } finally { h.stop(); }
+});
+
+test('a pause right after a start shows the paused frame, without the start lead', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, '0.1');
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1.05, 4));
+    assert.ok(Math.abs(h.element.currentTime - 1.05) < 1e-9, `on the paused frame (${h.element.currentTime})`);
+  } finally { h.stop(); }
+});
+
+test('a seek that keeps landing late teaches the lead at once instead of repeating', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, '0.06');
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    // Each seek takes 180 ms: it lands 120 ms behind its aim of heard + lead.
+    const seekTargets: number[] = [];
+    let position = 1;
+    Object.defineProperty(h.element, 'currentTime', {
+      get: () => position, set: (value: number) => { seekTargets.push(value); position = value; }, configurable: true,
+    });
+    let clock = 2;
+    for (let i = 0; i < 30; i++) {
+      clock += 1 / 30;
+      position += 1 / 30;
+      const before = seekTargets.length;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+      if (seekTargets.length > before) position = seekTargets.at(-1)! - 0.18;  // landed late by the seek time
+    }
+    assert.ok(seekTargets.length <= 4, `it stops seeking once the lead covers the seek (${seekTargets.length} seeks)`);
+  } finally { h.stop(); }
+});
+
+test('one stray reading next to a small landing error cannot make the picture jump', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, '0');
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    h.element.currentTime = 2;
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 2 }] });
+    h.element.currentTime = 2.033;
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 2.033 + 0.17 }] });
+    assert.equal(h.element.currentTime, 2.033, 'readings of 0 and 0.17 do not average into a seek');
+  } finally { h.stop(); }
+});
+
+test('a cut from standby to a preloaded video plays from its waiting frame, without a seek', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true, inPoint: 0 })]), true, {}, '0.1', 50);
+  try {
+    await flush();
+    h.emitPatch({ op: 'next_item_set', itemUuid: 'video' });
+    await flush();
+    h.controller.onVideoLoadedMetadata();
+    h.controller.onVideoCanPlay();
+    await flush();
+    assert.ok(Math.abs(h.element.currentTime - 0.05) < 1e-9, `waits at its In point, ahead by the offset (${h.element.currentTime})`);
+    let seeks = 0;
+    let position = h.element.currentTime;
+    Object.defineProperty(h.element, 'currentTime', {
+      get: () => position, set: (value: number) => { seeks += 1; position = value; }, configurable: true,
+    });
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 0.01));
+    await flush();
+    assert.equal(seeks, 0, 'the cut plays the waiting frame at once');
+    assert.ok(h.element.playCount > 0, 'and it plays');
+  } finally { h.stop(); }
+});
+
+test('a spare whose In point is past the end of its clip waits at the end instead of seeking again and again', async () => {
+  const h = createHarness(project([audioItem('first', { hasVideo: true }), audioItem('second', { hasVideo: true, inPoint: 12 })]));
+  try {
+    const live = h.element;
+    const spare = videoElement();
+    h.controller.registerVideoElement(0, live as unknown as HTMLVideoElement);
+    h.controller.registerVideoElement(1, spare as unknown as HTMLVideoElement);
+    await flush();
+    h.emitCue(snapshotCue('first', 'first-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    h.emitPatch({ op: 'next_item_set', itemUuid: 'second' });
+    await flush();
+    let seeks = 0;
+    let position = 0;
+    Object.defineProperty(spare, 'currentTime', {
+      get: () => position, set: (value: number) => { seeks += 1; position = Math.min(value, 10); }, configurable: true,
+    });
+    (spare as any).duration = 10;
+    spare.readyState = 4;
+    spare.videoWidth = 640;
+    for (let i = 0; i < 5; i++) h.controller.onSpareEvent();
+    assert.equal(seeks, 1, 'one seek to the end of the clip');
+  } finally { h.stop(); }
+});
+
+test('a cut from a still to a video keeps the held frame until the video has its first frame', async () => {
+  const h = createHarness(project([
+    audioItem('clip', { hasVideo: true }),
+    audioItem('slide', { imagePath: 'images/slide.png' }),
+    audioItem('next', { hasVideo: true }),
+  ]));
+  const canvas = { width: 0, height: 0, getContext: () => ({ drawImage: () => {} }) } as unknown as HTMLCanvasElement;
+  try {
+    await flush();
+    h.controller.heldFrameEl.value = canvas;
+    h.emitCue(snapshotCue('clip', 'clip-cue', 1, 2));
+    h.element.currentSrc = h.controller.videoSrc.value!;
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 2, presentedFrames: 60 });
+    h.emitCue(snapshotCue('slide', 'slide-cue', 2, 0));   // the still has not loaded yet
+    await flush();
+    h.emitCue(snapshotCue('next', 'next-cue', 3, 0));     // a slow video follows within 2 s
+    await flush();
+    await new Promise(resolve => setTimeout(resolve, 2100));
+    assert.equal(h.controller.showHeldFrame.value, true, 'the still’s 2 s limit does not drop the frame the video still needs');
+  } finally { h.stop(); }
+});
+
 test('a selection refresh preserves a playing video and its soft drift correction', async () => {
   const doc = project([audioItem('video', { hasVideo: true }), audioItem('audio')]);
   const h = createHarness(doc);
@@ -1088,7 +1247,8 @@ test('native position updates do not restart a pending video seek', async () => 
     assert.equal(h.element.currentTime, 2);
     h.element.seeking = false;
     h.emitMeters({ items: [{ cue_id: 'cue', transport: 1, playhead_seconds: 2.25 }] });
-    assert.equal(h.element.currentTime, 2.25);
+    // That seek landed 250 ms late: the next one aims ahead by what it taught.
+    assert.ok(h.element.currentTime > 2.25 && h.element.currentTime <= 2.5, `seeks to the sound (${h.element.currentTime})`);
   } finally { h.stop(); }
 });
 
