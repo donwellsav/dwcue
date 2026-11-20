@@ -150,6 +150,31 @@ struct NativeDeviceGate {
 // A device-list refresh holds the native device lock while the OS answers,
 // which takes long with many or Bluetooth outputs. A cue's first GO on a
 // cold output waits it out instead of being refused.
+// The device list is refreshed in the background. An output plugged in a
+// moment ago (a projector before its first cue) is not in it yet: a fresh
+// look, bounded, finds it.
+void test_fresh_device_list_finds_new_output() {
+    NativeDeviceGate gate;
+    AudioEngine engine;
+    engine.device_test_context_ = &gate.context;
+    (void)engine.enumerate_devices();
+    const auto catalog = engine.device_catalog_;
+    {
+        std::unique_lock lock{catalog->mutex};
+        catalog->ready.wait_for(lock, std::chrono::seconds{2}, [&] { return !catalog->refreshing; });
+        catalog->devices.clear();   // as it was before the output was plugged in
+        catalog->has_snapshot = true;
+        catalog->next_refresh = std::chrono::steady_clock::now() + std::chrono::hours{1};
+    }
+    const auto listed = [](const std::vector<DeviceInfo>& devices) {
+        return std::any_of(devices.begin(), devices.end(),
+                           [](const DeviceInfo& info) { return !info.is_open && !info.display_name.empty(); });
+    };
+    check(!listed(engine.enumerate_devices()), "fresh device list: the cached list does not have the new output");
+    check(listed(engine.enumerate_devices_fresh(std::chrono::seconds{1})),
+          "fresh device list: a fresh look finds the output plugged in a moment ago");
+}
+
 void test_open_waits_out_device_list_refresh() {
     NativeDeviceGate gate;
     AudioEngine engine;
@@ -2222,6 +2247,7 @@ int main() {
     const auto center = wav(dir, "center.wav", 0.7f, true, 0.0f, 6, 2);
     const auto left = wav(dir, "left.wav", 0.3f, true, 0.0f, 2, 0);
     const auto ramp = wav(dir, "ramp.wav", 0.125f, true, 1.0f / 131'072.0f);
+    test_fresh_device_list_finds_new_output();
     test_open_waits_out_device_list_refresh();
     test_initial_device_start_keeps_controls();
     test_held_device_recovery_lifetime();

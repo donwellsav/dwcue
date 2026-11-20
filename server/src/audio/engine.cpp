@@ -449,6 +449,19 @@ void AudioEngine::refresh_device_catalog(const std::shared_ptr<DeviceCatalog>& c
     catalog->ready.notify_all();
 }
 
+std::vector<DeviceInfo> AudioEngine::enumerate_devices_fresh(std::chrono::milliseconds wait) const {
+    {
+        std::lock_guard lock{device_catalog_->mutex};
+        if (!device_catalog_->refreshing) device_catalog_->next_refresh = {};   // due now
+    }
+    (void)enumerate_devices(true);
+    {
+        std::unique_lock lock{device_catalog_->mutex};
+        device_catalog_->ready.wait_for(lock, wait, [&] { return !device_catalog_->refreshing; });
+    }
+    return enumerate_devices(false);
+}
+
 std::vector<DeviceInfo> AudioEngine::enumerate_devices(bool refresh_catalog) const {
     std::vector<NativeDeviceInfo> hardware;
     bool refresh = false;

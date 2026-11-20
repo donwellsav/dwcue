@@ -153,6 +153,9 @@ void hold_path_probe_for_test(const std::filesystem::path& path) {
 // A cue whose media takes longer than this to read on its start is not
 // started: the operator's GO has already been reported as unconfirmed.
 constexpr auto kLateCueStart = std::chrono::milliseconds{2000};
+// How long a GO waits for a fresh device list when its output is not in the
+// background-refreshed one.
+constexpr auto kFreshDeviceLook = std::chrono::milliseconds{1000};
 
 std::filesystem::path resolve_media_path(const detail::MediaPaths& paths) {
     if (paths.fallback.empty() || paths.preferred == paths.fallback) return paths.preferred;
@@ -5414,8 +5417,16 @@ void ProjectState::release_device_routings() {
 audio::MixerChannelId
 ProjectState::ensure_device_routing(const std::string& device_name,
                                     std::unique_lock<std::recursive_mutex>* lifecycle_lock) {
-    const auto devices = engine_.enumerate_devices();
-    const auto selected = detail::resolve_output_device(device_name, devices);
+    auto devices = engine_.enumerate_devices();
+    auto selected = detail::resolve_output_device(device_name, devices);
+    if (!selected && lifecycle_lock) {
+        // Not in the background-refreshed list: perhaps plugged in a moment
+        // ago. One fresh look, with the playback lock released.
+        lifecycle_lock->unlock();
+        devices = engine_.enumerate_devices_fresh(kFreshDeviceLook);
+        lifecycle_lock->lock();
+        selected = detail::resolve_output_device(device_name, devices);
+    }
     if (!selected) {
         if (lifecycle_lock)
             Logger::warn("Output '{}' is unavailable or ambiguous; reselect an output device", device_name);
@@ -5447,8 +5458,13 @@ std::string ProjectState::program_output_selection() const {
 
 audio::DeviceId ProjectState::open_program_output(const std::string& selection) {
     if (selection.empty()) return engine_.open_default_device();
-    const auto devices = engine_.enumerate_devices();
-    const auto selected = detail::resolve_output_device(selection, devices);
+    auto devices = engine_.enumerate_devices();
+    auto selected = detail::resolve_output_device(selection, devices);
+    if (!selected) {
+        // Perhaps plugged in a moment ago (called with the playback lock released).
+        devices = engine_.enumerate_devices_fresh(kFreshDeviceLook);
+        selected = detail::resolve_output_device(selection, devices);
+    }
     if (!selected) {
         Logger::warn("Output '{}' is unavailable or ambiguous; reselect an output device", selection);
         return {};

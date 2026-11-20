@@ -260,6 +260,10 @@ public:
     // With refresh_catalog false, the cached hardware list with live state
     // from the open devices: no rebuild, which holds the device lock.
     std::vector<DeviceInfo> enumerate_devices(bool refresh_catalog = true) const;
+    // The device list as the OS has it now: forces a refresh and waits up to
+    // `wait` for it (the plain call answers from the background-refreshed
+    // list). For an output asked for by name that the list does not have.
+    std::vector<DeviceInfo> enumerate_devices_fresh(std::chrono::milliseconds wait) const;
 
     // Open the platform's default playback device with `output_channels`
     // channels at the engine's mix rate.
