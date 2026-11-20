@@ -600,7 +600,7 @@ void AudioEngine::ma_notification_callback(
                 std::memory_order_release, std::memory_order_acquire)) {
             device->native_recovery_pending.store(
                 true, std::memory_order_release);
-            device->reset_requested.store(true, std::memory_order_release);
+            device->request_reset();
         }
     };
 
@@ -625,7 +625,7 @@ void AudioEngine::ma_notification_callback(
                 device->device_loss_count.fetch_add(
                     1, std::memory_order_relaxed);
             }
-            device->reset_requested.store(true, std::memory_order_release);
+            device->request_reset();
             break;
         }
         case ma_device_notification_type_rerouted:
@@ -637,13 +637,13 @@ void AudioEngine::ma_notification_callback(
                 device->native_id = notification->pDevice->playback.id;
             }
             await_verified_callback(DeviceRuntimeState::Disconnected);
-            device->reset_requested.store(true, std::memory_order_release);
+            device->request_reset();
             break;
         case ma_device_notification_type_interruption_began:
             device->interruption_count.fetch_add(1, std::memory_order_relaxed);
             device->runtime_state.store(
                 DeviceRuntimeState::Interrupted, std::memory_order_release);
-            device->reset_requested.store(true, std::memory_order_release);
+            device->request_reset();
             break;
         case ma_device_notification_type_interruption_ended:
             await_verified_callback(DeviceRuntimeState::Interrupted);
@@ -1895,7 +1895,7 @@ void AudioEngine::recover_device(const std::shared_ptr<Device>& owned, std::uint
             DeviceRuntimeState::Starting, std::memory_order_release);
         device.started.store(false, std::memory_order_release);
         device.clock_master.store(false, std::memory_order_release);
-        device.reset_requested.store(true, std::memory_order_release);
+        device.request_reset();
     }
     state->consumption_counter.fetch_add(1, std::memory_order_release);
     state->consumption_counter.notify_all();
@@ -1921,6 +1921,7 @@ void AudioEngine::recover_device(const std::shared_ptr<Device>& owned, std::uint
             device.clock_correction_ppm.store(0.0f, std::memory_order_relaxed);
             device.ring_occupancy_frames.store(0, std::memory_order_relaxed);
             device.reset_applied = true;
+            device.applied_reset_epoch = device.reset_epoch.load(std::memory_order_acquire);
             device.native_recovery_pending.store(false, std::memory_order_release);
             // A lost output needs a fresh stream; a stalled one is restarted
             // first and gets a fresh stream if it will not start.
@@ -2067,8 +2068,7 @@ void AudioEngine::device_watchdog_loop() {
                         device->device_recovery_count.fetch_add(
                             1, std::memory_order_relaxed);
                     }
-                    device->reset_requested.store(
-                        true, std::memory_order_release);
+                    device->request_reset();
                     wake_render = true;
                 }
             } else if (liveness == CallbackLivenessState::Stalled &&
@@ -2078,8 +2078,7 @@ void AudioEngine::device_watchdog_loop() {
                         std::memory_order_acq_rel, std::memory_order_acquire)) {
                     device->device_loss_count.fetch_add(
                         1, std::memory_order_relaxed);
-                    device->reset_requested.store(
-                        true, std::memory_order_release);
+                    device->request_reset();
                     const auto recovery_request_id =
                         device->started_recovery_request_id;
                     if (recovery_request_id != 0) {
@@ -2100,10 +2099,9 @@ void AudioEngine::device_watchdog_loop() {
 }
 
 bool AudioEngine::reset_device_if_requested(Device& device) noexcept {
-    if (!device.reset_requested.load(std::memory_order_acquire) ||
-        device.reset_applied) {
-        return true;
-    }
+    if (!device.reset_requested.load(std::memory_order_acquire)) return true;
+    const auto epoch = device.reset_epoch.load(std::memory_order_acquire);
+    if (device.reset_applied && epoch == device.applied_reset_epoch) return true;
 
     // The callback never waits for a reset. Symmetrically, the render thread
     // does not touch ring/resampler state until it can claim this flag.
@@ -2138,6 +2136,7 @@ bool AudioEngine::reset_device_if_requested(Device& device) noexcept {
     device.clock_correction_ppm.store(0.0f, std::memory_order_relaxed);
     device.ring_occupancy_frames.store(0, std::memory_order_relaxed);
     device.reset_applied = true;
+    device.applied_reset_epoch = epoch;
     return true;
 }
 
@@ -2229,8 +2228,7 @@ void AudioEngine::render_loop() {
                             dev->device_loss_count.fetch_add(
                                 1, std::memory_order_relaxed);
                         }
-                        dev->reset_requested.store(
-                            true, std::memory_order_release);
+                        dev->request_reset();
                     }
                 }
 
@@ -2278,6 +2276,7 @@ void AudioEngine::render_loop() {
                     if (was_master && !should_be_master) {
                         // Demotion activates the clock adapter, so reset its
                         // phase before the device resumes as a secondary.
+                        dev->reset_epoch.fetch_add(1, std::memory_order_acq_rel);
                         if (!dev->reset_requested.exchange(
                                 true, std::memory_order_acq_rel) &&
                             dev->runtime_state.load(
@@ -2643,7 +2642,8 @@ void AudioEngine::render_one_block(const Topology& topo) {
             dev->overrun_count.fetch_add(
                 1, std::memory_order_relaxed);
             dev->reset_applied = false;
-            if (!dev->reset_requested.exchange(
+            dev->reset_epoch.fetch_add(1, std::memory_order_acq_rel);
+                        if (!dev->reset_requested.exchange(
                     true, std::memory_order_acq_rel)) {
                 dev->hard_resync_count.fetch_add(
                     1, std::memory_order_relaxed);

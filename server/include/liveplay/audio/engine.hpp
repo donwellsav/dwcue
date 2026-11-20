@@ -529,6 +529,15 @@ private:
         std::atomic<bool>           callback_active{false};
         std::atomic<bool>           reset_requested{true};
         bool                        reset_applied = false; // render thread only
+        // Every reset request is numbered, so one made after an earlier reset
+        // was applied (an output dropping out again while it refilled, then
+        // coming back) is applied too, not mistaken for the one already done.
+        std::atomic<std::uint64_t>  reset_epoch{0};
+        std::uint64_t               applied_reset_epoch = 0; // render thread only
+        void request_reset() noexcept {
+            reset_epoch.fetch_add(1, std::memory_order_acq_rel);
+            reset_requested.store(true, std::memory_order_release);
+        }
         std::atomic<bool>           clock_master{false};
         std::atomic<DeviceRuntimeState> runtime_state{
             DeviceRuntimeState::Starting};

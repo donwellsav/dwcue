@@ -967,8 +967,9 @@ void test_bursty_secondary_output(const std::filesystem::path& tone) {
     ma_pcm_rb_uninit(f.device->ring.get());
     if (ma_pcm_rb_init(ma_format_f32, 2, capacity, nullptr, nullptr, f.device->ring.get()) != MA_SUCCESS)
         std::abort();
-    f.device->clock_controller.configure(capacity, (capacity + block) / 2);
-    f.device->reset_requested.store(true);
+    const auto clock_span = block * AudioEngine::kDeviceClockBlocks;
+    f.device->clock_controller.configure(clock_span, (clock_span + block) / 2);
+    f.device->request_reset();
     f.item->set_loop(true, 0);
     for (std::size_t i = 0; i < AudioEngine::kDeviceRingBlocks && f.device->reset_requested.load(); ++i)
         f.render();
@@ -985,6 +986,31 @@ void test_bursty_secondary_output(const std::filesystem::path& tone) {
     }
     check(audible && f.device->underrun_count.load() == 0 && f.device->overrun_count.load() == 0 &&
           f.device->hard_resync_count.load() == 0, "secondary bursts: continuous PCM without a ring reset");
+}
+
+// An output that drops out again while it refills after a reset (a loose
+// USB cable bouncing) and comes back must start from an empty queue: the
+// audio left in it from before the drop must not play first.
+void test_bounced_output_starts_clean(const std::filesystem::path& tone) {
+    Fixture f(tone);
+    f.device->request_reset();
+    f.render();                      // reset applied, refill begins
+    f.render();
+    (void)f.drain();                 // the device consumed some of it
+    const auto before = ma_pcm_rb_available_read(f.device->ring.get());
+    check(before > 0 && f.device->reset_requested.load(), "bounced output: refilling when it drops");
+    ma_device_notification event{};
+    event.pDevice = &f.native;
+    event.type = ma_device_notification_type_stopped;
+    AudioEngine::ma_notification_callback(&event);   // drops out
+    event.type = ma_device_notification_type_started;
+    AudioEngine::ma_notification_callback(&event);   // and comes back
+    f.device->runtime_state.store(DeviceRuntimeState::Running);  // its callbacks verified
+    f.render();
+    const auto after = ma_pcm_rb_available_read(f.device->ring.get());
+    std::printf("bounced output: %u frames queued before the drop, %u after the first block back\n",
+                before, after);
+    check(after == block, "bounced output: it comes back on a fresh queue, with no audio from before the drop");
 }
 
 void test_stalled_clock_failover(const std::filesystem::path& tone) {
@@ -2130,6 +2156,7 @@ int main() {
     test_delay_and_bypass(quiet);
     test_live_ceiling(tone);
     test_bursty_secondary_output(quiet);
+    test_bounced_output_starts_clean(quiet);
     test_stalled_clock_failover(quiet);
     test_single_output_underrun(quiet);
     test_output_delay(quiet);
