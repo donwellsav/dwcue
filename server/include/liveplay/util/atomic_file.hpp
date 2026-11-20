@@ -29,12 +29,27 @@ namespace liveplay::util {
 // short or empty file.
 inline bool flush_file_to_disk(const std::filesystem::path& path, std::error_code& ec) {
 #if defined(_WIN32)
-    const HANDLE file = ::CreateFileW(path.c_str(), GENERIC_WRITE,
-                                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                      nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    // Flushing needs write access. A virus scanner or sync client that has the
+    // new file open for a moment, or a read-only copy, can refuse it: wait a
+    // little, then go on without the flush rather than lose the save
+    // (MoveFileExW's WRITE_THROUGH still applies to the swap).
+    HANDLE file = INVALID_HANDLE_VALUE;
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        file = ::CreateFileW(path.c_str(), GENERIC_WRITE,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file != INVALID_HANDLE_VALUE) break;
+        const DWORD error = ::GetLastError();
+        if (error != ERROR_SHARING_VIOLATION && error != ERROR_LOCK_VIOLATION &&
+            error != ERROR_ACCESS_DENIED) {
+            ec = std::error_code{static_cast<int>(error), std::system_category()};
+            return false;
+        }
+        ::Sleep(50);
+    }
     if (file == INVALID_HANDLE_VALUE) {
-        ec = std::error_code{static_cast<int>(::GetLastError()), std::system_category()};
-        return false;
+        ec.clear();
+        return true;
     }
     const bool flushed = ::FlushFileBuffers(file) != 0;
     if (!flushed) ec = std::error_code{static_cast<int>(::GetLastError()), std::system_category()};
