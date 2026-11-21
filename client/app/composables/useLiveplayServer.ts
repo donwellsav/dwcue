@@ -187,7 +187,9 @@ function createClient() {
   }
 
   // Verify a retained show on every new socket, even within the loss grace period.
-  type ReconnectedSubscriber = (signal: AbortSignal) => void;
+  // socketSwap: this window replaced its own socket a moment ago (Stop All
+  // leaving a stuck GO behind), with no real loss of the engine.
+  type ReconnectedSubscriber = (signal: AbortSignal, info: { socketSwap: boolean }) => void;
   const reconnectedSubscribers = new Set<ReconnectedSubscriber>();
   function onReconnected(cb: ReconnectedSubscriber): () => void {
     reconnectedSubscribers.add(cb);
@@ -239,6 +241,28 @@ function createClient() {
   const CONNECTION_LOST_DELAY_MS = 3000;
   let connectionLostTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // The engine sends meters 30 times a second whether or not anything
+  // plays. A connection silent for this long belongs to an engine that has
+  // stopped answering (hung, or its machine asleep) even though the socket
+  // looks open: say so, as for any lost connection, and connect again. Some
+  // engine work (opening a large show) can pause the meters for a few
+  // seconds, so the limit is generous. Cleared by the next message.
+  const SILENCE_LIMIT_MS = 8000;
+  let lastMessageAt = 0;
+  let silentLoss = false;
+  if (typeof window !== 'undefined') {
+    const watchdog = setInterval(() => {
+      if (!connected.value || !ws || projectLoad.value === 'open' ||
+          performance.now() - lastMessageAt < SILENCE_LIMIT_MS) return;
+      console.warn('[liveplay] the engine has sent nothing for', SILENCE_LIMIT_MS, 'ms; reconnecting');
+      silentLoss = true;
+      connectionLost.value = true;
+      forceReconnect();
+    }, 1000);
+    // Never the only thing keeping a process alive (tests, shutdown).
+    (watchdog as unknown as { unref?: () => void }).unref?.();
+  }
+
   function armConnectionLostTimer() {
     if (connectionLostTimer || connectionLost.value) return;
     connectionLostTimer = setTimeout(() => {
@@ -279,6 +303,15 @@ function createClient() {
   // Deliberately does NOT clear `connectionLost`: the modal stays up until we
   // are actually back, otherwise a failed retry would flash the UI open and
   // then re-lock it a moment later.
+  // Stop All replaces a socket an earlier GO may still be holding. The new
+  // socket opens at once; only an open that soon after counts as that swap.
+  let socketSwapAt = -Infinity;
+  const SOCKET_SWAP_WINDOW_MS = 1000;
+  function swapSocket() {
+    socketSwapAt = performance.now();
+    forceReconnect();
+  }
+
   function forceReconnect() {
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     reconnectDelay = 1500;
@@ -314,6 +347,8 @@ function createClient() {
       if (ws !== socket) return;
       const shouldProbeAfterReconnect = reconnectProbePending || !!currentProjectForImport.value;
       reconnectProbePending = false;
+      const socketSwap = performance.now() - socketSwapAt < SOCKET_SWAP_WINDOW_MS;
+      socketSwapAt = -Infinity;
       showVerification.value = currentProjectForImport.value ? 'checking' : null;
       connected.value = true;
       reconnecting.value = false;
@@ -322,10 +357,12 @@ function createClient() {
       stopAllStatus.value = null;
       failedReconnectAttempts.value = 0;
       clearConnectionLostTimer();
-      connectionLost.value = false;
+      lastMessageAt = performance.now();
+      // After silence, only a message proves the engine answers again.
+      if (!silentLoss) connectionLost.value = false;
       if (shouldProbeAfterReconnect) {
         for (const cb of reconnectedSubscribers) {
-          try { cb(lifetime.signal); } catch (e) { console.warn('[liveplay] reconnect handler threw:', e); }
+          try { cb(lifetime.signal, { socketSwap }); } catch (e) { console.warn('[liveplay] reconnect handler threw:', e); }
         }
       }
       // Only refresh REST-backed catalogues on the very first connection.
@@ -382,6 +419,11 @@ function createClient() {
 
     socket.onmessage = (ev) => {
       if (ws !== socket) return;
+      lastMessageAt = performance.now();
+      if (silentLoss) {
+        silentLoss = false;
+        connectionLost.value = false;
+      }
       let payload: any;
       try { payload = JSON.parse(ev.data); } catch { return; }
       if (!payload || typeof payload !== 'object' || !payload.type) return;
@@ -411,6 +453,7 @@ function createClient() {
             };
             cue.transport = state.transport as any;
             cue.playhead_seconds = state.playhead_seconds;
+            noteCueEdge(state);
             for (const cb of cueStateSubscribers) cb(state);
             notified.add(cue.id);
           }
@@ -432,6 +475,7 @@ function createClient() {
           // holds a reference to the old cue object; in-place mutation lets Vue
           // track the narrower `transport` / `playhead_seconds` dependencies
           // and avoids a broad re-render cascade across all PlaylistItems.
+          noteCueEdge(payload);
           const idx = cues.value.findIndex(c => c.id === payload.cue_id);
           if (idx >= 0) {
             cues.value[idx].transport        = payload.transport;
@@ -618,7 +662,7 @@ function createClient() {
       if (replaceSocket) {
         // The canceled command can still occupy this socket until native work returns.
         failPendingCommands('Stop All canceled the pending cue command.');
-        forceReconnect();
+        swapSocket();
         awaitingStopRevision.value = true;
       }
       stopAllStatus.value = confirmed ? 'confirmed' : 'unconfirmed';
@@ -646,6 +690,7 @@ function createClient() {
       const projectScoped = resource.startsWith('/api/project/items') || resource.startsWith('/api/project/quickplay')
         || ['/api/project/save', '/api/project/document', '/api/project/theme', '/api/project/settings',
           '/api/project/repair', '/api/project/close', '/api/project/load',
+          '/api/project/backups', '/api/project/backups/restore',
           '/api/waveform_generate'].includes(resource);
       if (projectScoped) {
         const session = headers.get('X-DWCUE-Project-Session') ?? projectSessionId.value;
@@ -688,8 +733,24 @@ function createClient() {
     return parsed;
   }
 
+  // The catalogue reply carries each cue's transport as it was when the engine
+  // answered. A cue_state that arrived after the request went out is newer:
+  // a slow reply must not bring a stopped cue back as playing.
+  let cueEdgeCount = 0;
+  const cueEdges = new Map<string, { at: number; transport: number; playhead_seconds: number }>();
+  function noteCueEdge(state: { cue_id: string; transport: number; playhead_seconds: number }) {
+    cueEdges.set(state.cue_id, { at: ++cueEdgeCount, transport: state.transport, playhead_seconds: state.playhead_seconds });
+  }
   async function fetchCues() {
+    const requestedAt = cueEdgeCount;
     const next = await rest<ServerCue[]>('/api/cues');
+    for (const cue of next) {
+      const edge = cueEdges.get(cue.id);
+      if (edge && edge.at > requestedAt) {
+        cue.transport = edge.transport as any;
+        cue.playhead_seconds = edge.playhead_seconds;
+      }
+    }
     cues.value = next;
     const failed = next.find(c => c.decode_error);
     if (failed) {
@@ -830,8 +891,14 @@ function createClient() {
     return Array.isArray(result?.backups) ? result.backups : [];
   }
   // The engine backs up the show as it is now, then reloads it from `name`.
+  // A restore reopens the whole show; a large one on a slow drive can take
+  // longer than an ordinary request is given, and giving up early would
+  // report a failure for a restore the engine still completes.
+  const RESTORE_TIMEOUT_MS = 2 * 60 * 1000;
   async function restoreShowBackup(name: string): Promise<void> {
-    await rest<any>('/api/project/backups/restore', { method: 'POST', body: JSON.stringify({ name }) });
+    await rest<any>('/api/project/backups/restore', {
+      method: 'POST', body: JSON.stringify({ name }), signal: AbortSignal.timeout(RESTORE_TIMEOUT_MS),
+    });
   }
   // Close the project on the server (reset to no-project state). Mirrors the
   // local closeProject() in useProject so the server doesn't keep playing /
@@ -1416,6 +1483,11 @@ function createClient() {
     });
   }
 
+  // A copy of a long video from a slow USB drive or network share can take
+  // minutes. The engine keeps copying whatever the window does, so giving up
+  // early only leaves the operator unsure, or copying the file twice.
+  const MEDIA_COPY_TIMEOUT_MS = 60 * 60 * 1000;
+
   // Copy a server-side file into the project's media root. Returns the
   // absolute path of the copy. A no-op (returns the same path) if the file
   // is already inside the media root.
@@ -1444,8 +1516,8 @@ function createClient() {
         expected_media_root: `${folder}/media`,
       }),
       signal: signal
-        ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
-        : undefined,
+        ? AbortSignal.any([signal, AbortSignal.timeout(MEDIA_COPY_TIMEOUT_MS)])
+        : AbortSignal.timeout(MEDIA_COPY_TIMEOUT_MS),
     });
     return {
       destPath: result.dest_path,
@@ -1478,12 +1550,17 @@ function createClient() {
       : null;
     if (osPath && isLocalServer.value) {
       try {
-        const path = await copyToMedia(osPath);
+        // An identical file already in the show's media is used again, as the
+        // file picker does, instead of a second copy beside it.
+        const path = (await copyToMediaResult(osPath, 'reuse')).destPath;
         if (!isCurrent()) throw new DOMException('Project changed during import', 'AbortError');
         return path;
       } catch (e) {
         if (!isCurrent()) throw new DOMException('Project changed during import', 'AbortError');
         if (e instanceof Error && /^4\d\d\b/.test(e.message) && !/^404\b/.test(e.message)) throw e;
+        // A copy that ran out of time may still be running in the engine:
+        // uploading now would land the same file twice.
+        if (e instanceof DOMException && (e.name === 'TimeoutError' || e.name === 'AbortError')) throw e;
         console.warn('[import] copyToMedia failed, uploading bytes instead:', e);
       }
     }

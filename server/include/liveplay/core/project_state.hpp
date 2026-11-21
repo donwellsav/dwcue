@@ -64,6 +64,13 @@ inline const audio::DeviceInfo* resolve_output_device(
     return opened_id ? opened_id : ambiguous_name ? nullptr : named;
 }
 
+// The open stream a chosen output may reuse. Never the System Default one:
+// the OS moves that stream when the computer's default output changes.
+inline std::optional<audio::DeviceId> reusable_open_output(const audio::DeviceInfo& device) {
+    if (!device.is_open || device.follows_default) return std::nullopt;
+    return device.id;
+}
+
 // Generation tokens fence sequencer work copied for unlocked dispatch from a
 // later replay/cancellation of the same logical cue. Guarded by the owning
 // ProjectState's sequencer mutex.
@@ -544,11 +551,14 @@ public:
                                   std::unique_lock<std::recursive_mutex>* playback_lock = nullptr,
                                   std::optional<audio::MixerChannelId> prepared = std::nullopt);
 
-    // Re-route all cues that have no per-item deviceOverride to the project's
-    // configured defaultOutputDevice mixer. Called when defaultOutputDevice
-    // changes in settings (including during playback).
-    void apply_default_device_routing(std::unique_lock<std::recursive_mutex>& playback_lock,
-                                      const audio::MixerChannelId& prepared = {});
+    // Program has one audio path: Main (masters 0/1), opened on the output
+    // chosen in Settings (defaultOutputDevice) or, with none chosen, on the
+    // system default. Points Main at the current choice and puts every cue
+    // without its own output (deviceOverride) on it. Called when the choice
+    // changes (including during playback) and when a show has loaded.
+    // `prepared` is a device the caller already opened for Main.
+    void apply_program_output(std::unique_lock<std::recursive_mutex>& playback_lock,
+                              const audio::DeviceId& prepared = {});
 
     // Stop any active preview and reset preview state so the next call to
     // start_preview() picks up the updated previewDevice setting.
@@ -627,6 +637,14 @@ private:
     // Repairs to the current show remain visible until a successful save.
     RepairInfo pending_repair_info_;
 
+    // Fingerprint of the show's content as last opened or written to disk
+    // (guarded by mutex_). The header reports edits made since, so a window
+    // that reloads after a crash still knows the show has unsaved changes.
+    std::size_t saved_content_fingerprint_ = 0;
+    void mark_content_saved_locked() { saved_content_fingerprint_ = content_fingerprint(document_); }
+    static void strip_non_content(json& document);
+    static std::size_t content_fingerprint(const json& document);
+
     // uuid → engine cue id, for audio items currently loaded.
     std::unordered_map<std::string, audio::CueId> item_uuid_to_cue_;
     std::unordered_map<std::string, float> group_gains_;
@@ -686,6 +704,9 @@ private:
         audio::MasterChannelIndex  master_r;
     };
     std::unordered_map<std::string, DeviceRouting> device_routings_;
+    // The selection Main was last opened for ("" = system default); empty
+    // until Main has a device. Guarded by mutex_.
+    std::optional<std::string> main_follows_;
     // Serializes route creation with project-boundary release across mirror,
     // settings, and transport callers. Always acquire before mutex_.
     std::mutex device_routing_mutex_;
@@ -706,9 +727,23 @@ private:
         const std::function<audio::DeviceId()>& open = {});
     bool reject_output_selection(const std::string& selection,
                                  const std::string& item_uuid = {});
+    // Main, on the output Program should play through; opens it when Main is
+    // on anything else. Empty when that output cannot be opened, or when
+    // `current` turns false while it opens.
     audio::MixerChannelId ensure_program_main(std::unique_lock<std::recursive_mutex>& lifecycle_lock,
                                              const std::function<bool()>& current,
                                              bool route_unassigned = false);
+    // Main without opening anything: empty unless Main already plays through
+    // the current choice (buffered starts cannot wait for a device).
+    audio::MixerChannelId program_main_if_ready();
+    // The output Program should play through: the chosen one's name, or empty
+    // for the system default.
+    std::string program_output_selection() const;
+    audio::DeviceId open_program_output(const std::string& selection);
+    // Hands `device` (opened for Main) to Main and releases the reference Main
+    // held before. Empty, with `device` released, when it cannot be bound.
+    audio::MixerChannelId bind_program_main(const audio::DeviceId& device, const std::string& selection,
+                                            bool route_unassigned);
     audio::DeviceId open_output_for_edit(
         const std::string& name, std::unique_lock<std::recursive_mutex>& lifecycle_lock,
         std::unique_lock<std::recursive_mutex>* project_lock, const std::function<bool()>& current,
@@ -805,6 +840,36 @@ private:
     std::vector<GroupRun> group_runs_;
     std::uint64_t next_group_generation_ = 0;
     std::vector<SequencedItem> sequenced_items_;
+    // A cue crossfading out still plays the end of its file: the custom
+    // actions timed there run as it passes them. Its playback generation stays
+    // current until it ends, so a stop, replay or new show cancels it.
+    struct CrossfadeTail {
+        std::string  uuid;
+        audio::CueId cue_id;
+        detail::PlaybackGenerationFence::Generation playback_generation = 0;
+        double       effective_end = 0.0;
+        std::vector<ScheduledCustomAction> custom_actions;
+    };
+    std::vector<CrossfadeTail> crossfade_tails_;   // guarded by sequencer_mutex_
+    // Items whose start is under way (it may be reading media or opening an
+    // output with the lifecycle lock released), with the playback intent it
+    // began under. A second press for one still current leaves that start
+    // alone instead of superseding it.
+    mutable std::mutex starting_items_mutex_;
+    std::unordered_map<std::string, std::uint64_t> starting_items_;
+    // Caller holds playback_lifecycle_mutex_.
+    bool item_starting(const std::string& uuid) const;
+    class StartingMark {
+    public:
+        StartingMark(ProjectState& state, const std::string& uuid, std::uint64_t intent, bool active);
+        ~StartingMark();
+        StartingMark(const StartingMark&) = delete;
+        StartingMark& operator=(const StartingMark&) = delete;
+    private:
+        ProjectState& state_;
+        std::string   uuid_;
+        bool          owned_ = false;
+    };
     std::mutex                 sequencer_mutex_;
     // Serializes control-plane playback lifetime changes with unlocked
     // sequencer dispatch. Recursive because a follow action can trigger play.
@@ -892,7 +957,7 @@ private:
     // Resolve Cue to Continue's target without consulting endBehavior.action:
     // targetUuid, then targetIndex, then the next sibling. Caller holds mutex_.
     std::string resolve_loop_continuation_target_locked(
-        const std::string& current_uuid);
+        const std::string& current_uuid) const;
 
     // Server-authoritative "Up Next" arming for cues with no end behaviour
     // (endBehavior.action == "nothing") when settings.autoCueNextWithoutEnd-
@@ -906,6 +971,8 @@ private:
     // armed or playing, so the operator's first GO fires without a click.
     // Gated on settings.autoCueNextWithoutEndBehavior. Call with no lock held.
     void arm_first_item_on_open();
+    // Tells clients Up Next is empty, if it is, after a show closes or opens.
+    void announce_cleared_next_item();
 
     // True when the item's cue is currently on air (Playing, FadingIn or
     // Paused). The automatic advance paths (Start Next, crossfade,

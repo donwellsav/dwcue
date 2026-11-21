@@ -157,6 +157,11 @@
       "help": "Ajusta la imagen completa de forma proporcional.",
       "invalid": "Introduzca dimensiones de lienzo en números enteros de 64 a 16384 px y un tamaño de cuadro del 25 al 100 %."
     },
+    "videoPictureOffset": {
+      "title": "Sincronía de imagen",
+      "label": "Imagen adelantada al sonido (ms)",
+      "help": "Compensa un mezclador, escalador o proyector que retrasa la imagen: la imagen va por delante del sonido esta cantidad. Mida el retraso con la carta de ajuste Sincronización AV. De 0 a 500 ms."
+    },
     "videoOutputTestCard": "Mostrar carta de ajuste",
     "videoOutputStatus": "Estado de la salida",
     "videoOutputStatusOff": "La salida de vídeo está desactivada.",
@@ -325,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: salida de audio bloqueada — no hay devoluciones de llamada del reloj.",
+    "lost": "{name}: salida de audio perdida — se vuelve a conectar sola.",
     "queued": "{name}: la salida sigue bloqueada. Recuperación en cola; esperando devoluciones de llamada del reloj.",
     "starting": "{name}: la salida de audio se está iniciando; esperando devoluciones de llamada del reloj.",
     "recoveryFailed": "{name}: no se pudo poner en cola la recuperación de la salida de audio."
@@ -979,7 +985,6 @@
     "frameUnconfirmed": "Fotograma sin confirmar",
     "prepared": "Vídeo decodificado y posición asentada en {seconds} s",
     "frameAge": "Fotograma de hace {seconds} s",
-    "captureAge": "Captura de hace {seconds} s",
     "dropped": "Fotogramas perdidos: {count}",
     "states": {
       "idle": "Negro",
@@ -1303,5 +1308,11 @@
     "trash": "Papelera",
     "recycleBin": "Papelera de reciclaje",
     "editModeOnly": "Limpiar medios está disponible en el Modo Edición."
+  },
+  "replacePlaying": {
+    "title": "Hay un espectáculo en reproducción",
+    "message": "Cambiar a otro espectáculo detiene todo lo que se está reproduciendo.",
+    "keep": "Seguir reproduciendo",
+    "switch": "Detener y cambiar"
   }
 }

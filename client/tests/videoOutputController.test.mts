@@ -9,6 +9,7 @@ import {
   ref,
   shallowRef,
   watch,
+  toRaw,
 } from 'vue';
 
 import { useVideoOutput } from '../app/composables/useVideoOutput.ts';
@@ -136,7 +137,10 @@ async function flush() {
   await nextTick();
 }
 
-function createHarness(initialProject: unknown, connected = true, captureApi = {}) {
+// Timing aside, tests see a start land on the playhead: no learned start lead.
+function createHarness(initialProject: unknown, connected = true, captureApi = {}, startLead: string | null = '0',
+  pictureOffsetMs = 0) {
+  const stored = new Map<string, string>(startLead === null ? [] : [['dwcue.videoStartLead', startLead]]);
   const cueStateHandlers = new Set<(value: unknown) => void>();
   const meterHandlers = new Set<(value: any) => void>();
   const snapshotHandlers = new Set<(value: unknown) => void>();
@@ -177,6 +181,7 @@ function createHarness(initialProject: unknown, connected = true, captureApi = {
   Object.assign(globalThis, {
     window: {
       setTimeout,
+      localStorage: { getItem: (key: string) => stored.get(key) ?? null, setItem: (key: string, value: string) => { stored.set(key, value); } },
       electronAPI: {
         videoOutput: {
           ...captureApi,
@@ -191,7 +196,7 @@ function createHarness(initialProject: unknown, connected = true, captureApi = {
 
   const scope = effectScope();
   const diagnostic = shallowRef<VideoTestCardPlayback | null>(null);
-  const controller = scope.run(() => useVideoOutput(diagnostic));
+  const controller = scope.run(() => useVideoOutput(diagnostic, ref(pictureOffsetMs)));
   assert.ok(controller);
   const element = videoElement();
   controller.videoEl.value = element as unknown as HTMLVideoElement;
@@ -259,7 +264,7 @@ function snapshotCue(
   };
 }
 
-test('an intentional video-to-audio pause cannot poison a later play of the same video', async () => {
+test('an intentional pause cannot poison a later play of the same video', async () => {
   const h = createHarness(project([audioItem('video', { hasVideo: true }), audioItem('audio')]));
   await flush();
   const pendingPlay = deferred<void>();
@@ -270,7 +275,7 @@ test('an intentional video-to-audio pause cannot poison a later play of the same
   };
   h.emitCue(snapshotCue('video', 'video-cue', 1));
   h.controller.onVideoCanPlay();
-  h.emitCue(snapshotCue('audio', 'audio-cue', 2));
+  h.emitCue(snapshotCue('video', 'video-cue', 1, 0, 4));   // the operator pauses it
   pendingPlay.reject(new DOMException('Playback was intentionally paused.', 'AbortError'));
   await flush();
   assert.equal(h.reports.some(report => report !== null), false, 'cancellation is not a decoder failure');
@@ -346,25 +351,43 @@ test('a late play rejection cannot stop a newer trigger of the same media URL', 
   h.stop();
 });
 
-test('fallback to an on-air video uses the native position received while an audio cue owned the picture', async () => {
-  const h = createHarness(project([audioItem('video', { hasVideo: true }), audioItem('audio'), audioItem('upcoming', { hasVideo: true })]));
+test('fallback to an on-air video uses the native position received while a still owned the picture', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true }), audioItem('still', { imagePath: 'images/slide.png' }), audioItem('upcoming', { hasVideo: true })]));
   await flush();
   h.emitCue(snapshotCue('video', 'video-cue', 1, 2));
   h.controller.onVideoCanPlay();
-  h.emitCue(snapshotCue('audio', 'audio-cue', 2));
+  h.emitCue(snapshotCue('still', 'still-cue', 2));
+  assert.equal(h.controller.showVideo.value, false, 'the still takes the picture');
   const retainedSource = h.controller.videoSrc.value;
   h.emitPatch({ op: 'next_item_set', itemUuid: 'upcoming' });
   await flush();
   const sourceDuringOverlay = h.controller.videoSrc.value;
   h.emitMeters({ items: [
     { cue_id: 'video-cue', transport: 1, playhead_seconds: 9 },
-    { cue_id: 'audio-cue', transport: 1, playhead_seconds: 1 },
+    { cue_id: 'still-cue', transport: 1, playhead_seconds: 1 },
   ] });
-  h.emitCue(snapshotCue('audio', 'audio-cue', 2, 1, 0));
+  h.emitCue(snapshotCue('still', 'still-cue', 2, 1, 0));
   assert.equal(h.controller.showVideo.value, true);
   assert.equal(h.element.currentTime, 9);
   assert.equal(h.element.paused, false, 'fallback must resume its retained decoded source immediately');
   assert.equal(sourceDuringOverlay, retainedSource, 'upcoming preparation cannot evict a retained video fallback');
+  h.stop();
+});
+
+test('a sound cue started over a playing video leaves the video on screen and playing', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true }), audioItem('effect')]));
+  await flush();
+  h.emitCue(snapshotCue('video', 'video-cue', 1, 2));
+  h.controller.onVideoCanPlay();
+  const source = h.controller.videoSrc.value;
+  h.emitCue(snapshotCue('effect', 'effect-cue', 2));
+  assert.equal(h.controller.showVideo.value, true, 'the audience keeps the picture');
+  assert.equal(h.element.paused, false, 'and it keeps moving with its sound');
+  assert.equal(h.controller.videoSrc.value, source);
+  h.emitCue(snapshotCue('effect', 'effect-cue', 2, 1, 0));
+  assert.equal(h.controller.showVideo.value, true, 'the effect ending changes nothing on screen');
+  h.emitCue(snapshotCue('video', 'video-cue', 1, 5, 0));
+  assert.equal(h.controller.showVideo.value, false, 'the video stopping still clears it');
   h.stop();
 });
 
@@ -452,7 +475,7 @@ test('a diagnostic stopped meter retains its separate paused-picture behavior', 
   h.stop();
 });
 
-test('an unknown newest cue blanks old media until its document arrives', async () => {
+test('an unknown newest cue blanks old media until its document arrives; a sound cue then gives the video back', async () => {
   const video = audioItem('video', { hasVideo: true, imagePath: 'images/video.png' });
   const h = createHarness(project([video]));
   await flush();
@@ -468,8 +491,7 @@ test('an unknown newest cue blanks old media until its document arrives', async 
   assert.equal(h.element.currentTime, 6, 'the new cue clock never seeks the old video');
   pendingDoc.resolve(project([video, audioItem('new-audio')]));
   await flush();
-  assert.equal(h.controller.showVideo.value, false);
-  assert.equal(h.element.paused, true);
+  assert.equal(h.controller.showVideo.value, true, 'a sound cue does not take the picture from the video still playing');
   h.stop();
 });
 
@@ -617,9 +639,12 @@ test('paused native seeks show the requested absolute frame and out-point loopin
   assert.equal(harness.controller.showVideo.value, true, 'engine loop reset restores the picture');
   assert.equal(harness.element.currentTime, 5.25, 'loop reset seeks to the absolute in-point region');
   assert.equal(harness.element.paused, false);
-  harness.element.currentTime = 5.28;
-  harness.emitMeters({ items: [{ cue_id: 'loop-cue', transport: 1, playhead_seconds: 5.25 }] });
-  assert.ok(harness.element.currentTime > 5.25, 'soft drift remains rate-corrected instead of seeking every meter');
+  // A lasting 50 ms lead: several readings, as the engine reports them.
+  for (const clock of [5.25, 5.283, 5.316, 5.35]) {
+    harness.element.currentTime = clock + 0.05;
+    harness.emitMeters({ items: [{ cue_id: 'loop-cue', transport: 1, playhead_seconds: clock }] });
+  }
+  assert.ok(harness.element.currentTime > 5.35, 'soft drift remains rate-corrected instead of seeking every meter');
   assert.ok(harness.element.playbackRate < 1);
   harness.stop();
 });
@@ -631,17 +656,426 @@ test('repeated canplay keeps soft drift rate-corrected instead of starting anoth
     h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
     h.controller.onVideoCanPlay();
     await flush();
-    for (const clock of [1, 1.033, 1.066]) {
-      h.element.currentTime = clock + .035;
+    for (const [i, clock] of [1, 1.033, 1.066, 1.1, 1.133].entries()) {
+      h.element.currentTime = clock + .05;
       h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
       const before = h.element.currentTime;
       h.controller.onVideoCanPlay();
       assert.equal(h.element.currentTime, before, 'readiness restoration must not bypass soft drift correction');
-      assert.ok(h.element.playbackRate < 1);
+      if (i >= 3) assert.ok(h.element.playbackRate < 1, 'a lasting drift is rate-corrected');
       assert.equal(h.element.paused, false);
     }
     h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 2 }] });
     assert.equal(h.element.currentTime, 2, 'large drift still uses the existing hard seek');
+  } finally { h.stop(); }
+});
+
+test('playhead jitter leaves the speed alone; real drift corrects at one steady speed', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    let writes = 0;
+    let rate = h.element.playbackRate;
+    Object.defineProperty(h.element, 'playbackRate', {
+      get: () => rate, set: (value: number) => { writes += 1; rate = value; }, configurable: true,
+    });
+    // The engine's playhead moves in render bursts: the measured drift jumps
+    // around by tens of milliseconds while the picture is in step.
+    for (let i = 0; i < 60; i++) {
+      const clock = 1 + i / 30;
+      h.element.currentTime = clock - [0.005, 0.03, 0.012, 0.025][i % 4];
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+    }
+    assert.equal(writes, 0, 'jitter within the band never touches the speed');
+    assert.equal(rate, 1);
+    // A real, lasting lag is corrected at one speed, set once, until back in step.
+    for (let i = 0; i < 12; i++) {
+      const clock = 3 + i / 30;
+      h.element.currentTime = clock - 0.05;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+    }
+    assert.ok(rate > 1, 'a lagging picture speeds up');
+    assert.equal(writes, 1, 'one speed for the whole correction');
+    for (let i = 0; i < 12; i++) {
+      const clock = 4 + i / 30;
+      h.element.currentTime = clock - 0.002;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+    }
+    assert.equal(rate, 1, 'back in step, normal speed');
+    assert.equal(writes, 2);
+  } finally { h.stop(); }
+});
+
+test('the picture follows the cue as heard, not the render position ahead of it', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    // The engine renders 60 ms ahead of what is heard; the picture is with the sound.
+    for (let i = 0; i < 16; i++) {
+      const rendered = 1 + i / 30;
+      h.element.currentTime = rendered - 0.06;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: rendered, audible_seconds: rendered - 0.06 }] });
+    }
+    assert.equal(h.element.playbackRate, 1, 'in step with the sound needs no correction');
+  } finally { h.stop(); }
+});
+
+test('one stray reading cannot make the picture jump; a lasting gap or a real jump does', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    const at = (clock: number, behind: number) => {
+      h.element.currentTime = clock - behind;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+    };
+    for (let i = 0; i < 6; i++) at(1 + i / 30, 0.005);
+    at(1.2, 0.09);
+    assert.equal(h.element.currentTime, 1.2 - 0.09, 'a single 90 ms reading does not seek');
+    at(1.233, 0.005);
+    for (let i = 0; i < 8; i++) at(1.3 + i / 30, 0.1);
+    // It seeks to the heard position, or ahead of it by what its seeks taught the lead.
+    assert.ok(h.element.currentTime >= 1.3 + 7 / 30 - 1e-9, 'a lasting 100 ms gap seeks');
+    at(3, 0.9);
+    assert.ok(h.element.currentTime >= 3 && h.element.currentTime < 3.25, 'a real jump seeks at once');
+  } finally { h.stop(); }
+});
+
+test('a start lands in step: the picture starts ahead by a lead it learns from each start', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, null);
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'cue-1', 1, 0.03));
+    h.controller.onVideoCanPlay();
+    await flush();
+    const firstLead = h.element.currentTime - 0.03;
+    assert.ok(firstLead > 0.02 && firstLead < 0.2, `the first start seeks ahead of the sound (${firstLead})`);
+    // This start still landed 30 ms behind what is heard.
+    for (let i = 0; i < 10; i++) {
+      const heard = 0.1 + i / 30;
+      h.element.currentTime = heard - 0.03;
+      h.emitMeters({ items: [{ cue_id: 'cue-1', transport: 1, playhead_seconds: heard + 0.02, audible_seconds: heard }] });
+    }
+    h.emitMeters({ items: [{ cue_id: 'cue-1', transport: 0, playhead_seconds: 0.5 }] });
+    await flush();
+    h.emitCue(snapshotCue('video', 'cue-2', 2, 0.03));
+    await flush();
+    const secondLead = h.element.currentTime - 0.03;
+    assert.ok(secondLead > firstLead + 0.015, `the next start leads by more (${firstLead} then ${secondLead})`);
+  } finally { h.stop(); }
+});
+
+test('fades and resume on the cue on screen do not seek the picture', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1, 2));  // starts fading in
+    h.controller.onVideoCanPlay();
+    await flush();
+    let seeks = 0;
+    let position = h.element.currentTime;
+    Object.defineProperty(h.element, 'currentTime', {
+      get: () => position, set: (value: number) => { seeks += 1; position = value; }, configurable: true,
+    });
+    // The engine reports each transport change with its render position,
+    // which runs ahead of what is heard (and of the picture).
+    position = 3;
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 3.04, 1));  // fade-in done
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 5.04, 3));  // fade-out starts
+    assert.equal(seeks, 0, 'a transport change on the playing cue keeps the picture going');
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 6, 4));     // paused: show the exact frame
+    assert.equal(position, 6, 'a pause still lands on its frame');
+  } finally { h.stop(); }
+});
+
+test('a jump while playing lands ahead by the learned lead, so it does not land late and repeat', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, '0.06');
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    for (let i = 0; i < 4; i++) {
+      const clock = 1.2 + i / 30;
+      h.element.currentTime = clock;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+    }
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 4 }] });  // a jump (loop, scrub)
+    assert.ok(Math.abs(h.element.currentTime - 4.06) < 1e-9, `lands ahead by the lead (${h.element.currentTime})`);
+  } finally { h.stop(); }
+});
+
+test('a video that has played to its end holds its last frame instead of restarting', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    const plays = h.element.playCount;
+    // The picture ran out while the engine still plays (audio longer than video).
+    h.element.paused = true;
+    (h.element as any).ended = true;
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 1.05 }] });
+    assert.equal(h.element.playCount, plays, 'no play() on an ended video: Chromium would restart it at frame 0');
+  } finally { h.stop(); }
+});
+
+test('a playback error mid-cue retries the same source instead of staying black', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]));
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    const failedSource = h.controller.videoSrc.value;
+    h.controller.onVideoError();
+    assert.equal(h.controller.showVideo.value, false, 'the failed picture is hidden at once');
+    await new Promise(resolve => setTimeout(resolve, 650));
+    assert.notEqual(h.controller.videoSrc.value, failedSource, 'the same file is requested again');
+    assert.equal(h.controller.showVideo.value, true, 'the picture comes back for the cue still on air');
+  } finally { h.stop(); }
+});
+
+test('a picture keeps being retried while its cue is on air, not only three times', async () => {
+  const { pictureRetryDelayMs } = await import('../app/composables/useVideoOutput.ts');
+  assert.deepEqual([0, 1, 2, 3, 4, 20].map(pictureRetryDelayMs), [500, 1500, 3000, 5000, 5000, 5000]);
+});
+
+test('the next video cue waits ready in the spare and the cut swaps to it without a reload', async () => {
+  const h = createHarness(project([audioItem('first', { hasVideo: true }), audioItem('second', { hasVideo: true })]));
+  try {
+    const live = h.element;
+    const spare = videoElement();
+    h.controller.registerVideoElement(0, live as unknown as HTMLVideoElement);
+    h.controller.registerVideoElement(1, spare as unknown as HTMLVideoElement);
+    await flush();
+    h.emitCue(snapshotCue('first', 'first-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    h.emitPatch({ op: 'next_item_set', itemUuid: 'second' });
+    await flush();
+    const spareSource = h.controller.slotSources.value[1];
+    assert.ok(spareSource, 'the next video cue loads into the spare while the first plays');
+    assert.equal(h.controller.slotSources.value[0], h.controller.videoSrc.value, 'the live picture keeps its source');
+    // The spare reaches its first frame at the In point.
+    spare.readyState = 4;
+    spare.videoWidth = 640;
+    spare.currentTime = 0;
+    h.controller.onSpareEvent();
+    h.emitCue(snapshotCue('second', 'second-cue', 2, 0.02));
+    await flush();
+    assert.equal(h.controller.liveSlot.value, 1, 'the spare is now the live picture');
+    assert.equal(toRaw(h.controller.videoEl.value), spare as unknown as HTMLVideoElement);
+    assert.equal(h.controller.videoSrc.value, spareSource, 'no reload: the same source carries on');
+    assert.equal(live.paused, true, 'the outgoing picture stops');
+  } finally { h.stop(); }
+});
+
+test('a cut from video to a still holds the last frame until the still has loaded', async () => {
+  const h = createHarness(project([
+    audioItem('clip', { hasVideo: true }),
+    audioItem('slide', { imagePath: 'images/slide.png' }),
+  ]));
+  const canvas = { width: 0, height: 0, getContext: () => ({ drawImage: () => {} }) } as unknown as HTMLCanvasElement;
+  try {
+    await flush();
+    h.controller.heldFrameEl.value = canvas;
+    h.emitCue(snapshotCue('clip', 'clip-cue', 1, 2));
+    h.element.currentSrc = h.controller.videoSrc.value!;
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 2, presentedFrames: 60 });
+    h.emitCue(snapshotCue('slide', 'slide-cue', 2, 0));
+    await flush();
+    assert.ok(h.controller.cueImageSrc.value, 'the still is assigned');
+    assert.equal(h.controller.showHeldFrame.value, true, 'the last video frame stays up while the still loads');
+    h.controller.onCueImageLoaded();
+    assert.equal(h.controller.showHeldFrame.value, false, 'the loaded still replaces it');
+  } finally { h.stop(); }
+});
+
+test('picture sync runs the picture ahead of the sound by the operator offset', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, '0', 80);
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 0.03));
+    h.controller.onVideoCanPlay();
+    await flush();
+    assert.ok(Math.abs(h.element.currentTime - 0.11) < 1e-9, `the start lands 80 ms ahead (${h.element.currentTime})`);
+    // Held 80 ms ahead of the sound, the picture is where it should be.
+    for (let i = 0; i < 12; i++) {
+      const heard = 0.2 + i / 30;
+      h.element.currentTime = heard + 0.08;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: heard + 0.02, audible_seconds: heard }] });
+    }
+    assert.equal(h.element.playbackRate, 1, 'no correction away from the offset');
+  } finally { h.stop(); }
+});
+
+test('with picture sync, the picture stops at the Out point by its own position, ahead of the sound', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true, inPoint: 0, outPoint: 5 })]), true, {}, '0', 200);
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    assert.equal(h.controller.showVideo.value, true);
+    // The sound is at 4.85, so the picture (200 ms ahead) is past the 5 s Out point.
+    h.element.currentTime = 5.05;
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 4.85 }] });
+    assert.equal(h.controller.showVideo.value, false, 'the picture does not play past its trim');
+  } finally { h.stop(); }
+});
+
+test('with picture sync, a pause shows the frame the offset puts with the paused sound, and resume does not jump', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, '0.06', 300);
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    let seeks = 0;
+    let position = 2.3;
+    Object.defineProperty(h.element, 'currentTime', {
+      get: () => position, set: (value: number) => { seeks += 1; position = value; }, configurable: true,
+    });
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 3, 4));  // paused at 3 s of sound
+    assert.ok(Math.abs(position - 3.3) < 1e-9, `paused on the frame 300 ms ahead (${position}), no start lead`);
+    seeks = 0;
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 3, 1));  // resumed
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 3.03, audible_seconds: 3.01 }] });
+    assert.equal(seeks, 0, 'resume carries on from the paused frame');
+  } finally { h.stop(); }
+});
+
+test('a pause right after a start shows the paused frame, without the start lead', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, '0.1');
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1.05, 4));
+    assert.ok(Math.abs(h.element.currentTime - 1.05) < 1e-9, `on the paused frame (${h.element.currentTime})`);
+  } finally { h.stop(); }
+});
+
+test('a seek that keeps landing late teaches the lead at once instead of repeating', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, '0.06');
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    // Each seek takes 180 ms: it lands 120 ms behind its aim of heard + lead.
+    const seekTargets: number[] = [];
+    let position = 1;
+    Object.defineProperty(h.element, 'currentTime', {
+      get: () => position, set: (value: number) => { seekTargets.push(value); position = value; }, configurable: true,
+    });
+    let clock = 2;
+    for (let i = 0; i < 30; i++) {
+      clock += 1 / 30;
+      position += 1 / 30;
+      const before = seekTargets.length;
+      h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: clock }] });
+      if (seekTargets.length > before) position = seekTargets.at(-1)! - 0.18;  // landed late by the seek time
+    }
+    assert.ok(seekTargets.length <= 4, `it stops seeking once the lead covers the seek (${seekTargets.length} seeks)`);
+  } finally { h.stop(); }
+});
+
+test('one stray reading next to a small landing error cannot make the picture jump', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true })]), true, {}, '0');
+  try {
+    await flush();
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    h.element.currentTime = 2;
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 2 }] });
+    h.element.currentTime = 2.033;
+    h.emitMeters({ items: [{ cue_id: 'video-cue', transport: 1, playhead_seconds: 2.033 + 0.17 }] });
+    assert.equal(h.element.currentTime, 2.033, 'readings of 0 and 0.17 do not average into a seek');
+  } finally { h.stop(); }
+});
+
+test('a cut from standby to a preloaded video plays from its waiting frame, without a seek', async () => {
+  const h = createHarness(project([audioItem('video', { hasVideo: true, inPoint: 0 })]), true, {}, '0.1', 50);
+  try {
+    await flush();
+    h.emitPatch({ op: 'next_item_set', itemUuid: 'video' });
+    await flush();
+    h.controller.onVideoLoadedMetadata();
+    h.controller.onVideoCanPlay();
+    await flush();
+    assert.ok(Math.abs(h.element.currentTime - 0.05) < 1e-9, `waits at its In point, ahead by the offset (${h.element.currentTime})`);
+    let seeks = 0;
+    let position = h.element.currentTime;
+    Object.defineProperty(h.element, 'currentTime', {
+      get: () => position, set: (value: number) => { seeks += 1; position = value; }, configurable: true,
+    });
+    h.emitCue(snapshotCue('video', 'video-cue', 1, 0.01));
+    await flush();
+    assert.equal(seeks, 0, 'the cut plays the waiting frame at once');
+    assert.ok(h.element.playCount > 0, 'and it plays');
+  } finally { h.stop(); }
+});
+
+test('a spare whose In point is past the end of its clip waits at the end instead of seeking again and again', async () => {
+  const h = createHarness(project([audioItem('first', { hasVideo: true }), audioItem('second', { hasVideo: true, inPoint: 12 })]));
+  try {
+    const live = h.element;
+    const spare = videoElement();
+    h.controller.registerVideoElement(0, live as unknown as HTMLVideoElement);
+    h.controller.registerVideoElement(1, spare as unknown as HTMLVideoElement);
+    await flush();
+    h.emitCue(snapshotCue('first', 'first-cue', 1, 1));
+    h.controller.onVideoCanPlay();
+    await flush();
+    h.emitPatch({ op: 'next_item_set', itemUuid: 'second' });
+    await flush();
+    let seeks = 0;
+    let position = 0;
+    Object.defineProperty(spare, 'currentTime', {
+      get: () => position, set: (value: number) => { seeks += 1; position = Math.min(value, 10); }, configurable: true,
+    });
+    (spare as any).duration = 10;
+    spare.readyState = 4;
+    spare.videoWidth = 640;
+    for (let i = 0; i < 5; i++) h.controller.onSpareEvent();
+    assert.equal(seeks, 1, 'one seek to the end of the clip');
+  } finally { h.stop(); }
+});
+
+test('a cut from a still to a video keeps the held frame until the video has its first frame', async () => {
+  const h = createHarness(project([
+    audioItem('clip', { hasVideo: true }),
+    audioItem('slide', { imagePath: 'images/slide.png' }),
+    audioItem('next', { hasVideo: true }),
+  ]));
+  const canvas = { width: 0, height: 0, getContext: () => ({ drawImage: () => {} }) } as unknown as HTMLCanvasElement;
+  try {
+    await flush();
+    h.controller.heldFrameEl.value = canvas;
+    h.emitCue(snapshotCue('clip', 'clip-cue', 1, 2));
+    h.element.currentSrc = h.controller.videoSrc.value!;
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 2, presentedFrames: 60 });
+    h.emitCue(snapshotCue('slide', 'slide-cue', 2, 0));   // the still has not loaded yet
+    await flush();
+    h.emitCue(snapshotCue('next', 'next-cue', 3, 0));     // a slow video follows within 2 s
+    await flush();
+    await new Promise(resolve => setTimeout(resolve, 2100));
+    assert.equal(h.controller.showHeldFrame.value, true, 'the still’s 2 s limit does not drop the frame the video still needs');
   } finally { h.stop(); }
 });
 
@@ -791,6 +1225,52 @@ test('keeps the outgoing picture across an automatic stop until the new video su
   } finally { h.stop(); }
 });
 
+test('a looping video armed with Cue to Continue keeps its last frame up into the next cue', async () => {
+  const h = createHarness(project([
+    { ...audioItem('loop', { hasVideo: true, outPoint: 0, loop: true }), duration: 32 },
+    audioItem('incoming', { hasVideo: true }),
+  ]));
+  const canvas = {
+    width: 0, height: 0, getContext: () => ({ drawImage() {} }),
+  } as unknown as HTMLCanvasElement;
+  try {
+    await flush();
+    if (h.controller.heldFrameEl) h.controller.heldFrameEl.value = canvas;
+    h.emitCue(snapshotCue('loop', 'cue-a', 1, 31.9));
+    h.element.currentSrc = h.controller.videoSrc.value!;
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 31.9, presentedFrames: 955 });
+    h.emitPatch({ op: 'cue_follow_set', itemUuid: 'loop', follow: 'armed' });
+    h.emitCue(snapshotCue('loop', 'cue-a', 1, 32, 0));
+    await flush();
+    assert.equal(h.controller.showHeldFrame.value, true, 'no standby flash before the next cue starts');
+  } finally { h.stop(); }
+});
+
+test('Cue to Continue belongs to one pass, even when its stop is seen only in the meters', async () => {
+  const h = createHarness(project([
+    { ...audioItem('loop', { hasVideo: true, outPoint: 0, loop: true }), duration: 32 },
+  ]));
+  const canvas = {
+    width: 0, height: 0, getContext: () => ({ drawImage() {} }),
+  } as unknown as HTMLCanvasElement;
+  try {
+    await flush();
+    if (h.controller.heldFrameEl) h.controller.heldFrameEl.value = canvas;
+    h.emitCue(snapshotCue('loop', 'cue-a', 1, 10));
+    h.emitPatch({ op: 'cue_follow_set', itemUuid: 'loop', follow: 'armed' });
+    h.emitMeters({ items: [{ cue_id: 'cue-a', transport: 0, playhead_seconds: 12 }] });   // stopped by hand
+    // Played again later, without Cue to Continue: its end is a plain stop.
+    h.emitCue(snapshotCue('loop', 'cue-a', 2, 31.9));
+    h.element.currentSrc = h.controller.videoSrc.value!;
+    h.controller.onVideoCanPlay();
+    h.element.fireVideoFrame(10, { mediaTime: 31.9, presentedFrames: 955 });
+    h.emitCue(snapshotCue('loop', 'cue-a', 2, 32, 0));
+    await flush();
+    assert.equal(h.controller.showHeldFrame.value, false, 'the earlier pass\'s Cue to Continue does not carry over');
+  } finally { h.stop(); }
+});
+
 test('Stop All and an incoming decoder failure can always clear the held picture', async () => {
   const h = createHarness(project([
     audioItem('from', { hasVideo: true }),
@@ -835,7 +1315,8 @@ test('native position updates do not restart a pending video seek', async () => 
     assert.equal(h.element.currentTime, 2);
     h.element.seeking = false;
     h.emitMeters({ items: [{ cue_id: 'cue', transport: 1, playhead_seconds: 2.25 }] });
-    assert.equal(h.element.currentTime, 2.25);
+    // That seek landed 250 ms late: the next one aims ahead by what it taught.
+    assert.ok(h.element.currentTime > 2.25 && h.element.currentTime <= 2.5, `seeks to the sound (${h.element.currentTime})`);
   } finally { h.stop(); }
 });
 

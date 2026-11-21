@@ -230,7 +230,9 @@ function cspHashesForInlineScripts(html) {
 }
 
 function configureSessionSecurity() {
-  const allowedPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write', 'midi']);
+  // Chromium asks for "midiSysex" for every Web MIDI request, including the
+  // app's requestMIDIAccess({ sysex: false }); "midi" alone refuses MIDI.
+  const allowedPermissions = new Set(['clipboard-read', 'clipboard-sanitized-write', 'midi', 'midiSysex']);
   const permissionAllowed = (webContents, permission) =>
     !!webContents &&
     isTrustedRendererUrl(webContents.getURL()) &&
@@ -2663,6 +2665,7 @@ function createWindow() {
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('Failed to load:', errorCode, errorDescription);
   });
+  reloadAfterRendererCrash(mainWindow, 'main-window');
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
 
@@ -2691,6 +2694,28 @@ function createWindow() {
 
 
   createMenu('en', isDevMode);
+}
+
+// A crashed operator or QuickPlays window comes back by itself: it reloads,
+// and the operator window rejoins the show the engine is still playing, so
+// keys, MIDI and Stop All return. One that keeps crashing reloads less often.
+function reloadAfterRendererCrash(window, label) {
+  const crashes = [];
+  let pending = null;
+  window.webContents.on('render-process-gone', (_event, details) => {
+    const reason = details?.reason || 'unknown';
+    console.error(`[${label}] Renderer stopped:`, reason, details?.exitCode ?? 'unknown');
+    if (reason === 'clean-exit' || quitConfirmed) return;
+    if (pending) return;   // one reload covers crashes reported together
+    const now = Date.now();
+    while (crashes.length && now - crashes[0] > 60_000) crashes.shift();
+    crashes.push(now);
+    pending = setTimeout(() => {
+      pending = null;
+      if (quitConfirmed) return;
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.reload();
+    }, crashes.length > 3 ? 10_000 : 250);
+  });
 }
 
 // Create the detached QuickPlays window.
@@ -2729,6 +2754,7 @@ function createDetachedQuickPlayWindow() {
   detachedQuickPlayWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
     console.error('[QuickPlaysWindow] Failed to load:', errorCode, errorDescription);
   });
+  reloadAfterRendererCrash(detachedQuickPlayWindow, 'QuickPlaysWindow');
 
   detachedQuickPlayWindow.on('closed', () => {
     detachedQuickPlayWindow = null;
@@ -2773,9 +2799,13 @@ let videoOutputRendererReady = false;
 let videoOutputRendererResponsive = true;
 let videoOutputRecoveryRequired = false;
 let videoOutputRestarting = false;
+// Automatic Restart Output after a crash or a hang (see scheduleVideoOutputRestart).
+const videoOutputAutoRestarts = [];
+let videoOutputAutoRestartTimer = null;
+let videoOutputReadyTimer = null;
+let videoOutputReadyLimitMs = 15_000;
 let videoOutputPictureHealth = null;
 const videoOutputDiagnostics = [];
-let videoOutputFrameTimer = null;
 let capturingVideoStandby = false;
 let displayIdentifierWindows = [];
 let displayIdentifierTimer = null;
@@ -2893,46 +2923,6 @@ function normalizeVideoPlaybackError(payload) {
   return { itemUuid, message };
 }
 
-// Confidence monitor: 1 fps JPEG thumbnails of the output window for the
-// operator UI. capturePage renders exactly what the audience sees — video,
-// standby image, test card, or a hung frame (which is itself the alarm).
-// Runs only while the output window exists.
-function startVideoOutputFrames() {
-  if (videoOutputFrameTimer !== null) return;
-  const outputWindow = videoOutputWindow;
-  if (!outputWindow || outputWindow.isDestroyed()) return;
-  let capturePending = false;
-  const timer = setInterval(async () => {
-    if (capturePending || videoOutputFrameTimer !== timer ||
-        videoOutputWindow !== outputWindow || outputWindow.isDestroyed() ||
-        outputWindow.webContents.isDestroyed()) return;
-    if (!mainWindow || mainWindow.isDestroyed()) return;
-    capturePending = true;
-    try {
-      const img = await outputWindow.webContents.capturePage();
-      // A native readback can finish after close/recreate or a timer restart.
-      if (videoOutputFrameTimer !== timer || videoOutputWindow !== outputWindow ||
-          outputWindow.isDestroyed() || !mainWindow || mainWindow.isDestroyed() ||
-          mainWindow.webContents.isDestroyed()) return;
-      if (!img || img.isEmpty()) return;
-      const thumb = img.resize({ width: 320, quality: 'good' });
-      mainWindow.webContents.send('video-output:frame', {
-        jpeg: thumb.toJPEG(60).toString('base64'),
-        at: Date.now(),
-      });
-    } catch { /* capture can race native teardown */ }
-    finally { capturePending = false; }
-  }, 1000);
-  videoOutputFrameTimer = timer;
-}
-
-function stopVideoOutputFrames() {
-  if (videoOutputFrameTimer !== null) {
-    clearInterval(videoOutputFrameTimer);
-    videoOutputFrameTimer = null;
-  }
-}
-
 function videoOutputConfigPath() {
   return path.join(app.getPath('userData'), VIDEO_OUTPUT_CONFIG_FILENAME);
 }
@@ -2953,6 +2943,14 @@ const videoOutputScreens = {
   captureDisplayId: null,
 };
 
+// How far the picture runs ahead of the sound, to make up for a switcher,
+// scaler or projector that delays it. Whole milliseconds, 0 to 500; this
+// machine's video chain, so it lives with the display and framing.
+const PICTURE_OFFSET_MAX_MS = 500;
+function readPictureOffset(value) {
+  return Number.isInteger(value) && value >= 0 && value <= PICTURE_OFFSET_MAX_MS ? value : null;
+}
+
 function readVideoOutputConfig() {
   const screens = { ...videoOutputScreens, displayLookalikes: [...videoOutputScreens.displayLookalikes] };
   try {
@@ -2960,10 +2958,11 @@ function readVideoOutputConfig() {
     return {
       ...screens,
       framing: readVideoFraming(parsed.framing) ?? DEFAULT_VIDEO_FRAMING,
+      pictureOffsetMs: readPictureOffset(parsed.pictureOffsetMs) ?? 0,
       testCardConfig: createTestCardConfig(parsed.testCardConfig),
     };
   } catch {
-    return { ...screens, framing: DEFAULT_VIDEO_FRAMING, testCardConfig: createTestCardConfig() };
+    return { ...screens, framing: DEFAULT_VIDEO_FRAMING, pictureOffsetMs: 0, testCardConfig: createTestCardConfig() };
   }
 }
 
@@ -2974,7 +2973,8 @@ function writeVideoOutputConfig(cfg) {
   videoOutputScreens.captureDisplayId = cfg.captureDisplayId ?? null;
   try {
     fs.writeFileSync(videoOutputConfigPath(),
-      JSON.stringify({ framing: cfg.framing, testCardConfig: cfg.testCardConfig }, null, 2));
+      JSON.stringify({ framing: cfg.framing, pictureOffsetMs: cfg.pictureOffsetMs ?? 0,
+        testCardConfig: cfg.testCardConfig }, null, 2));
     return true;
   } catch (e) {
     console.error('[video-output] failed to persist config:', e);
@@ -3064,6 +3064,7 @@ function videoOutputStatus() {
     displayId: cfg.displayId,
     captureDisplayId: cfg.captureDisplayId,
     framing: cfg.framing,
+    pictureOffsetMs: cfg.pictureOffsetMs ?? 0,
     targetId: target ? String(target.id) : null,
     targetLabel: target ? (target.label || `Display ${target.id}`) : null,
     displays,
@@ -3223,7 +3224,7 @@ function loadVideoOutputWindow(outputWindow) {
     : outputWindow.loadFile(path.join(__dirname, '../.output/public/index.html'), { query: { videoOutput: '1' } });
 }
 
-function failVideoOutputRenderer(outputWindow, message) {
+function failVideoOutputRenderer(outputWindow, message, restoreOperator = true) {
   if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed()) return;
   videoOutputRendererReady = false;
   videoOutputRecoveryRequired = true;
@@ -3232,11 +3233,13 @@ function failVideoOutputRenderer(outputWindow, message) {
   videoOutputPlaybackError = { itemUuid: null, message };
   videoOutputDiagnostics.push({ at: Date.now(), error: sanitizeVideoPlaybackErrorMessage(message) });
   if (videoOutputDiagnostics.length > 32) videoOutputDiagnostics.shift();
-  stopVideoOutputFrames();
   const connection = videoOutputTestCardConnection;
   videoOutputTestCardConnection = null;
   void testCardPlayback.update(null, connection);
-  if (mainWindow && !mainWindow.isDestroyed()) {
+  // Bring the operator back once: an output that keeps failing, and the
+  // restarts that follow, must not take the keyboard away every few seconds.
+  const repeated = videoOutputAutoRestarts.some(at => Date.now() - at < 60_000);
+  if (restoreOperator && !repeated && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.show();
     mainWindow.focus();
   }
@@ -3250,7 +3253,6 @@ function markVideoOutputReady(event) {
     videoOutputRendererReady = true;
     videoOutputRendererResponsive = true;
     videoOutputWindow.videoOutputCover.setVisible(false);
-    startVideoOutputFrames();
   }
   return broadcastVideoOutputStatus();
 }
@@ -3277,11 +3279,40 @@ function reportVideoPictureHealth(event, payload) {
   broadcastVideoOutputStatus();
 }
 
+// A crashed or hung output restarts by itself behind its black cover, as
+// Restart Output would, and rejoins the cue playing. One that keeps crashing
+// restarts less often.
+function scheduleVideoOutputRestart(outputWindow) {
+  if (quitConfirmed || videoOutputRestarting || videoOutputAutoRestartTimer) return;
+  if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed()) return;
+  const now = Date.now();
+  while (videoOutputAutoRestarts.length && now - videoOutputAutoRestarts[0] > 60_000) videoOutputAutoRestarts.shift();
+  videoOutputAutoRestarts.push(now);
+  videoOutputAutoRestartTimer = setTimeout(() => {
+    videoOutputAutoRestartTimer = null;
+    if (!quitConfirmed && videoOutputWindow === outputWindow && !outputWindow.isDestroyed())
+      void restartVideoOutputWindow();
+  }, videoOutputAutoRestarts.length > 3 ? 10_000 : 250);
+}
+
+// A restarted output that loads but never reports its picture ready is
+// restarted again rather than left black.
+function watchVideoOutputReady(outputWindow) {
+  clearTimeout(videoOutputReadyTimer);
+  videoOutputReadyTimer = setTimeout(() => {
+    videoOutputReadyTimer = null;
+    if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed() || videoOutputRendererReady
+      || videoOutputRecoveryRequired || videoOutputRestarting) return;
+    failVideoOutputRenderer(outputWindow, 'Video Output did not become ready. Audience output is held black while it restarts.');
+    scheduleVideoOutputRestart(outputWindow);
+  }, videoOutputReadyLimitMs);
+}
+
 async function restartVideoOutputWindow() {
   const outputWindow = videoOutputWindow;
   if (!outputWindow || outputWindow.isDestroyed() || videoOutputRestarting) return videoOutputStatus();
   videoOutputRestarting = true;
-  failVideoOutputRenderer(outputWindow, 'Restarting Video Output; audience output is held black.');
+  failVideoOutputRenderer(outputWindow, 'Restarting Video Output; audience output is held black.', false);
   try {
     if (!outputWindow.webContents.isCrashed()) {
       await new Promise((resolve, reject) => {
@@ -3297,13 +3328,17 @@ async function restartVideoOutputWindow() {
     if (videoOutputWindow !== outputWindow || outputWindow.isDestroyed()) return videoOutputStatus();
     videoOutputRecoveryRequired = false;
     videoOutputPlaybackError = null;
+    videoOutputRendererReady = false;
     await loadVideoOutputWindow(outputWindow);
+    watchVideoOutputReady(outputWindow);
   } catch (error) {
-    failVideoOutputRenderer(outputWindow, `Video Output restart failed: ${error.message}`);
+    failVideoOutputRenderer(outputWindow, `Video Output restart failed: ${error.message}`, false);
   } finally {
     if (videoOutputWindow === outputWindow) {
       videoOutputRestarting = false;
       broadcastVideoOutputStatus();
+      // A restart that failed is tried again (less often if it keeps failing).
+      if (videoOutputRecoveryRequired) scheduleVideoOutputRestart(outputWindow);
     }
   }
   return videoOutputStatus();
@@ -3494,13 +3529,13 @@ function createVideoOutputWindow() {
   cover.setVisible(true);
   outputWindow.on('resize', resizeCover);
   if (realOutput) seatPhysicalOutput(outputWindow, process.platform, target.bounds);
-  startVideoOutputFrames();
 
   outputWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, _url, isMainFrame) => {
     if (videoOutputWindow !== outputWindow) return;
     console.error('[video-output] Failed to load:', errorCode, errorDescription);
     if (isMainFrame && errorCode !== -3) {
-      failVideoOutputRenderer(outputWindow, `Video Output could not load (${errorCode}). Restart Output to retry.`);
+      failVideoOutputRenderer(outputWindow, `Video Output could not load (${errorCode}). Audience output is held black while it retries.`);
+      scheduleVideoOutputRestart(outputWindow);
     }
   });
 
@@ -3515,17 +3550,23 @@ function createVideoOutputWindow() {
     const exitCode = details?.exitCode ?? 'unknown';
     console.error('[video-output] Renderer stopped:', reason, exitCode);
     videoOutputRendererResponsive = false;
-    failVideoOutputRenderer(outputWindow, `Video Output renderer stopped (${reason}, exit code ${exitCode}). Audience output is held black. Restart Output to retry.`);
+    if (videoOutputRestarting) return;   // the restart stopped it on purpose
+    failVideoOutputRenderer(outputWindow, `Video Output renderer stopped (${reason}, exit code ${exitCode}). Audience output is held black while it restarts.`);
+    scheduleVideoOutputRestart(outputWindow);
   });
   outputWindow.webContents.on('unresponsive', () => {
     if (videoOutputWindow !== outputWindow) return;
     videoOutputRendererResponsive = false;
-    failVideoOutputRenderer(outputWindow, 'Video Output is unresponsive. Audience output is held black. Restart Output to retry.');
+    failVideoOutputRenderer(outputWindow, 'Video Output is not responding. Audience output is held black while it restarts.');
+    // A hang that never ends (a GPU or decoder deadlock) is restarted too.
+    scheduleVideoOutputRestart(outputWindow);
   });
   outputWindow.webContents.on('responsive', () => {
     if (videoOutputWindow !== outputWindow) return;
     videoOutputRendererResponsive = true;
     broadcastVideoOutputStatus();
+    // Answering again is not enough to trust its picture: restart it.
+    if (videoOutputRecoveryRequired) scheduleVideoOutputRestart(outputWindow);
   });
 
   // The passive output renderer otherwise owns keyboard focus on Windows.
@@ -3592,12 +3633,15 @@ function closeVideoOutputWindow({ preserveSession = false, playbackError = null 
   videoOutputRendererResponsive = true;
   videoOutputRecoveryRequired = false;
   videoOutputRestarting = false;
+  clearTimeout(videoOutputAutoRestartTimer);
+  videoOutputAutoRestartTimer = null;
+  clearTimeout(videoOutputReadyTimer);
+  videoOutputReadyTimer = null;
   videoOutputPictureHealth = null;
   resetVideoOutputGeometry();
   const connection = videoOutputTestCardConnection;
   videoOutputTestCardConnection = null;
   void testCardPlayback.update(null, connection);
-  stopVideoOutputFrames();
   if (videoOutputPowerSaveId !== null) {
     try { powerSaveBlocker.stop(videoOutputPowerSaveId); } catch { /* already stopped */ }
     videoOutputPowerSaveId = null;
@@ -3609,13 +3653,40 @@ function closeVideoOutputWindow({ preserveSession = false, playbackError = null 
   outputWindow.destroy();
 }
 
+// macOS: a physical output whose display drops out (a switcher or extender
+// re-syncing, an input change, a cable knock) is hidden at once and kept,
+// still playing in step, instead of being torn down: when the display
+// returns it is seated and shown with the picture live, not after seconds of
+// black while a new window boots. Elsewhere it is still closed and recreated.
+function parkVideoOutputWindow(outputWindow) {
+  if (outputWindow.videoOutputDisplayLost) return;
+  outputWindow.videoOutputDisplayLost = true;
+  outputWindow.hide();
+}
+
+function restoreVideoOutputWindow(outputWindow, target) {
+  outputWindow.videoOutputDisplayLost = false;
+  outputWindow.videoOutputTargetDisplayId = target.id;
+  resetVideoOutputGeometry(true);
+  seatPhysicalOutput(outputWindow, process.platform, target.bounds);
+  outputWindow.show();
+}
+
 // Watchdog: when the display topology changes (switcher EDID renegotiation,
 // cable replug, OS reshuffle), keep the output on its assigned display or take
 // it down cleanly — it must never silently settle onto the control screen.
 function installVideoOutputWatchdog() {
   if (videoOutputWatchdogInstalled) return;
   videoOutputWatchdogInstalled = true;
+  const keepsLostOutput = process.platform === 'darwin';
   const onDisplayChange = () => {
+    // Hide a lost output at once: the OS moves windows off a vanished
+    // display, and the output must not cover the operator screen meanwhile.
+    if (keepsLostOutput && videoOutputSessionEnabled && videoOutputWindow &&
+        !videoOutputWindow.isDestroyed() && videoOutputWindow.videoOutputTargetDisplayId != null &&
+        !resolveVideoOutputDisplay(readVideoOutputConfig())) {
+      parkVideoOutputWindow(videoOutputWindow);
+    }
     // Display events arrive in bursts; settle before reacting.
     clearTimeout(videoOutputWatchdogTimer);
     videoOutputWatchdogTimer = setTimeout(() => {
@@ -3624,12 +3695,18 @@ function installVideoOutputWatchdog() {
       if (!videoOutputSessionEnabled) { broadcastVideoOutputStatus(); return; }
       const target = resolveVideoOutputDisplay(cfg);
       if (videoOutputWindow && videoOutputWindow.videoOutputTargetDisplayId != null && !target) {
-        // The physical output's display is gone: close rather than let the OS
-        // park the window on the operator's control display. The preview
-        // window has no display to lose and lives on the control screen, so
-        // metrics events there (e.g. entering fullscreen) never close it,
-        // even when an assigned display is not connected.
-        closeVideoOutputWindow({ preserveSession: true });
+        // The physical output's display is gone: keep it hidden (macOS) or
+        // close it, never let the OS park it on the operator's control
+        // display. The preview window has no display to lose and lives on
+        // the control screen, so metrics events there (e.g. entering
+        // fullscreen) never close it, even when an assigned display is not
+        // connected.
+        if (keepsLostOutput) parkVideoOutputWindow(videoOutputWindow);
+        else closeVideoOutputWindow({ preserveSession: true });
+      } else if (videoOutputWindow && !videoOutputWindow.isDestroyed() &&
+                 videoOutputWindow.videoOutputDisplayLost && target && screen.getAllDisplays().length > 1) {
+        // Its display is back: seat the kept output there and show it, live.
+        restoreVideoOutputWindow(videoOutputWindow, target);
       } else if (!videoOutputWindow && target) {
         // Display (re)appeared while armed: re-acquire it.
         createVideoOutputWindow();
@@ -3748,6 +3825,17 @@ function requireCaptureTarget(event, target) {
   if (!cue) throw new Error('Select a media cue in the current show.');
   return cue;
 }
+
+ipcMain.handle('video-output:set-picture-offset', (event, value) => {
+  requireTrustedIpc(event);
+  if (event.sender !== mainWindow?.webContents) throw new Error('Picture sync requires the main workspace.');
+  const offset = readPictureOffset(value);
+  if (offset === null) throw new TypeError('Picture sync must be a whole number of milliseconds from 0 to 500.');
+  const config = readVideoOutputConfig();
+  config.pictureOffsetMs = offset;
+  if (!writeVideoOutputConfig(config)) throw new Error('Could not save picture sync.');
+  return broadcastVideoOutputStatus();
+});
 
 ipcMain.handle('video-output:set-framing', (event, value) => {
   requireTrustedIpc(event);
@@ -5525,6 +5613,31 @@ ipcMain.handle('toggle-detached-quickplay-window', (event) => {
   requireTrustedIpc(event);
   if (detachedQuickPlayWindow) detachedQuickPlayWindow.close();
   else createDetachedQuickPlayWindow();
+});
+
+// The detached QuickPlay window has no full show: its transport keys (GO, Up
+// Next, pause...) run in the operator window, as the Video Output's do.
+ipcMain.on('quickplay-window:shortcut', (event, shortcut) => {
+  try {
+    requireTrustedIpc(event);
+  } catch (error) {
+    console.warn('[quickplay-window:shortcut] rejected event:', error.message);
+    return;
+  }
+  if (!detachedQuickPlayWindow || detachedQuickPlayWindow.isDestroyed() ||
+      event.sender !== detachedQuickPlayWindow.webContents) return;
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+  if (!shortcut || typeof shortcut !== 'object' || typeof shortcut.key !== 'string' ||
+      !shortcut.key || shortcut.key.length > 32) return;
+  mainWindow.webContents.send('video-output:shortcut', {
+    key: shortcut.key,
+    code: typeof shortcut.code === 'string' ? shortcut.code.slice(0, 32) : '',
+    ctrlKey: shortcut.ctrlKey === true,
+    shiftKey: shortcut.shiftKey === true,
+    altKey: shortcut.altKey === true,
+    metaKey: shortcut.metaKey === true,
+    repeat: shortcut.repeat === true,
+  });
 });
 
 ipcMain.on('detached-quickplay-window-attach', (event) => {

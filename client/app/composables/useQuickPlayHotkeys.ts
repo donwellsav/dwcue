@@ -1,3 +1,4 @@
+import { isTextEntry } from '../utils/textEntry';
 import type { QuickPlaySlotKeyBinding, PlaybackKeyAction, AudioItem, Project } from '~/types/project';
 import { DEFAULT_PLAYBACK_KEYS } from '../types/project';
 import { buildQuickPlayCells } from '../utils/quickPlays';
@@ -165,13 +166,15 @@ export const useQuickPlayHotkeys = (workspace?: Record<'toggle-settings' | 'togg
     return [primary, alternate].filter(binding => binding != null).map(formatKeyLabel).join(' / ');
   };
 
-  const isTextInputFocused = (): boolean => {
-    const el = document.activeElement;
-    if (!el) return false;
-    const tag = el.tagName.toLowerCase();
-    if (tag === 'input' || tag === 'textarea') return true;
-    if ((el as HTMLElement).isContentEditable) return true;
-    return false;
+  const isTextInputFocused = (): boolean => isTextEntry(document.activeElement);
+
+  // The detached window has no full show: the operator window runs its
+  // transport keys (GO, Up Next, pause...), as it does the Video Output's.
+  const forwardToOperator = (e: KeyboardEvent) => {
+    window.electronAPI?.forwardShortcutToOperator?.({
+      key: e.key, code: e.code, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey,
+      altKey: e.altKey, metaKey: e.metaKey, repeat: e.repeat,
+    });
   };
 
   const isForwardedFromVideoOutput = (e: KeyboardEvent): boolean =>
@@ -329,6 +332,14 @@ export const useQuickPlayHotkeys = (workspace?: Record<'toggle-settings' | 'togg
     if (playbackAction) {
       // The detached window gets a project snapshot without a hydration status.
       const closingDetached = playbackAction === 'toggle-detached-quickplays' && isDetached;
+      // It has no full show, so the operator window runs its transport keys.
+      // Stop All works from here as everywhere.
+      if (isDetached && playbackAction !== 'stop-all' && !closingDetached) {
+        e.preventDefault();
+        e.stopPropagation();
+        forwardToOperator(e);
+        return;
+      }
       if (playbackAction !== 'stop-all' && !closingDetached &&
           (!currentProject.value || projectHydrationStatus.value !== 'ready')) return;
       e.preventDefault();

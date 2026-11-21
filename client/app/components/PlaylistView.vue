@@ -434,6 +434,23 @@ const prepareWaveformRequestKey = (itemUuid: string, path: string): string => {
   return key;
 };
 
+// Waveform requests go out two at a time: a show's first open asks for
+// every file, and hundreds at once filled the browser's six connections to
+// the engine, so a Stop All or a save sent over HTTP waited behind them.
+const WAVEFORM_REQUESTS_IN_FLIGHT = 2;
+const waveformRequestQueue: Array<() => Promise<void>> = [];
+let waveformRequestsInFlight = 0;
+const pumpWaveformRequests = () => {
+  while (waveformRequestsInFlight < WAVEFORM_REQUESTS_IN_FLIGHT && waveformRequestQueue.length) {
+    const send = waveformRequestQueue.shift()!;
+    waveformRequestsInFlight += 1;
+    void send().finally(() => {
+      waveformRequestsInFlight -= 1;
+      pumpWaveformRequests();
+    });
+  }
+};
+
 const queueWaveformGeneration = (
   path: string,
   itemUuid: string,
@@ -442,12 +459,13 @@ const queueWaveformGeneration = (
   const key = prepareWaveformRequestKey(itemUuid, path);
   if (requestedWaveformKeys.has(key) || failedWaveformKeys.has(key)) return;
   requestedWaveformKeys.add(key);
-  server.requestWaveformGeneration(path, itemUuid).catch((error) => {
+  waveformRequestQueue.push(() => server.requestWaveformGeneration(path, itemUuid).catch((error) => {
     if (waveformRequestKeyByUuid.get(itemUuid) === key) {
       requestedWaveformKeys.delete(key);
     }
     onRejected?.(error);
-  });
+  }));
+  pumpWaveformRequests();
 };
 
 const scanForMissingWaveforms = async () => {

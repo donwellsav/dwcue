@@ -489,13 +489,16 @@ test('project REST calls carry the bound session while chained creation uses its
     assert.deepEqual(openRequests.at(-1), { create: { path: '/new.dwcue', document: { name: 'New' } }, openDeadlineMs: 123456 });
     await server.closeProjectOnServer('bound-show-session');
     await server.repairProject();
+    // Backups belong to the show the window shows, not whichever is open now.
+    await server.listShowBackups();
+    await server.restoreShowBackup('Other 2026-11-20 10.00.00.dwcue');
     await server.fetchProjectHeader();
     assert.equal(server.projectSessionId, 'bound-show-session', 'unowned/late headers cannot replace the local show binding');
     await server.replaceProjectDocument({ name: 'New', items: [] }, 'creation-session');
     await server.saveProjectTo('/new.dwcue', { name: 'New', items: [] }, undefined, 'creation-session');
     const scoped = calls.filter(call => call.path.startsWith('/api/project/') && call.path !== '/api/project/header');
-    assert.equal(scoped.length, 15);
-    assert.deepEqual(scoped.map(call => call.session), Array(13).fill('bound-show-session').concat(['creation-session', 'creation-session']));
+    assert.equal(scoped.length, 17);
+    assert.deepEqual(scoped.map(call => call.session), Array(15).fill('bound-show-session').concat(['creation-session', 'creation-session']));
     assert.equal(scoped[0].mutation, 'owner:7', 'session tagging preserves the item mutation echo identity');
     await server.fetchProjectItemsPage(0, 100, undefined, 'unverified-show-session');
     assert.equal(calls.at(-1)!.session, 'unverified-show-session');

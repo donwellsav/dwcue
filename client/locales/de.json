@@ -157,6 +157,11 @@
       "help": "Passt das gesamte Bild proportional ein.",
       "invalid": "Geben Sie ganzzahlige Canvas-Abmessungen von 64 bis 16384 px und eine Bildgröße von 25 bis 100 % ein."
     },
+    "videoPictureOffset": {
+      "title": "Bildsynchronität",
+      "label": "Bild vor dem Ton (ms)",
+      "help": "Gleicht einen Umschalter, Skalierer oder Projektor aus, der das Bild verzögert: Das Bild läuft dem Ton um diesen Wert voraus. Messen Sie die Verzögerung mit der Testkarte AV-Synchronisation. 0 bis 500 ms."
+    },
     "videoOutputTestCard": "Testbild anzeigen",
     "videoOutputStatus": "Ausgabestatus",
     "videoOutputStatusOff": "Die Videoausgabe ist aus.",
@@ -325,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: Audioausgabe angehalten — keine Clock-Callbacks.",
+    "lost": "{name}: Audioausgabe verloren — wird automatisch neu verbunden.",
     "queued": "{name}: Ausgabe bleibt angehalten. Wiederherstellung eingereiht; Clock-Callbacks werden abgewartet.",
     "starting": "{name}: Audioausgabe wird gestartet; Clock-Callbacks werden abgewartet.",
     "recoveryFailed": "{name}: Wiederherstellung der Audioausgabe konnte nicht eingereiht werden."
@@ -979,7 +985,6 @@
     "frameUnconfirmed": "Frame nicht bestätigt",
     "prepared": "Video decodiert und Suche bei {seconds} s abgeschlossen",
     "frameAge": "Frame vor {seconds} s",
-    "captureAge": "Aufnahme vor {seconds} s",
     "dropped": "Verlorene Frames: {count}",
     "states": {
       "idle": "Schwarz",
@@ -1303,5 +1308,11 @@
     "trash": "Papierkorb",
     "recycleBin": "Papierkorb",
     "editModeOnly": "Medien aufräumen ist im Bearbeitungsmodus verfügbar."
+  },
+  "replacePlaying": {
+    "title": "Eine Show läuft",
+    "message": "Der Wechsel zu einer anderen Show stoppt alles, was gerade spielt.",
+    "keep": "Weiterspielen",
+    "switch": "Stoppen und wechseln"
   }
 }

@@ -47,6 +47,7 @@ void Limiter::configure(SampleRate sample_rate,
     // One-pole release coef: y[n] = α y[n-1] + (1-α) target  with α = exp(-1/(τ·Fs)).
     const float rel_seconds = std::max(release_ms, 1.0f) * 0.001f;
     release_coef_ = std::exp(-1.0f / (rel_seconds * static_cast<float>(sample_rate)));
+    bypass_step_  = 1.0f / std::max(1.0f, 0.020f * static_cast<float>(sample_rate));
 
     peak_window_.assign(lookahead_, 0.0f);
     delay_.assign(lookahead_, 0.0f);
@@ -56,6 +57,7 @@ void Limiter::configure(SampleRate sample_rate,
     peak_window_max_val_ = 0.0f;
     delay_pos_           = 0;
     current_gain_        = 1.0f;
+    applied_gain_ = 1.0f;
     true_peak_detector_.reset();
     gain_reduction_db_.store(0.0f, std::memory_order_relaxed);
 }
@@ -74,6 +76,7 @@ void Limiter::reset() noexcept {
     peak_window_max_val_ = 0.0f;
     delay_pos_           = 0;
     current_gain_        = 1.0f;
+    applied_gain_        = 1.0f;
     true_peak_detector_.reset();
     gain_reduction_db_.store(0.0f, std::memory_order_relaxed);
 }
@@ -159,7 +162,10 @@ void Limiter::process(Sample* samples, std::size_t frame_count,
         delay_[delay_pos_]   = in;
         delay_pos_           = (delay_pos_ + 1) % window_size;
 
-        float out = delayed * (enabled ? current_gain_ : 1.0f);
+        // Switched off while holding a cue down, the level comes up over 20 ms:
+        // in one step it would click.
+        applied_gain_ = enabled ? current_gain_ : std::min(1.0f, applied_gain_ + bypass_step_);
+        float out = delayed * applied_gain_;
         // Final hard clip as a backstop against floating-point edge cases.
         if (enabled) {
             if (out >  ceiling) out =  ceiling;
@@ -168,7 +174,7 @@ void Limiter::process(Sample* samples, std::size_t frame_count,
         samples[i] = out;
     }
 
-    gain_reduction_db_.store(enabled ? lin_to_db(current_gain_) : 0.0f,
+    gain_reduction_db_.store(applied_gain_ < 1.0f ? lin_to_db(applied_gain_) : 0.0f,
                              std::memory_order_relaxed);
 }
 

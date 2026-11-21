@@ -1,9 +1,9 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.7.1
-**Source revision:** 655ec2a
+**Version:** 2.8.0
+**Source revision:** 5f1187f
 **Native engine baseline:** 5e259d0
-**Edition:** 15 November 2026 · English · Operator edition
+**Edition:** 20 November 2026 · English · Operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
@@ -47,7 +47,7 @@ This manual uses the English labels. Change language through **Settings → User
 | GO | The **Play Next** action; Space is its default shortcut. |
 | QuickPlay | An independent quick-play copy in the QuickPlays bank. |
 | Engine / server | The process that owns audio playback and the active project. |
-| Portable archive | A ZIP-based `.dwcuepack` export containing one active show and the files in its dedicated project folder. |
+| Portable archive | A ZIP-based `.dwcuepack` export containing one active show, the files in its dedicated project folder, and any media the show links from elsewhere. |
 
 ## 2. First setup and a safe first cue
 
@@ -63,7 +63,7 @@ Connect the audio interface before opening the show. Confirm the correct outputs
 
 On launch, the desktop normally starts its managed local server automatically. The welcome screen indicates **Using the audio engine on this computer** once connected. If the engine is starting, wait for connection rather than repeatedly reopening the app. The **Connect to a server on the network…** option reveals remote setup; see chapter 10 before using it.
 
-![Welcome screen using the audio engine on this computer, showing version 2.7.1.](manual-assets/welcome-current.png)
+![Welcome screen using the audio engine on this computer, showing version 2.8.0.](manual-assets/welcome-current.png)
 
 **Procedure — establish a known starting state**
 
@@ -410,7 +410,7 @@ If Preview is not configured, its cue-row control opens Project Settings. Previe
 
 ### Respond to an audio-output warning
 
-A missing or stalled audio callback shows a red header warning even while cue controls remain available. Confirm the intended interface and cable, then use the header's **Reconnect audio output** button. The button remains available after the warning text expires. Reconnecting restarts the device stream in place and retains its routes and cue identities. Wait for the recovery indicator to clear after callbacks return, then verify the physical destination before another GO. Explicit Stop and current recovery choices still take precedence over pending playback recovery.
+A missing, stalled or lost audio output shows a red header warning even while cue controls remain available. A lost output, such as an interface that was unplugged, reads **audio output lost — reconnecting by itself**: the app reopens it within about two seconds of its return. Confirm the intended interface and cable, then use the header's **Reconnect audio output** button if it does not come back. The button remains available after the warning text expires. Reconnecting restarts the device stream in place and retains its routes and cue identities. Wait for the recovery indicator to clear after callbacks return, then verify the physical destination before another GO. Explicit Stop and current recovery choices still take precedence over pending playback recovery.
 
 Secondary devices follow the master clock using continuous correction. Their queue absorbs callback bursts and adds around 11 ms of buffering at 48 kHz compared with the previous software. The master queue stays at three blocks. Check recurring buffer warnings and align independently clocked outputs through the actual line-level destinations during rehearsal.
 
@@ -503,6 +503,8 @@ Pause/Resume holds or resumes an active cue. Stop uses its configured stop behav
 ### Finish a loop without changing the saved show
 
 Use **Cue to Continue** to finish the active loop pass and advance. It resolves the saved item/index destination or next sibling. You can still set a different **Up Next** before the pass ends. With no valid target, the pass ends without another cue. The saved End Behavior stays Loop.
+
+To move on at once instead, press GO. While a loop plays, **Up Next** shows where Cue to Continue would go, so GO starts that cue straight away. The next cue's ducking decides whether the loop stops, ducks or keeps playing. Stopping a loop by hand leaves the same cue as **Up Next**.
 
 If Cue to Continue stalls, use **Stop All**. The controller reconnects if the command is still awaiting acknowledgment. After it verifies the show, arm a ready backup and press GO. The canceled command cannot change a later playback of the loop.
 
@@ -600,7 +602,7 @@ Open **Settings → Shortcuts**, select a binding, and press the desired key. Fo
 
 Keyboard assignments belong to the project. QuickPlay slots **1 through 9** default to their matching number keys, and **0** fires slot **10**. **Shift+1** fires slot **11**, **Shift+2** fires slot **12**, and so on through **Shift+0** for slot **20**. Saved assignments take precedence. **Clear shortcut** disables a tile's key. **Reset to Defaults** in **Settings → Shortcuts** restores the defaults. Use **Enter** to set the selected cue as Up Next, **Space** to fire it, **Shift+Enter** to play the selected cue immediately, and **L** to toggle Loop. **P** and **Shift+Space** both pause or resume. **C** cues a loop or QuickPlay to continue at the end of its pass. **J** jumps to the next cue. **F1** also plays the selected audio cue.
 
-The main workspace accepts playback and QuickPlay shortcuts with the bank visible, hidden, or detached. The mapped **Stop All** works even while the shortcut editor is learning a keyboard or MIDI assignment.
+The main workspace accepts playback and QuickPlay shortcuts, and MIDI, with the bank visible, hidden, or detached, and in a show with no QuickPlays. In the detached QuickPlays window, the transport keys (Play Next, Up Next, Pause / Resume and the rest) act in the main window; QuickPlay keys and Stop All act directly. The mapped **Stop All** works even while the shortcut editor is learning a keyboard or MIDI assignment. Dragging a cue's progress bar or ticking a box does not take the keys away: Space still runs Play Next.
 
 In the playlist workspace, Enter, Space, and Escape keep their assigned show actions after Tab moves focus to a button. Text fields own typing while you edit. Keyboard/MIDI Pause/Resume and Toggle Loop target the first active cue, otherwise the selected audio cue. Use the cue's visible control if several cues are active and you need to target a specific one.
 
@@ -614,7 +616,7 @@ In the playlist workspace, Enter, Space, and Escape keep their assigned show act
 
 1. Connect the controller before the show and open **Settings → MIDI**.
 2. Select the intended **MIDI Device**. **All Devices** listens broadly; choosing a particular controller reduces accidental input from other connected equipment.
-3. Choose **Learn** beside the required action and operate the intended pad, button, or fader once.
+3. Choose **Learn** beside the required action and operate the intended pad, button, or fader once. A fader or knob mapped to an action fires once as it passes the middle of its travel, and again only after it has come back below it.
 4. Check the captured channel and message, resolve any conflict with **Cancel** or **Reassign** above the MIDI binding list, and leave Learn mode. **Escape** still runs Stop All.
 5. In a safe rehearsal, test exactly one intended action, including arming and retrigger policy for QuickPlays.
 6. Repeat on the backup computer. MIDI mappings are machine settings, not part of the project document.
@@ -662,7 +664,7 @@ In **Settings → Video Output → Test card**, drop or paste a PNG, JPEG, WebP,
 
 ### What the audience sees
 
-The output shows one picture at a time and cuts to the newest sounding cue. **Full HD**, **Fit to display**, and **100%** are the default picture settings. A 16:9 cue fills a 1920 × 1080 output edge to edge. Video and stills retain their proportions and show the entire source. Black fills any space around the picture.
+The output shows one picture at a time and cuts to the newest sounding cue that has a picture, a video or a cue image. A sound-only cue started over a playing video, such as an effect, leaves the video on screen. **Full HD**, **Fit to display**, and **100%** are the default picture settings. A 16:9 cue fills a 1920 × 1080 output edge to edge. Video and stills retain their proportions and show the entire source. Black fills any space around the picture.
 
 When a cue has no usable video, the output uses the first available layer in this order: the cue's own **Cue image**, the show's **Standby image**, then black. A captured picture becomes one of those two. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output. A video can play on Video Output while the operator auditions that same cue in Preview.
 
@@ -710,6 +712,12 @@ In **Settings → Video Output → Picture framing**, click the current **Canvas
 
 Set the HDMI resolution, refresh rate, and display rotation in the operating system. Confirm the received signal at the switcher or display. For a standard projector or TV, rehearse at Full HD with Fit to display at 100%. Check that the corner markers and edges of a framing pattern are visible and its circle is round.
 
+### Set picture sync
+
+When the picture reaches the audience through a switcher, scaler, extender or projector, it arrives later than the sound, which usually goes from the computer straight to the sound desk. In **Settings → Video Output → Picture sync**, enter that delay in **Picture ahead of sound (ms)**, from 0 to 500 ms. The picture then runs that far ahead of the sound, so the two arrive together. The setting is saved on this machine and applies at once to an open Video Output window. Paused cues still show their exact frame.
+
+To measure the delay, show the **AV Sync** test card and compare its flash on the audience screen with its tone at the sound desk, for example by filming both with a phone in slow motion. Start at 0 and raise the value until they line up; one frame at 30 fps is about 33 ms.
+
 ### Capture a picture
 
 A capture takes a picture of what is on **Video Output** and saves it in the show's media folder. You say what it is for as you capture it:
@@ -717,7 +725,7 @@ A capture takes a picture of what is on **Video Output** and saves it in the sho
 - **Capture as standby picture** (default **G**) makes it the show's **Standby image**, shown when a cue has no picture of its own.
 - **Capture for cue** (default **Shift+G**) makes it the **Cue image** of one cue: the cue that is playing, or the selected cue when nothing is playing. The button names that cue.
 
-Click the small Video Output picture in the top bar to open the **Capture a picture** panel. It is available in Show Mode, and the same controls are in **Settings → Video Output**. The panel shows the picture just captured with **Undo**, which puts back the picture that was there before, and the current standby and cue pictures with **Clear picture**.
+Click the Video Output status in the top bar to open the **Capture a picture** panel. It is available in Show Mode, and the same controls are in **Settings → Video Output**. The panel shows the picture just captured with **Undo**, which puts back the picture that was there before, and the current standby and cue pictures with **Clear picture**.
 
 To capture another screen instead, such as a presenter's slide, choose it under **Capture from** and then press a capture button. That choice lasts only while the panel is open; the shortcuts always capture Video Output. The first time, the operating system may ask whether the app may see that screen.
 
@@ -725,7 +733,7 @@ A capture is saved with the show: it is there when the show is opened again and 
 
 ### Recover a frozen or failed video output
 
-Use **Settings → Video Output** to read output status. Renderer crashes and hangs latch a native black cover over the existing audience window while the operator controls remain available. Choose **Restart Output** in the header or in Video Output settings. The cover stays until the replacement view is ready. The replacement follows the current native cue state. Check the active cue before another GO. **Copy diagnostics** captures current output information for investigation.
+Use **Settings → Video Output** to read output status. Renderer crashes and hangs latch a native black cover over the existing audience window while the operator controls remain available. The output then restarts by itself: at once after a crash, and as soon as a hung output answers again. One that keeps crashing restarts every 10 seconds. **Restart Output** in the header or in Video Output settings does the same at any time. The cover stays until the replacement view is ready. The replacement follows the current native cue state. Check the active cue before another GO. **Copy diagnostics** captures current output information for investigation.
 
 **Waiting for cue details** appears in the operator status area while Video Output retries. If the details arrive during the cue, picture starts at its current playhead. The playlist, GO, and Stop All remain available.
 
@@ -733,7 +741,7 @@ Use **Settings → Video Output** to read output status. Renderer crashes and ha
 
 Keep the audience output open during this recovery. Closing the output window removes that surface and can expose the desktop. A lost display connection, a system/GPU failure or a downstream switcher fault may require the venue's separate standby/black source. Restart Output does not repair the physical chain.
 
-The confidence display uses presented-frame and native-audio-clock progress as well as thumbnail delivery. A fresh thumbnail by itself does not prove a moving decoded picture. Paused cues and authored still images are valid still states. Rehearse the transitions between audio, video and standby with the actual show media.
+The video status in the header comes from the output itself: the frames it presents and the native audio clock. It shows no picture of the output, because copying the output once a second cost the audience dropped frames. Paused cues and authored still images are valid still states. Rehearse the transitions between audio, video and standby with the actual show media.
 
 ### Fullscreen, keyboard focus, and blackout
 
@@ -801,7 +809,7 @@ The save-recovery chart separates an Autosave toggle's forced save from later of
 
 **Autosave** is on by default. Changing the toggle in either direction force-saves the current document together with the preference. Do not use the toggle merely to experiment with an unsaved show. After Autosave is off, subsequent edits change the active engine document and remain dirty until an explicit save; after it is on, subsequent accepted edits request persistence. It is not an audio safety lock. Use **File → Save Project** for a deliberate durable checkpoint. New and converted shows save to their canonical `.dwcue` path.
 
-When a command asks about unsaved changes, finish that decision first. If you choose **Save**, wait for it to finish. Run any declined command again after the first action completes.
+While anything is playing, opening or creating another show (File → Open Project, Open Recent, a show file opened from the desktop, New Show) first asks in the lower panel. **Keep playing** is the default and leaves the show running; **Stop and switch** stops everything and carries on. When a command asks about unsaved changes, finish that decision first. If you choose **Save**, wait for it to finish. Run any declined command again after the first action completes.
 
 A failed autosave or manual save leaves **Save failed** and **Retry** in the header. Correct the path, permissions, or storage fault, then choose **Retry**. Retry saves the current show even with Autosave off. The indicator clears once a save of the current changes succeeds. A detached QuickPlay save failure is also reported in the detached QuickPlays window and the settings panel.
 
@@ -839,7 +847,7 @@ Tick the files to remove and choose **Move … to the Trash** (the **Recycle Bin
 4. Wait for **Archive saved to** before using the resulting **.dwcuepack**. Export saves the show before packaging. Resolve any save failure before retrying.
 5. Import it into a separate rehearsal location and verify cues, media readiness, images, and playback with the original source paths unavailable.
 
-> **CAUTION — Export packages the project folder.** Keep the show in a dedicated folder. Do not choose a folder containing credentials, unrelated documents, personal media, or application data and assume export will include only the files shown in the playlist. Externally linked media also needs a deliberate portability check.
+> **CAUTION — Export packages the project folder.** Keep the show in a dedicated folder. Do not choose a folder containing credentials, unrelated documents, personal media, or application data and assume export will include only the files shown in the playlist. Media the show links from outside the folder, such as a music drive, is copied into the archive's `media` folder, and the archived show points at those copies; the show on this computer is not changed. A linked file that is missing when you export cannot be included: check the imported copy.
 
 Device assignments, physical patching, local MIDI mappings, and video display identity need checking on the destination machine. A successful archive extraction is not a substitute for that check.
 
@@ -880,7 +888,7 @@ Use **Choose Another Show** to open the standard show picker from the load-error
 
 ### Connection loss is not proof that sound stopped
 
-The **Connection lost** panel opens below the playlist in the main window. The last verified playlist stays visible for reference while cue starts and edits wait. **Retry now** retries the same server. Its **Restart** action relaunches the client. The engine and Program can continue running. **Exit** closes the client. Before restart or exit, the desktop removes client-owned AV resources. If cleanup fails, the diagnostic remains visible and the client stays open so you can correct the cause and retry. Verify the destination and credential before retrying a failed connection.
+The **Connection lost** panel opens below the playlist in the main window. It also opens when the engine stays silent for 8 seconds with its connection still open, which means it has stopped answering; the app keeps connecting again. In Local mode, if the engine has stopped for good, the app starts it again by itself and then offers to reopen the show. The last verified playlist stays visible for reference while cue starts and edits wait. **Retry now** retries the same server. Its **Restart** action relaunches the client. The engine and Program can continue running. **Exit** closes the client. Before restart or exit, the desktop removes client-owned AV resources. If cleanup fails, the diagnostic remains visible and the client stays open so you can correct the cause and retry. Verify the destination and credential before retrying a failed connection.
 
 In a detached QuickPlays window, the reconnect notice opens below the tiles. **Stop All** remains available in the header, and **Escape** runs Stop All while the notice is open even if you remapped the shortcut. QuickPlay starts wait for the active show to be verified. If the engine has no show or a different show is active, detached QuickPlays wait for a fresh, verified show from the main window. **Stop All** and **Escape** stay available while waiting.
 
@@ -987,7 +995,7 @@ First protect the audience using the rehearsed stop/mute procedure. Then identif
 | A group does not leave its last cue | Check the group's End Behavior and destination, then confirm that the selected descendant run completed rather than being manually stopped or cancelled. Stale child completion cannot fire the group ending after cancellation. |
 | QuickPlay does not fire | Check the keyboard/MIDI mapping, retrigger Ignore, connection and media readiness. Use the tile's Stop button to stop playback. |
 | MIDI volume appears to move the wrong stage | Confirm the mapping is Master Volume and make one small directional movement after its reference value. It changes separate engine state and does not move the visible main Master output fader or other output faders; verify the audible result only through the rehearsed destination. |
-| Video is black or shows a still image | Check the active cue and Video Output status. An audio-only cue may be using its still or standby. If a video is playing audio and the picture stays black, use **Copy Output Diagnostics** before restarting the output. |
+| Video is black or shows a still image | Check the active cue and Video Output status. With no video playing, an audio-only cue shows its still or the standby. If a video is playing audio and the picture stays black, use **Copy Output Diagnostics** before restarting the output. |
 | The server appears in discovery but will not connect | UDP discovery does not prove TCP reachability or authentication. Verify address, control port, firewall, and current token. |
 | Changes are missing after a restart | Check which copy was opened, whether the last save succeeded, Autosave state, and available disk backups. Unsaved edits are not in a disk-only backup. |
 | A moved show reports missing media | Restore the whole project folder, check external linked paths and mounted volumes, or replace the missing file in cue Properties and recheck its trims. |
@@ -1116,7 +1124,7 @@ The default **Escape** Stop All shortcut works while editing, including in the l
 
 ### About this edition
 
-This edition covers **2.7.1**, based on application source **5f90fd0**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
+This edition covers **2.8.0**, based on application source **5f1187f**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
 
 Earlier checkpoints passed 13 native suites, 74 API checks, client checks, type checking, and renderer generation. Held storage tests exercised late Open, Save ordering, and direct cue registration. Chromium exercised Stop All during field editing, deletion, and imports with a software output and simulated online providers.
 

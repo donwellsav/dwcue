@@ -28,6 +28,7 @@
 // shape of activeCues / activeGroups entries) matches the legacy
 // composable so existing components don't need changes.
 // =====================================================================
+import { computeActiveGroups } from '../utils/groupProgress';
 import type { AudioItem, GroupItem } from '~/types/project';
 import { runExclusivePendingAction, runPendingAction } from '~/utils/acknowledgedAction';
 import { quickPlayFollowsUpNext, type CueFollowOverride } from '~/utils/quickPlays';
@@ -46,6 +47,7 @@ export interface ActiveCueView {
   inPoint?: number;
   outPoint?: number;
   serverCueId?: string | null;
+  triggerSeq?: number;    // the engine's start order; a restart raises it
 }
 
 export interface ActiveGroupView {
@@ -145,9 +147,13 @@ export const useAudioEngine = () => {
 
   // Insert / update an activeCue from a server signal. Idempotent.
   const upsertActiveCue = (item: AudioItem, transport: number,
-                           playheadSeconds: number, cueId: string | null) => {
+                           playheadSeconds: number, cueId: string | null, triggerSeq?: number) => {
     const inPoint  = item.inPoint  || 0;
     const existing = activeCues.value.get(item.uuid);
+    // A restarted cue is the newest start: move it to the end of the order
+    // the header and playlist follow ("the cue that started last").
+    const restarted = !!existing && typeof triggerSeq === 'number' &&
+      typeof existing.triggerSeq === 'number' && triggerSeq > existing.triggerSeq;
     const view: ActiveCueView = existing ? { ...existing } : {
       uuid: item.uuid,
       displayName: item.displayName,
@@ -168,6 +174,8 @@ export const useAudioEngine = () => {
     view.currentTime = Math.max(0, Math.min(view.duration, playheadSeconds - inPoint));
     view.playheadSeconds = playheadSeconds;
     view.isPaused    = (transport === TRANSPORT_PAUSED);
+    if (typeof triggerSeq === 'number') view.triggerSeq = triggerSeq;
+    if (restarted) activeCues.value.delete(item.uuid);
     // Map mutation: explicit set keeps reactivity in a Map<>.
     activeCues.value.set(item.uuid, view);
   };
@@ -237,53 +245,26 @@ export const useAudioEngine = () => {
       activeGroups.value.clear();
       return;
     }
-    const next = new Map<string, ActiveGroupView>();
-    const walk = (group: GroupItem) => {
-      let total = 0;
-      let acc   = 0;
-      let foundActive = false;
-      let activeReached = false;
-      for (const child of group.children) {
-        if (child.type === 'audio') {
-          const a = child as AudioItem;
-          const d = trimmedDuration(a);
-          total += d;
-          const playing = activeCues.value.get(a.uuid);
-          if (playing) {
-            foundActive = true;
-            acc += playing.currentTime;
-            activeReached = true;
-          } else if (!activeReached) {
-            acc += d;     // assume earlier siblings already played
-          }
-        } else if (child.type === 'group') {
-          walk(child as GroupItem);  // nested groups get their own entry
-        }
-      }
-      if (foundActive) {
-        // Reset acc-of-earlier-siblings heuristic if we never actually
-        // found a currently-playing child here.
-      }
-      if (foundActive) {
-        next.set(group.uuid, {
-          uuid: group.uuid,
-          displayName: group.displayName,
-          totalDuration: total,
-          currentTime: Math.min(acc, total),
-        });
-      }
-    };
-    for (const item of currentProject.value.items) {
-      if (item.type === 'group') walk(item as GroupItem);
-    }
-    activeGroups.value = next;
+    const playing = new Map<string, number>();
+    for (const [uuid, cue] of activeCues.value) playing.set(uuid, cue.currentTime);
+    activeGroups.value = computeActiveGroups(currentProject.value.items, playing, trimmedDuration);
   };
 
   // ---- autoNextItemUuid (derived) -----------------------------------
   const autoNextItemUuid = computed((): string | null => {
     if (!currentProject.value) return null;
-    for (const item of getAllItemsFlat(currentProject.value.items)) {
-      if (!activeCues.value.has(item.uuid) || item.type !== 'audio') continue;
+    // The engine's GO continues from the cue fired last (highest triggerSeq);
+    // document order breaks ties, as it does there.
+    const firedLast = getAllItemsFlat(currentProject.value.items)
+      .filter((item) => activeCues.value.has(item.uuid) && item.type === 'audio')
+      .map((item, order) => ({ item, order, seq: activeCues.value.get(item.uuid)?.triggerSeq ?? 0 }))
+      .sort((a, b) => b.seq - a.seq || a.order - b.order);
+    const nextInOrder = (audioItem: AudioItem): string | null => {
+      const nextIndex = [...audioItem.index];
+      nextIndex[nextIndex.length - 1]++;
+      return findItemByIndex(nextIndex)?.uuid ?? null;
+    };
+    for (const { item } of firedLast) {
       const audioItem = item as AudioItem;
       // QuickPlay-only cues live outside the playlist tree (sentinel index
       // [-1, 0]): there is no "next playlist item" after one, so they never
@@ -294,16 +275,21 @@ export const useAudioEngine = () => {
           if (currentProject.value.settings?.autoCueNextWithoutEndBehavior === false) break;
           // Prepare a manual GO target without starting the next cue.
         case 'next': {
-          const nextIndex = [...audioItem.index];
-          nextIndex[nextIndex.length - 1]++;
-          const nextItem = findItemByIndex(nextIndex);
-          if (nextItem) return nextItem.uuid;
+          const next = nextInOrder(audioItem);
+          if (next) return next;
           break;
         }
-        case 'loop':
-          // A looping cue replays itself — surface it as its own "up next"
-          // so the UI reflects the end behaviour instead of showing nothing.
-          return audioItem.uuid;
+        case 'loop': {
+          // GO while a loop plays moves on, where Cue to Continue would go:
+          // a target kept on its ending, otherwise the next cue.
+          const end = audioItem.endBehavior as { targetUuid?: string; targetIndex?: number[] };
+          if (end.targetUuid) return end.targetUuid;
+          const next = Array.isArray(end.targetIndex)
+            ? findItemByIndex(end.targetIndex)?.uuid ?? null
+            : nextInOrder(audioItem);
+          if (next) return next;
+          break;
+        }
         case 'goto-item':
           if (audioItem.endBehavior.targetUuid) return audioItem.endBehavior.targetUuid;
           break;
@@ -340,7 +326,7 @@ export const useAudioEngine = () => {
   // cue_state edges: Playing/FadingIn/Paused create or update; Stopped
   // removes. FadingOut keeps the entry so the bar continues to render
   // its trailing seconds.
-  server.onCueState(({ cue_id, transport, playhead_seconds, item_uuid }: any) => {
+  server.onCueState(({ cue_id, transport, playhead_seconds, item_uuid, trigger_seq }: any) => {
     if (transport === TRANSPORT_STOPPED) {
       // Remove by item_uuid first (activeCues is keyed by item uuid and the
       // server now includes it) — mirroring the upsert path below. Matching
@@ -369,7 +355,8 @@ export const useAudioEngine = () => {
     // cueId annotation are still resolved. Fall back to cueId lookup.
     const item = (item_uuid ? findItemByUuid(item_uuid) : null) ?? findItemByServerCueId(cue_id);
     if (!item || item.type !== 'audio') return;
-    upsertActiveCue(item as AudioItem, transport, playhead_seconds, cue_id);
+    upsertActiveCue(item as AudioItem, transport, playhead_seconds, cue_id,
+      Number.isSafeInteger(trigger_seq) ? trigger_seq : undefined);
     recomputeActiveGroups();
     // Up Next consumption is atomic in the server's accepted playback path.
     // Its next_item_set patch is the only authority that clears the display.
@@ -392,6 +379,21 @@ export const useAudioEngine = () => {
       }
     }
     cueFollowOverrides.value = overrides;
+    // The snapshot lists every cue that is not stopped. A cue it leaves out
+    // (one retired while this window was away) is not playing.
+    const listedCues = new Set<string>();
+    const listedItems = new Set<string>();
+    for (const cue of Array.isArray(snap?.cues) ? snap.cues : []) {
+      if (typeof cue?.cue_id === 'string') listedCues.add(cue.cue_id);
+      if (typeof cue?.item_uuid === 'string') listedItems.add(cue.item_uuid);
+    }
+    let removed = false;
+    for (const [uuid, cue] of [...activeCues.value]) {
+      if (listedItems.has(uuid) || (cue.serverCueId && listedCues.has(cue.serverCueId))) continue;
+      removeActiveCue(uuid);
+      removed = true;
+    }
+    if (removed) recomputeActiveGroups();
   });
 
   // Doc_patch: server-driven state changes other clients might trigger.
@@ -424,19 +426,37 @@ export const useAudioEngine = () => {
   server.onMeters((m: any) => {
     if (!m) return;
     if (Array.isArray(m.items)) {
+      let moved = false;
       for (const meter of m.items) {
         for (const cue of activeCues.value.values()) {
           if (cue.serverCueId !== meter.cue_id) continue;
+          // The engine applies a trim edited while the cue plays at once:
+          // keep its length, In and Out points with the item, or the
+          // countdown and end warning run to the old Out point.
+          const item = (findItemByUuid(cue.uuid) as AudioItem | null) ?? quickPlayItems.value.get(cue.uuid) ?? null;
+          if (item && item.type === 'audio') {
+            const duration = trimmedDuration(item);
+            if (cue.duration !== duration || cue.inPoint !== item.inPoint || cue.outPoint !== item.outPoint) {
+              cue.duration = duration;
+              cue.inPoint = item.inPoint;
+              cue.outPoint = item.outPoint;
+              cue.currentTime = Math.max(0, Math.min(cue.duration, (cue.playheadSeconds ?? 0) - (cue.inPoint || 0)));
+              moved = true;
+            }
+          }
+          if (cue.playheadSeconds === meter.playhead_seconds) break;
           const inP = cue.inPoint || 0;
           cue.currentTime = Math.max(0,
             Math.min(meter.playhead_seconds - inP, cue.duration));
           cue.playheadSeconds = meter.playhead_seconds;
+          moved = true;
           break;
         }
       }
-      // Rebuild group projection so playhead changes propagate to
-      // group progress indicators.
-      recomputeActiveGroups();
+      // Rebuild group progress only when a playing cue moved: rebuilding it
+      // on every meter frame walked the show and refreshed every group row
+      // 30 times a second, even with nothing playing.
+      if (moved) recomputeActiveGroups();
     }
     if (Array.isArray(m.master_channels) && m.master_channels.length > 0) {
       // Sum L and R (channels 0 and 1) for a single mono master level.

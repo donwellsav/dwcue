@@ -354,6 +354,7 @@ function loadHandleKeydown(dependencies: Record<string, unknown>) {
         findPlaybackActionForEvent,
         findSlotForEvent,
         isDetached = false,
+        forwardToOperator = () => {},
         isForwardedFromVideoOutput,
         isTextInputFocused,
         triggerSlot,
@@ -460,11 +461,13 @@ test('assigned show shortcuts keep priority after Tab focuses a workspace button
 
 test('Shift+Q can close focused QuickPlays without relaxing the hydration guard for GO', () => {
   const actions: string[] = [];
+  const forwarded: string[] = [];
   const handleKeydown = loadHandleKeydown({
     isDetached: true,
     currentProject: { value: {} },
     projectHydrationStatus: { value: 'failed' },
     dispatchPlaybackAction: (action: string) => actions.push(action),
+    forwardToOperator: (event: { key: string }) => forwarded.push(event.key),
     findPlaybackActionForEvent: (event: { key: string }) =>
       event.key === 'Q' ? 'toggle-detached-quickplays' : 'play-next',
     isForwardedFromVideoOutput: () => false,
@@ -474,6 +477,8 @@ test('Shift+Q can close focused QuickPlays without relaxing the hydration guard 
     handleKeydown({ key, repeat, preventDefault() {}, stopPropagation() {} });
   }
   assert.deepEqual(actions, ['toggle-detached-quickplays']);
+  // GO does not run in the detached window: the operator window runs it.
+  assert.deepEqual(forwarded, [' ']);
 });
 
 test('QuickPlay number-row shortcuts work with shifted symbols and respect text focus', () => {
@@ -815,6 +820,9 @@ function loadNextItemFeedback(dependencies: Record<string, unknown>): {
     function buildNextItemFeedback(dependencies: Record<string, any>) {
       const { executeHttpRequest, masterGainDb, nextItemOverrideUuid } = dependencies;
       const cueFollowOverrides = dependencies.cueFollowOverrides ?? { value: new Map() };
+      const activeCues = dependencies.activeCues ?? { value: new Map() };
+      const removeActiveCue = (uuid: string) => { activeCues.value.delete(uuid); };
+      const recomputeActiveGroups = () => {};
       let snapshot;
       let patch;
       const server = {
@@ -846,6 +854,21 @@ test('only server patch and reconnect snapshot change the displayed next target'
   assert.equal(masterGainDb.value, -4.5);
   feedback.patch({ op: 'next_item_set', itemUuid: '' });
   assert.equal(nextItemOverrideUuid.value, null);
+});
+
+test('a reconnect snapshot drops a cue it does not list, which is no longer playing', () => {
+  const activeCues = { value: new Map<string, any>([
+    ['ghost', { uuid: 'ghost', serverCueId: 'cue-ghost' }],
+    ['live', { uuid: 'live', serverCueId: 'cue-live' }],
+  ]) };
+  const feedback = loadNextItemFeedback({
+    executeHttpRequest() {},
+    masterGainDb: { value: 0 },
+    nextItemOverrideUuid: { value: null },
+    activeCues,
+  });
+  feedback.snapshot({ cues: [{ cue_id: 'cue-live', item_uuid: 'live', transport: 1 }] });
+  assert.deepEqual([...activeCues.value.keys()], ['live'], 'the retired cue is no longer shown as playing');
 });
 
 test('the Cue to Continue toggle mirrors only server patches and reconnect snapshots', () => {
@@ -936,7 +959,7 @@ function loadMidiContinuous(dependencies: Record<string, unknown>): (action: str
   return factory(dependencies);
 }
 
-test('Up Next follows playlist order when active cues arrived in reverse order', () => {
+test('Up Next follows the cue fired last, then playlist order', () => {
   const source = readFileSync(new URL('../app/composables/useAudioEngine.ts', import.meta.url), 'utf8');
   const start = source.indexOf('  const autoNextItemUuid =');
   const end = source.indexOf('  // ---- WS / REST plumbing', start);
@@ -958,8 +981,18 @@ test('Up Next follows playlist order when active cues arrived in reverse order',
     findItemByIndex: ([index]: number[]) => currentProject.value.items[index],
   });
   assert.equal(next.value, 'b');
+  // With both on air, GO continues after the cue fired last, as the engine does.
+  activeCues.value = new Map([['quickplay', { triggerSeq: 9 }], ['c', { triggerSeq: 5 }], ['a', { triggerSeq: 4 }]]);
+  assert.equal(next.value, 'd', 'c was fired after a');
+  activeCues.value = new Map([['quickplay', { triggerSeq: 9 }], ['c', { triggerSeq: 5 }], ['a', { triggerSeq: 6 }]]);
+  assert.equal(next.value, 'b', 'a was fired again after c');
+  activeCues.value = new Map(['quickplay', 'c', 'a'].map(uuid => [uuid, {}]));
+  // GO on a playing loop moves on, where Cue to Continue would go.
   currentProject.value.items[0].endBehavior.action = 'loop';
-  assert.equal(next.value, 'a');
+  assert.equal(next.value, 'b', 'a playing loop shows the next cue');
+  Object.assign(currentProject.value.items[0].endBehavior, { targetUuid: 'd' });
+  assert.equal(next.value, 'd', 'a loop with a continuation target shows it');
+  currentProject.value.items[0].endBehavior = { action: 'loop' };
   activeCues.value = new Map([['a', {}]]);
   currentProject.value.items[0].endBehavior.action = 'nothing';
   assert.equal(next.value, 'b');
@@ -967,6 +1000,8 @@ test('Up Next follows playlist order when active cues arrived in reverse order',
   assert.equal(next.value, 'b');
   currentProject.value.settings.autoCueNextWithoutEndBehavior = false;
   assert.equal(next.value, null);
+  currentProject.value.items[0].endBehavior = { action: 'loop' };
+  assert.equal(next.value, 'b', 'the setting for cues ending in Nothing does not hold a loop');
 });
 
 test('MIDI Master Volume changes only the Global Master after its first reference sample', () => {

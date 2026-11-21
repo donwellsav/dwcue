@@ -157,6 +157,11 @@
       "help": "Tilpasser hele bildet proporsjonalt.",
       "invalid": "Angi hele tall for lerretsmål fra 64 til 16384 px og en rammestørrelse fra 25 til 100 %."
     },
+    "videoPictureOffset": {
+      "title": "Bildesynk",
+      "label": "Bilde foran lyd (ms)",
+      "help": "Kompenserer for en videomikser, skalerer eller projektor som forsinker bildet: bildet går så mye foran lyden. Mål forsinkelsen med testbildet AV-synkronisering. 0 til 500 ms."
+    },
     "videoOutputTestCard": "Vis testbilde",
     "videoOutputStatus": "Utgangsstatus",
     "videoOutputStatusOff": "Videoutgangen er av.",
@@ -325,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: lydutgangen har stoppet — ingen klokkekall.",
+    "lost": "{name}: lydutgangen er borte — kobler til igjen av seg selv.",
     "queued": "{name}: utgangen er fortsatt stoppet. Gjenoppretting er lagt i kø; venter på klokkekall.",
     "starting": "{name}: lydutgangen starter; venter på klokkekall.",
     "recoveryFailed": "{name}: kunne ikke legge gjenoppretting av lydutgangen i kø."
@@ -979,7 +985,6 @@
     "frameUnconfirmed": "Ramme ubekreftet",
     "prepared": "Video dekodet og søk fullført ved {seconds} s",
     "frameAge": "Ramme for {seconds} s siden",
-    "captureAge": "Opptak for {seconds} s siden",
     "dropped": "Tapte rammer: {count}",
     "states": {
       "idle": "Svart",
@@ -1303,5 +1308,11 @@
     "trash": "Papirkurv",
     "recycleBin": "Papirkurv",
     "editModeOnly": "Rydd opp i medier er tilgjengelig i redigeringsmodus."
+  },
+  "replacePlaying": {
+    "title": "Et show spilles",
+    "message": "Å bytte til et annet show stopper alt som spilles.",
+    "keep": "Fortsett å spille",
+    "switch": "Stopp og bytt"
   }
 }

@@ -187,6 +187,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openDetachedQuickPlayWindow: (projectFolderPath) => ipcRenderer.invoke('open-detached-quickplay-window', projectFolderPath),
   toggleDetachedQuickPlayWindow: () => ipcRenderer.invoke('toggle-detached-quickplay-window'),
   attachDetachedQuickPlayWindow: () => ipcRenderer.send('detached-quickplay-window-attach'),
+  // The detached QuickPlay window hands transport keys (GO, Up Next...) to the operator window.
+  forwardShortcutToOperator: (shortcut) => ipcRenderer.send('quickplay-window:shortcut', shortcut),
   getQuickPlayWindowProjectData: () => ipcRenderer.invoke('get-quickplay-window-project-data'),
   onDetachedQuickPlayWindowOpened: (callback) => replaceIpcListener('detached-quickplay-window-opened', callback),
   onDetachedQuickPlayWindowClosed: (callback) => replaceIpcListener('detached-quickplay-window-closed', callback),
@@ -294,6 +296,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     identifyDisplays: ()       => ipcRenderer.invoke('video-output:identify-displays'),
     setDisplay:   (displayId)  => ipcRenderer.invoke('video-output:set-display', displayId),
     setFraming:   (framing)    => ipcRenderer.invoke('video-output:set-framing', framing),
+    setPictureOffset: (ms)     => ipcRenderer.invoke('video-output:set-picture-offset', ms),
     checkFrame: (request) => ipcRenderer.invoke('video-output:check-frame', request),
     cancelFrameCheck: (id) => ipcRenderer.send('video-output:cancel-frame-check', id),
     convertCue: (request) => ipcRenderer.invoke('video-output:convert-cue', request),
@@ -321,11 +324,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const listener = (_e, status) => callback(status);
       ipcRenderer.on('video-output:status-changed', listener);
       return () => ipcRenderer.removeListener('video-output:status-changed', listener);
-    },
-    onFrame: (callback) => {
-      const listener = (_e, frame) => callback(frame);
-      ipcRenderer.on('video-output:frame', listener);
-      return () => ipcRenderer.removeListener('video-output:frame', listener);
     },
   },
 });

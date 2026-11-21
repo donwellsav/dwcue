@@ -157,6 +157,11 @@
       "help": "Fits the full picture proportionally.",
       "invalid": "Enter whole-number canvas dimensions from 64 to 16384 px and a frame size from 25 to 100%."
     },
+    "videoPictureOffset": {
+      "title": "Picture sync",
+      "label": "Picture ahead of sound (ms)",
+      "help": "Makes up for a switcher, scaler or projector that delays the picture: the picture runs this far ahead of the sound. Measure the delay with the AV Sync test card. 0 to 500 ms."
+    },
     "videoOutputTestCard": "Show test card",
     "videoOutputStatus": "Output status",
     "videoOutputStatusOff": "Video output is off.",
@@ -325,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: audio output stalled — no clock callbacks.",
+    "lost": "{name}: audio output lost — reconnecting by itself.",
     "queued": "{name}: output remains stalled. Recovery queued; waiting for clock callbacks.",
     "starting": "{name}: audio output is starting; waiting for clock callbacks.",
     "recoveryFailed": "{name}: could not queue audio output recovery."
@@ -979,7 +985,6 @@
     "frameUnconfirmed": "Frame unconfirmed",
     "prepared": "Video decoded and seek settled at {seconds}s",
     "frameAge": "Frame {seconds}s ago",
-    "captureAge": "Capture {seconds}s ago",
     "dropped": "Dropped frames: {count}",
     "states": {
       "idle": "Black",
@@ -1303,5 +1308,11 @@
     "trash": "Trash",
     "recycleBin": "Recycle Bin",
     "editModeOnly": "Clean Up Media is available in Edit Mode."
+  },
+  "replacePlaying": {
+    "title": "A show is playing",
+    "message": "Switching to another show stops everything that is playing.",
+    "keep": "Keep playing",
+    "switch": "Stop and switch"
   }
 }

@@ -174,14 +174,23 @@ async function convertVideoForOutput({ ffmpegPath, sourcePath, signal, onProgres
     // half the processor.
     try { os.setPriority(child.pid, os.constants.priority.PRIORITY_BELOW_NORMAL); } catch { /* best effort */ }
     let settled = false;
+    let converted = false;
     let lastWord = '';
     let stall;
+    // On Windows the stopped converter can hold the unfinished file for a
+    // moment; it is removed again when the converter has exited. A failed
+    // removal must never keep the result from being reported, or every later
+    // conversion would be refused as "already running".
+    const removePartial = () => {
+      try { fs.rmSync(partial, { force: true }); } catch { /* removed when the converter exits */ }
+    };
     const finish = result => {
       if (settled) return;
       settled = true;
+      converted = result.status === 'converted';
       clearTimeout(stall);
       signal?.removeEventListener('abort', cancel);
-      if (result.status !== 'converted') fs.rmSync(partial, { force: true });
+      if (!converted) removePartial();
       resolve(result);
     };
     const kill = () => { try { child.kill('SIGKILL'); } catch { /* already gone */ } };
@@ -208,7 +217,10 @@ async function convertVideoForOutput({ ffmpegPath, sourcePath, signal, onProgres
     child.stderr.on('data', chunk => { lastWord = (lastWord + chunk).slice(-600); });
     child.on('error', () => finish({ status: 'failed', reason: 'converter' }));
     child.on('close', async code => {
-      if (settled) return;
+      if (settled) {
+        if (!converted) removePartial();
+        return;
+      }
       if (code !== 0) return finish({ status: 'failed', reason: 'converter', detail: lastWord.trim().split(/\r?\n/).pop() });
       try {
         if (fs.statSync(partial).size === 0) throw new Error('empty');

@@ -53,6 +53,11 @@ constexpr SampleRate kRate = 48'000;
 constexpr FrameCount kBlock = 256;
 int failures = 0;
 
+// How long a test lets an operation take to show it is not blocked behind
+// one the test is holding. The held one never finishes until the test lets it
+// go, so this can be generous for a slow build machine and still prove it.
+constexpr auto kUnblocked = std::chrono::seconds{2};
+
 void check(bool ok, const char* name) {
     std::printf("%-58s %s\n", name, ok ? "PASS" : "FAIL");
     if (!ok) ++failures;
@@ -440,7 +445,7 @@ void test_unchanged_setters_skip_decoder(PlaybackItem& item) {
         else if (mode == 1) item.set_loop(true, 0.01);
         else item.set_ltc_frame_rate(LTCFrameRate::Fps25);
     });
-    check(repeat.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready,
+    check(repeat.wait_for(kUnblocked) == std::future_status::ready,
           "unchanged native properties return before a held decoder lock");
     Output output;
     check(item.playback_revision() == revision && item.render_block(output.channels, 2, kBlock) == kBlock,
@@ -499,9 +504,18 @@ void test_unchanged_boundaries_preserve_audio(PlaybackItem& item) {
               item.stats().read_ahead_blocks == queued &&
               item.render_block(output.channels, 2, kBlock) == kBlock,
           "unchanged boundaries: equivalent clamped loop-in preserves PCM");
+    const auto still_queued = item.stats().read_ahead_blocks;
     item.set_loop(false, 0.0);
-    check(item.playback_revision() != loop_revision && item.stats().read_ahead_blocks == 0,
-          "changed boundary: loop disable still invalidates old metadata");
+    // Nothing queued has wrapped yet: the queue stays, and the cue now ends at
+    // its out-point instead of looping.
+    check(item.playback_revision() != loop_revision && item.stats().read_ahead_blocks == still_queued,
+          "changed boundary: loop disable before the seam keeps the queued PCM");
+    for (int i = 0; i < 40 && item.stats().transport != TransportState::Stopped; ++i) {
+        item.service_read_ahead(16);
+        item.render_block(output.channels, 2, kBlock);
+    }
+    check(item.stats().playhead_frame == 4'800 && item.take_natural_end(),
+          "changed boundary: loop disable ends at the out-point instead of wrapping");
     item.stop_now();
     item.set_out_point_seconds(0.0);
 }
@@ -547,6 +561,85 @@ void test_invalid_time_inputs_preserve_audio(PlaybackItem& item) {
     item.set_out_point_seconds(0.0);
     item.seek_seconds(-1.0);
     check(item.stats().playhead_frame == 0, "valid negative seek still clamps to zero");
+}
+
+// Decode LTC the way a timecode reader does: edges become bits by their
+// spacing (a whole bit with no middle edge is 0, two half bits are 1), each
+// sync word marks the end of a frame, and the frame before it is read.
+struct DecodedLtcFrame { long long number; bool even_ones; };
+std::vector<DecodedLtcFrame> decode_ltc(const std::vector<float>& signal, double samples_per_bit,
+                                        int fps, int& edge_errors) {
+    std::vector<std::size_t> edges;
+    for (std::size_t i = 1; i < signal.size(); ++i)
+        if ((signal[i] > 0.0f) != (signal[i - 1] > 0.0f)) edges.push_back(i);
+    std::vector<int> bits;
+    edge_errors = 0;
+    bool half_pending = false;
+    for (std::size_t i = 1; i < edges.size(); ++i) {
+        const double interval = static_cast<double>(edges[i] - edges[i - 1]);
+        if (std::abs(interval - samples_per_bit) <= samples_per_bit * 0.25) {
+            if (half_pending) ++edge_errors;
+            half_pending = false;
+            bits.push_back(0);
+        } else if (std::abs(interval - samples_per_bit * 0.5) <= samples_per_bit * 0.25) {
+            if (half_pending) bits.push_back(1);
+            half_pending = !half_pending;
+        } else {
+            ++edge_errors;
+            half_pending = false;
+        }
+    }
+    static constexpr int kSync[16] = {0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1};
+    const auto bcd = [&](std::size_t at, int count) {
+        int value = 0;
+        for (int b = 0; b < count; ++b) value |= bits[at + b] << b;
+        return value;
+    };
+    std::vector<DecodedLtcFrame> frames;
+    for (std::size_t end = 79; end < bits.size(); ++end) {
+        const std::size_t start = end - 79;
+        if (!std::equal(std::begin(kSync), std::end(kSync), bits.begin() + static_cast<long>(start + 64))) continue;
+        const int ff = bcd(start, 4) + 10 * bcd(start + 8, 2);
+        const int ss = bcd(start + 16, 4) + 10 * bcd(start + 24, 3);
+        const int mm = bcd(start + 32, 4) + 10 * bcd(start + 40, 3);
+        const int hh = bcd(start + 48, 4) + 10 * bcd(start + 56, 2);
+        int ones = 0;
+        for (std::size_t b = start; b <= end; ++b) ones += bits[b];
+        frames.push_back({((hh * 60LL + mm) * 60 + ss) * fps + ff, (ones & 1) == 0});
+    }
+    return frames;
+}
+
+// LTC rendered block by block from a cue's playhead must decode as one
+// unbroken run of frames, each with even polarity, at every frame rate.
+void test_ltc_decodes_cleanly() {
+    struct Rate { LTCFrameRate rate; int fps; const char* name; };
+    for (const Rate& r : {Rate{LTCFrameRate::Fps24, 24, "24"}, Rate{LTCFrameRate::Fps25, 25, "25"},
+                          Rate{LTCFrameRate::Fps30, 30, "30"}}) {
+        LTCGenerator generator;
+        generator.configure(kRate, r.rate, std::chrono::nanoseconds{0}, 0.5f);
+        std::vector<float> signal;
+        std::array<float, kBlock> block{};
+        for (std::uint64_t frames = 0; frames < 3ULL * kRate; frames += kBlock) {
+            // The cue's own playhead arithmetic (playback_item.cpp).
+            constexpr std::uint64_t scale = 1'000'000'000;
+            const auto ns = (frames / kRate) * scale + (frames % kRate) * scale / kRate;
+            generator.render_block(block.data(), kBlock, std::chrono::nanoseconds{static_cast<long long>(ns)});
+            signal.insert(signal.end(), block.begin(), block.end());
+        }
+        int edge_errors = 0;
+        const auto frames = decode_ltc(signal, static_cast<double>(kRate) / r.fps / 80.0, r.fps, edge_errors);
+        bool consecutive = !frames.empty(), even = true;
+        for (std::size_t i = 0; i < frames.size(); ++i) {
+            even = even && frames[i].even_ones;
+            if (i > 0) consecutive = consecutive && frames[i].number == frames[i - 1].number + 1;
+        }
+        std::printf("LTC %s fps: %zu frames decoded, edge errors %d, consecutive %d, even %d\n",
+                    r.name, frames.size(), edge_errors, consecutive ? 1 : 0, even ? 1 : 0);
+        check(frames.size() >= static_cast<std::size_t>(3 * r.fps - 2) && consecutive && edge_errors == 0,
+              "LTC: block-by-block timecode decodes as one unbroken run of frames");
+        check(even, "LTC: every frame carries an even number of ones (polarity bit)");
+    }
 }
 
 void test_long_position_ltc(PlaybackItem& item) {
@@ -613,13 +706,24 @@ void test_pause_preserves_envelope(PlaybackItem& item) {
         Output output, expected;
         prepare();
         item.render_block(output.channels, 2, kBlock);
-        item.render_block(expected.channels, 2, kBlock);
+        // Uninterrupted, the third block after this point (resume ramps in
+        // over the first two) is what a resumed cue must match exactly.
+        for (int i = 0; i < 3; ++i) item.render_block(expected.channels, 2, kBlock);
 
         prepare();
         item.render_block(output.channels, 2, kBlock);
         item.pause();
         item.pause();
         const auto paused = item.stats();
+        // The pause ramps out over 10 ms without moving the playhead.
+        bool ramped = true;
+        float last = 1.0f;
+        for (int i = 0; i < 2; ++i) {
+            item.render_block(output.channels, 2, kBlock);
+            ramped &= item.stats().playhead_frame == paused.playhead_frame && !item.take_natural_end();
+            last = std::fabs(output.left.back());
+        }
+        check(ramped && last < 0.05f, "pause: ramps out over 10 ms with the playhead frozen");
         bool frozen = paused.transport == TransportState::Paused;
         for (int i = 0; i < 4; ++i) {
             frozen &= item.render_block(output.channels, 2, kBlock) == 0;
@@ -643,8 +747,10 @@ void test_pause_preserves_envelope(PlaybackItem& item) {
         check(item.stats().transport == state,
               "pause: resume restores the preceding transport state");
         item.render_block(output.channels, 2, kBlock);
+        check(std::fabs(output.left.front()) < 0.05f, "pause: resume ramps in from silence");
+        for (int i = 0; i < 2; ++i) item.render_block(output.channels, 2, kBlock);
         check(output.left == expected.left && output.right == expected.right,
-              "pause: resumed waveform matches uninterrupted envelope exactly");
+              "pause: past the resume ramp the waveform matches uninterrupted exactly");
     }
 
     item.stop_now();
@@ -994,6 +1100,9 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
         PlaybackItem item{std::move(desc)};
         check(item.load() && item.prime(2.0), "live edit stall: real PCM primes");
         item.play(); Output output; item.render_block(output.channels, 2, kBlock);
+        // A loop change only touches storage when the queued audio already
+        // reaches a boundary: queue the out-point so this one does.
+        if (operation == 2) { item.set_out_point_seconds(0.05); item.service_read_ahead(16); }
         if (mode == 1) item.pause();
         if (mode == 2) item.stop_with_fade(std::chrono::milliseconds{500});
         if (operation >= 3) item.stop_now();
@@ -1023,7 +1132,8 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
         backend->vtable = &stalled;
         auto edit = std::async(std::launch::async, [&] {
             if (operation == 0) item.seek_seconds(0.5);
-            else if (operation == 1) item.set_out_point_seconds(1.5);
+            // A trim inside the queued audio still goes to storage.
+            else if (operation == 1) item.set_out_point_seconds(0.05);
             else if (operation == 2) item.set_loop(true, 0.25);
             else item.play();
         });
@@ -1051,7 +1161,7 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
             else if (mode == 4) item.stop_with_fade(std::chrono::milliseconds{20});
             else item.stop_now();
         });
-        const bool responsive = control.wait_for(std::chrono::milliseconds{250}) == std::future_status::ready;
+        const bool responsive = control.wait_for(kUnblocked) == std::future_status::ready;
         check(responsive, "live edit stall: Stop/Pause completes before storage release");
         if (responsive && mode == 4) {
             for (int i = 0; i < 8; ++i) item.render_block(output.channels, 2, kBlock);
@@ -1067,17 +1177,21 @@ void test_live_edit_storage_waits(const std::filesystem::path& wav) {
         if (mode == 3) {
             check(item.stats().transport == TransportState::Paused,
                   "live edit stall: successful edit preserves a later Pause");
-            item.resume(); item.service_read_ahead(1);
-            const auto frame = operation == 0 ? 24'000 : kBlock;
+            item.resume(); item.service_read_ahead(3);
+            // Resume ramps in over 10 ms; two blocks on, the PCM is exact.
+            const auto frame = (operation == 0 ? 24'000 : kBlock) + 2 * kBlock;
             const float expected = static_cast<std::int16_t>(
                 std::sin(2.0 * 3.14159265358979323846 * 997.0 * frame / kRate) * 20'000.0) / 32768.0f;
-            check(item.render_block(output.channels, 2, kBlock) == kBlock &&
-                      std::abs(output.left[0] - expected) < 0.00001f,
+            const bool rendered = item.render_block(output.channels, 2, kBlock) == kBlock &&
+                item.render_block(output.channels, 2, kBlock) == kBlock &&
+                item.render_block(output.channels, 2, kBlock) == kBlock;
+            check(rendered && std::abs(output.left[0] - expected) < 0.00001f,
                   "live edit stall: resume starts at the correct edited PCM frame");
         } else {
             check(item.stats().transport == TransportState::Stopped &&
                       (mode == 4 || item.stats().playhead_frame == 0),
                   "live edit stall: cancelled I/O cannot restore transport or stopped playhead");
+            if (operation == 1 || operation == 2) item.set_out_point_seconds(0.0);  // the short out-point above
             check(item.prime(2.0, 0.125), "live edit stall: deliberate retry prepares fresh audio");
             item.play(); item.service_read_ahead(1);
             const float expected = static_cast<std::int16_t>(
@@ -1102,11 +1216,11 @@ void test_queued_seek_intents(const std::filesystem::path& wav) {
         std::unique_lock storage{item.decoder_mutex_};
         auto previous = item.playback_revision();
         auto first = std::async(std::launch::async, [&] { item.seek_seconds(0.5); });
-        for (int i = 0; i < 150 && item.playback_revision() == previous; ++i)
+        for (int i = 0; i < 3000 && item.playback_revision() == previous; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds{1});
         const auto first_revision = item.playback_revision();
         auto second = std::async(std::launch::async, [&] { item.seek_seconds(0.75); });
-        for (int i = 0; i < 150 && item.playback_revision() == first_revision; ++i)
+        for (int i = 0; i < 3000 && item.playback_revision() == first_revision; ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds{1});
         check(first_revision != previous && item.playback_revision() != first_revision,
               "queued seek: each pending destination invalidates older playback intent before I/O");
@@ -1118,12 +1232,15 @@ void test_queued_seek_intents(const std::filesystem::path& wav) {
                       item.render_block(output.channels, 2, kBlock) == 0,
                   "queued seek: a later Stop cancels both pending destinations");
         } else {
-            item.service_read_ahead(1);
+            item.service_read_ahead(3);
+            // The jump ramps in over 10 ms; two blocks on, the PCM is exact.
             const float expected = static_cast<std::int16_t>(
-                std::sin(2.0 * 3.14159265358979323846 * 997.0 * 36'000 / kRate) * 20'000.0) / 32768.0f;
-            check(item.stats().playhead_frame == 36'000 &&
-                      item.render_block(output.channels, 2, kBlock) == kBlock &&
-                      std::abs(output.left[0] - expected) < 0.00001f,
+                std::sin(2.0 * 3.14159265358979323846 * 997.0 * (36'000 + 2 * kBlock) / kRate) * 20'000.0) / 32768.0f;
+            const bool at_destination = item.stats().playhead_frame == 36'000;
+            const bool rendered = item.render_block(output.channels, 2, kBlock) == kBlock &&
+                item.render_block(output.channels, 2, kBlock) == kBlock &&
+                item.render_block(output.channels, 2, kBlock) == kBlock;
+            check(at_destination && rendered && std::abs(output.left[0] - expected) < 0.00001f,
                   "queued seek: the last requested destination supplies the resumed PCM");
         }
         item.stop_now();
@@ -1253,7 +1370,7 @@ void test_loop_and_concurrent_stress(PlaybackItem& item) {
         item.set_ltc_enabled((i & 1u) != 0);
         if (i + 1 == seeks / 2) {
             const auto before = rendered.load();
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
             while (rendered.load() == before && std::chrono::steady_clock::now() < deadline)
                 std::this_thread::sleep_for(std::chrono::milliseconds{1});
             check(rendered.load() > before, "stress: concurrent consumer renders decoded PCM between seek bursts");
@@ -1506,6 +1623,7 @@ int main() {
         test_unchanged_boundaries_preserve_audio(item);
         test_invalid_time_inputs_preserve_audio(item);
         test_long_position_ltc(item);
+        test_ltc_decodes_cleanly();
         test_pause_preserves_envelope(item);
         test_device_reference_churn();
         test_project_runtime_fences();

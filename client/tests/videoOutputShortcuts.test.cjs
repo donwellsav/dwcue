@@ -222,7 +222,7 @@ function productionFunctionSource(name) {
 
 test('control-window close waits for healthy quit confirmation', () => {
   for (const state of ['healthy', 'crashed', 'unresponsive', 'destroyed', 'confirmed']) {
-    const messages = [], serverStops = [], keepAwakeReleases = [];
+    const messages = [], serverStops = [], keepAwakeReleases = [], crashReloads = [];
     class ControlWindow extends EventEmitter {
       constructor() {
         super();
@@ -239,8 +239,10 @@ test('control-window close waits for healthy quit confirmation', () => {
       isDevMode: true, quitConfirmed: state === 'confirmed', createMenu() {}, process: { argv: [] },
       stopServer: () => serverStops.push('stop'),
       releaseKeepAwake: () => keepAwakeReleases.push('release'),
+      reloadAfterRendererCrash: (_window, label) => crashReloads.push(label),
     };
     vm.runInNewContext(productionFunctionSource('createWindow') + '\ncreateWindow();', context);
+    assert.deepEqual(crashReloads, ['main-window'], 'a crashed control window reloads by itself');
     const window = context.mainWindow;
     if (state === 'unresponsive') window.emit('unresponsive');
     const event = { prevented: false, preventDefault() { this.prevented = true; } };
@@ -319,10 +321,13 @@ function createVideoWindowHarness() {
     setAlwaysOnTop() {}
     loadURL() { return Promise.resolve(); }
     loadFile() { return Promise.resolve(); }
-    show() {}
+    show() { this.visible = true; }
     isFullScreen() { return false; }
     isSimpleFullScreen() { return false; }
-    hide() {}
+    hide() { this.visible = false; }
+    setBounds(bounds) { this.bounds = bounds; }
+    getBounds() { return this.bounds ?? { x: 0, y: 0, width: 960, height: 540 }; }
+    setVisibleOnAllWorkspaces() {}
     destroy() {
       this.destroyed = true;
       if (!this.delayClosed) this.emit('closed');
@@ -333,10 +338,14 @@ function createVideoWindowHarness() {
     videoOutputPlaybackError: null, videoOutputTestCardConnection: null,
     videoOutputRendererReady: false, videoOutputRendererResponsive: true,
     videoOutputRecoveryRequired: false, videoOutputRestarting: false, videoOutputDiagnostics: [], URL,
-    videoOutputPowerSaveId: null, videoOutputFrameTimer: null,
+    videoOutputAutoRestarts: [], videoOutputAutoRestartTimer: null, quitConfirmed: false,
+    videoOutputReadyTimer: null, videoOutputReadyLimitMs: 300,
+    videoOutputPowerSaveId: null,
     videoOutputWindowsPreservingSession: new WeakSet(),
     readVideoOutputConfig: () => ({}), resolveVideoOutputDisplay: () => null,
-    screen: { getAllDisplays: () => [{}] }, BrowserWindow: OutputWindow,
+    screen: { getAllDisplays: () => [{}], listeners: {}, on(event, listener) { (this.listeners[event] ??= []).push(listener); } },
+    BrowserWindow: OutputWindow,
+    videoOutputWatchdogInstalled: false, videoOutputWatchdogTimer: null,
     View: class {
       setBackgroundColor(color) { this.color = color; }
       setBounds(bounds) { this.bounds = bounds; }
@@ -374,11 +383,11 @@ function createVideoWindowHarness() {
   vm.runInNewContext([
     mainSource.slice(geometryStart, geometryEnd),
     productionFunctionSource('resetVideoOutputGeometry'),
-    ...['sanitizeVideoPlaybackErrorMessage', 'loadVideoOutputWindow', 'failVideoOutputRenderer', 'markVideoOutputReady', 'restartVideoOutputWindow', 'requireVideoOutputIpc']
+    ...['sanitizeVideoPlaybackErrorMessage', 'loadVideoOutputWindow', 'failVideoOutputRenderer', 'markVideoOutputReady', 'scheduleVideoOutputRestart', 'watchVideoOutputReady', 'restartVideoOutputWindow', 'requireVideoOutputIpc']
       .filter(name => mainSource.includes('function ' + name + '(')).map(productionFunctionSource),
-    productionFunctionSource('startVideoOutputFrames'),
-    productionFunctionSource('stopVideoOutputFrames'),
     productionFunctionSource('createVideoOutputWindow'),
+    ...['parkVideoOutputWindow', 'restoreVideoOutputWindow', 'installVideoOutputWatchdog']
+      .filter(name => mainSource.includes('function ' + name + '(')).map(productionFunctionSource),
     mainSource.slice(closeStart, closeEnd),
   ].join('\n'), context);
   return {
@@ -388,13 +397,7 @@ function createVideoWindowHarness() {
       context.createVideoOutputWindow();
       return context.videoOutputWindow;
     },
-    tick() { return timers.get(context.videoOutputFrameTimer)(); },
-    finishCapture(index, label) {
-      captures[index].resolve({
-        isEmpty: () => false, resize() { return this; },
-        toJPEG: () => Buffer.from(label),
-      });
-    },
+    timerCount() { return timers.size; },
   };
 }
 
@@ -406,53 +409,37 @@ test('a preview opened while its assigned display is missing waits for that disp
   assert.notEqual(unassigned.open().videoOutputWaitingForDisplay, true, 'no display assigned: nothing to wait for');
 });
 
-test('video confidence capture waits for its current readback before starting another', async () => {
+test('the operator view never copies the audience output', () => {
   const h = createVideoWindowHarness();
-  h.open();
-  const first = h.tick();
-  void h.tick();
-  void h.tick();
-  assert.equal(h.captures.length, 1);
-  h.finishCapture(0, 'first');
-  await first;
-  const next = h.tick();
-  assert.equal(h.captures.length, 2);
-  h.finishCapture(1, 'next');
-  await next;
-  assert.equal(h.frames.length, 2);
-  const rejected = h.tick();
-  h.captures[2].reject(new Error('readback cancelled'));
-  await rejected;
-  const retry = h.tick();
-  assert.equal(h.captures.length, 4);
-  h.finishCapture(3, 'retry');
-  await retry;
-  assert.equal(h.frames.length, 3);
+  const output = h.open();
+  output.webContents.mainFrame = {};
+  h.context.markVideoOutputReady({ sender: output.webContents, senderFrame: output.webContents.mainFrame });
+  assert.equal(h.captures.length, 0);
+  assert.equal(h.timerCount(), 0, 'no timer runs for the output');
+  assert.doesNotMatch(mainSource, /video-output:frame/);
 });
 
-test('stopped and replaced output capture completions cannot publish stale frames', async () => {
+test('an output whose display drops out is hidden and kept, then shown live when it returns', async () => {
   const h = createVideoWindowHarness();
-  h.open();
-  const stopped = h.tick();
-  h.context.stopVideoOutputFrames();
-  h.finishCapture(0, 'stopped');
-  await stopped;
-  assert.equal(h.frames.length, 0);
-
-  h.context.startVideoOutputFrames();
-  const retired = h.tick();
-  h.context.closeVideoOutputWindow({ preserveSession: true });
-  h.open();
-  const current = h.tick();
-  h.finishCapture(1, 'retired');
-  await retired;
-  assert.equal(h.frames.length, 0);
-  void h.tick();
-  assert.equal(h.captures.length, 3, 'old completion must not clear the new capture gate');
-  h.finishCapture(2, 'current');
-  await current;
-  assert.equal(h.frames.length, 1);
-  assert.equal(Buffer.from(h.frames[0].jpeg, 'base64').toString(), 'current');
+  const display = { id: 7, bounds: { x: 1920, y: 0, width: 1920, height: 1080 }, label: 'Projector' };
+  let present = true;
+  h.context.resolveVideoOutputDisplay = () => (present ? display : null);
+  h.context.screen.getAllDisplays = () => (present ? [{ id: 1 }, display] : [{ id: 1 }]);
+  const output = h.open();
+  h.context.installVideoOutputWatchdog();
+  const emit = event => h.context.screen.listeners[event].forEach(listener => listener());
+  present = false;  // a switcher re-syncs: the display goes away
+  emit('display-removed');
+  assert.equal(output.visible, false, 'hidden at once, so it cannot land on the operator screen');
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(output.isDestroyed(), false, 'kept, still playing, while the display is gone');
+  assert.equal(h.context.videoOutputWindow, output);
+  present = true;   // the display is back
+  emit('display-added');
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(h.context.videoOutputWindow, output, 'the same window, picture live: no new window to boot');
+  assert.equal(output.visible, true);
+  assert.deepEqual(output.bounds, display.bounds, 'seated on its display again');
 });
 
 test('renderer loss retains native black coverage, session and power while restoring the operator', () => {
@@ -473,7 +460,6 @@ test('renderer loss retains native black coverage, session and power while resto
   assert.equal(output.videoOutputCover.visible, true);
   assert.equal(output.videoOutputCover.color, '#000000');
   assert.equal(h.context.videoOutputRecoveryRequired, true);
-  assert.equal(h.context.videoOutputFrameTimer, null);
   assert.match(h.context.videoOutputPlaybackError.message, /oom/);
   assert.match(h.context.videoOutputPlaybackError.message, /139/);
   assert.equal(h.statuses.at(-1).error, h.context.videoOutputPlaybackError);
@@ -510,8 +496,70 @@ test('responsive events and old ready handshakes cannot uncover a failed output'
   output.webContents.emit('responsive');
   h.context.markVideoOutputReady(event);
   assert.equal(h.context.videoOutputRendererResponsive, true);
-  assert.equal(output.videoOutputCover.visible, true, 'recovery requires deliberate restart');
+  assert.equal(output.videoOutputCover.visible, true, 'answering again alone cannot uncover it; it restarts first');
   assert.throws(() => h.context.markVideoOutputReady({ ...event, senderFrame: {} }), /frame/i);
+  clearTimeout(h.context.videoOutputAutoRestartTimer);
+});
+
+// The audience screen recovers by itself: nobody has to find Restart Output
+// in the middle of a show.
+for (const failure of ['crash', 'hang']) {
+  test(`an output that ${failure === 'crash' ? 'crashes' : 'hangs and never answers'} restarts by itself behind its cover`, async () => {
+    const h = createVideoWindowHarness();
+    const output = h.open();
+    let loads = 0;
+    output.loadURL = () => { loads++; return Promise.resolve(); };
+    output.webContents.isCrashed = () => failure === 'crash';
+    output.webContents.forcefullyCrashRenderer = () =>
+      output.webContents.emit('render-process-gone', {}, { reason: 'killed', exitCode: 1 });
+    output.webContents.mainFrame = {};
+    const ready = () => h.context.markVideoOutputReady({ sender: output.webContents, senderFrame: output.webContents.mainFrame });
+    ready();
+    if (failure === 'crash') output.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 7 });
+    else output.webContents.emit('unresponsive');   // a deadlock: it never answers
+    assert.equal(output.videoOutputCover.visible, true);
+    await new Promise(resolve => setTimeout(resolve, 400));
+    assert.equal(loads, 1, 'the output reloaded without the operator');
+    assert.equal(h.context.videoOutputRecoveryRequired, false);
+    ready();
+    assert.equal(output.videoOutputCover.visible, false, 'the picture returns once the output is back');
+    assert.deepEqual(h.powerStops, []);
+  });
+}
+
+test('a restarted output that never reports ready is restarted again, and the operator is brought back once', async () => {
+  const h = createVideoWindowHarness();
+  const output = h.open();
+  let loads = 0;
+  output.loadURL = () => { loads++; return Promise.resolve(); };
+  output.webContents.isCrashed = () => true;
+  output.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 7 });
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(loads, 1, 'restarted once');
+  // Its page loads but never says it is ready (the harness limit is 300 ms).
+  await new Promise(resolve => setTimeout(resolve, 800));
+  assert.equal(loads, 2, 'restarted again instead of staying black');
+  assert.equal(output.videoOutputCover.visible, true);
+  assert.deepEqual(h.operator, ['show', 'focus'], 'the operator window is brought forward for the first failure only');
+  h.context.closeVideoOutputWindow({ preserveSession: true });
+});
+
+test('closing the output drops its pending restart, so a new output restarts on its own failure', async () => {
+  const h = createVideoWindowHarness();
+  const old = h.open();
+  old.webContents.isCrashed = () => true;
+  old.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 7 });
+  assert.notEqual(h.context.videoOutputAutoRestartTimer, null);
+  h.context.closeVideoOutputWindow({ preserveSession: true });
+  assert.equal(h.context.videoOutputAutoRestartTimer, null, 'the old window\'s restart is dropped');
+  const replacement = h.open();
+  let loads = 0;
+  replacement.loadURL = () => { loads++; return Promise.resolve(); };
+  replacement.webContents.isCrashed = () => true;
+  replacement.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 7 });
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(loads, 1, 'the new window restarts');
+  h.context.closeVideoOutputWindow({ preserveSession: true });
 });
 
 test('operator restart kills a hung renderer behind the same cover before loading', async () => {
@@ -548,14 +596,12 @@ test('retired output close and load events cannot release a replacement diagnost
   const replacement = h.open();
   const newConnection = { accessToken: 'new' };
   h.context.videoOutputTestCardConnection = newConnection;
-  const timer = h.context.videoOutputFrameTimer;
   const power = h.context.videoOutputPowerSaveId;
   old.emit('closed');
   old.webContents.emit('did-fail-load', {}, -2, 'old failure', '', true);
   old.webContents.emit('did-finish-load');
   assert.equal(h.context.videoOutputWindow, replacement);
   assert.equal(h.context.videoOutputTestCardConnection, newConnection);
-  assert.equal(h.context.videoOutputFrameTimer, timer);
   assert.equal(h.context.videoOutputPowerSaveId, power);
   assert.deepEqual(h.cleanup, [oldConnection]);
   assert.deepEqual(h.operator, [], 'normal recreation must not focus the operator');
@@ -571,7 +617,6 @@ test('native operator close releases its own output without stealing focus', () 
   assert.equal(h.context.videoOutputWindow, null);
   assert.equal(h.context.videoOutputSessionEnabled, false);
   assert.equal(h.context.videoOutputPlaybackError, null);
-  assert.equal(h.context.videoOutputFrameTimer, null);
   assert.deepEqual(h.cleanup, [connection]);
   assert.deepEqual(h.powerStops, [1]);
   assert.deepEqual(h.operator, []);

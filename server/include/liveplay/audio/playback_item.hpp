@@ -264,6 +264,9 @@ public:
     // Returns the number of frames actually written. May be less than
     // frame_count when end-of-file is reached this block; the rest is silenced
     // and the transport transitions to Stopped (via the fade pathway).
+    // Render thread, while no output is running (so nothing renders): finish
+    // an explicit stop at once instead of leaving its fade where it is.
+    void settle_stop_without_output() noexcept;
     std::size_t render_block(Sample* const* out_channel_buffers,
                              ChannelCount   out_channel_count,
                              std::size_t    frame_count) noexcept;
@@ -288,7 +291,12 @@ private:
 
     // Fixed-capacity read-ahead allocated in load(). decoder_mutex_ serializes
     // worker/control producers; the sole consumer is render_block().
-    static constexpr std::size_t kReadAheadBlockCount = 16;
+    // Decoded audio kept ahead of each playing cue: 48 blocks, about a
+    // quarter second at 48 kHz, so a slow disk, network share or a busy
+    // machine can stall the decoder that long without a gap. GO decodes only
+    // the first kPrimeBlockCount itself; the decode worker fills the rest.
+    static constexpr std::size_t kReadAheadBlockCount = 48;
+    static constexpr std::size_t kPrimeBlockCount = 16;
     struct ReadAheadBlock {
         std::vector<Sample> samples;
         std::uint32_t       frames = 0;
@@ -320,6 +328,21 @@ private:
     std::atomic<std::uint64_t>  prepared_revision_{0};
     std::atomic<bool>           rewind_on_play_{false};
     TransportState             paused_transport_ = TransportState::Playing; // render_exclusion_
+    // Declick (render_exclusion_): a 10 ms ramp on the output after a pause
+    // (down, playing the next audio without consuming it) and a resume (up).
+    long long                  declick_remaining_ = 0;
+    bool                       declick_rising_ = false;
+    std::size_t                pause_peek_frames_ = 0;
+    // A playing cue about to jump plays its ramp out, then holds silent until
+    // the jump flushes its queue. Tagged with that seek's revision.
+    std::uint64_t              seek_hold_revision_ = 0;
+    // Set when a playing cue's jump flushes its queue, cleared by its first
+    // new audio: the wait for that audio is part of the jump, not a miss.
+    bool                       seek_refill_wait_ = false;
+#ifdef LIVEPLAY_TEST_ACCESS
+    // Runs after a jump releases the decoder, before seek_seconds returns.
+    std::function<void()>      after_seek_unlock_for_test_;
+#endif
     std::atomic<float>          gain_target_linear_{1.0f};
     std::atomic<float>          gain_current_linear_{1.0f};     // smoothed
     std::atomic<float>          group_gain_target_{1.0f};
@@ -409,6 +432,13 @@ private:
     void begin_render_exclusion() noexcept;
     void end_render_exclusion() noexcept;
     void reset_read_ahead_locked(std::uint64_t frame) noexcept;
+    // Declick (render_exclusion_ held): the level the 10 ms ramp has reached,
+    // 0..1, and a new ramp that starts from a given level, so a ramp turned
+    // round midway never jumps.
+    float declick_level_locked() const noexcept;
+    void arm_declick_locked(bool rising, float from_level) noexcept;
+    // Control side: let a jump's ramp out finish (10 ms, a block at most).
+    void wait_for_jump_ramp_out() noexcept;
     bool fill_read_ahead_block_locked() noexcept;
     void stop_for_decode_error(int decoder_result) noexcept;
     void handle_natural_end() noexcept;

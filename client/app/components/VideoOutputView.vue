@@ -4,8 +4,10 @@
   <div class="video-output" aria-hidden="true">
     <div class="video-output-frame" :style="frameStyle">
       <img v-if="standbySrc" class="layer layer-media" :src="standbySrc" alt="" draggable="false">
-      <img v-if="cueImageSrc" :key="cueImageSrc" class="layer layer-media" :src="cueImageSrc" alt="" draggable="false"
-        @load="($event.currentTarget as HTMLImageElement).classList.add('layer-opaque')">
+      <!-- One element for every still: a new src keeps the old picture until
+           the new one has loaded, so slides cut without a flash of standby. -->
+      <img v-if="cueImageSrc" class="layer layer-media" :src="cueImageSrc" alt="" draggable="false"
+        @load="($event.currentTarget as HTMLImageElement).classList.add('layer-opaque'); onCueImageLoaded()">
 
       <!-- The target must exist before Teleport resolves an updated destination. -->
       <KardsTestCard
@@ -21,20 +23,26 @@
 
       <!-- Move, rather than recreate, the same muted video into Kards' original
            AV Sync rectangle. Native audio remains the only audio/clock source. -->
+      <!-- Two elements: the live picture and a spare that holds the next video
+           cue loaded and on its first frame, so a cut swaps them without a reload. -->
       <Teleport defer :disabled="!showAudioSyncCard" :to="showAudioSyncCard ? '#test-card-video-target' : 'body'">
         <video
-          v-show="showVideo && (!testCard || (showAudioSyncCard && diagnosticSource !== null))"
-          ref="videoEl"
-          :class="showAudioSyncCard ? 'vt' : ['layer layer-media', { 'layer-opaque': videoReady }]"
-          :src="videoSrc ?? undefined"
+          v-for="slot in [0, 1]"
+          :key="slot"
+          v-show="slot !== liveSlot || (showVideo && (!testCard || (showAudioSyncCard && diagnosticSource !== null)))"
+          :ref="(element) => registerVideoElement(slot, element as HTMLVideoElement | null)"
+          :class="[showAudioSyncCard ? 'vt' : ['layer layer-media', { 'layer-opaque': slot === liveSlot && videoReady }],
+            { 'layer-spare': slot !== liveSlot }]"
+          :src="slotSources[slot] ?? undefined"
           muted
           playsinline
           preload="auto"
           disablepictureinpicture
-          @loadedmetadata="onVideoLoadedMetadata"
-          @loadeddata="onVideoCanPlay"
-          @canplay="onVideoCanPlay"
-          @error="onVideoError"
+          @loadedmetadata="slot === liveSlot ? onVideoLoadedMetadata() : onSpareEvent()"
+          @loadeddata="slot === liveSlot ? onVideoCanPlay() : onSpareEvent()"
+          @canplay="slot === liveSlot ? onVideoCanPlay() : onSpareEvent()"
+          @seeked="slot !== liveSlot && onSpareEvent()"
+          @error="slot === liveSlot ? onVideoError() : onSpareError()"
         />
       </Teleport>
       <canvas v-show="showHeldFrame && !testCard" ref="heldFrameEl" class="layer layer-media layer-opaque" />
@@ -63,10 +71,11 @@ const testCard = computed(() => status.value?.testCard === true);
 const showAudioSyncCard = computed(() => testCard.value && config.value.cardType === 'audioSync');
 const diagnosticSource = computed(() => showAudioSyncCard.value ? status.value?.testCardPlayback ?? null : null);
 const {
-  videoEl, videoSrc, videoReady, showVideo, heldFrameEl, showHeldFrame, cueImageSrc, standbySrc,
+  videoReady, showVideo, heldFrameEl, showHeldFrame, cueImageSrc, standbySrc,
+  liveSlot, slotSources, registerVideoElement, onSpareEvent, onSpareError, onCueImageLoaded,
   onVideoLoadedMetadata, onVideoCanPlay, onVideoError,
   getPictureHealth,
-} = useVideoOutput(diagnosticSource);
+} = useVideoOutput(diagnosticSource, computed(() => status.value?.pictureOffsetMs ?? 0));
 
 useHead({ title: 'DonWells Cue — Video Output' });
 let offStatus: (() => void) | null = null;
@@ -178,4 +187,6 @@ onBeforeUnmount(() => {
 .layer-media { width: 100%; height: 100%; }
 .layer-media, video { object-fit: contain; }
 .layer-opaque { background: #000; }
+/* The spare decodes its first frame but is never seen until it is live. */
+.layer-spare { opacity: 0; pointer-events: none; }
 </style>

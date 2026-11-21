@@ -150,6 +150,9 @@ struct DeviceInfo {
     SampleRate   sample_rate = 0;
     bool         is_default = false;
     bool         is_open = false;
+    // The open stream behind `id` is the System Default one, which the OS
+    // moves when the computer's default output changes.
+    bool         follows_default = false;
     bool         is_available = true;
     bool         is_clock_master = false;
     std::string  runtime_state = "available";
@@ -254,7 +257,13 @@ public:
 
     // ---- Device management ----------------------------------------------
     // Cached hardware plus current runtime; only the first catalog has a bounded 50 ms grace.
-    std::vector<DeviceInfo> enumerate_devices() const;
+    // With refresh_catalog false, the cached hardware list with live state
+    // from the open devices: no rebuild, which holds the device lock.
+    std::vector<DeviceInfo> enumerate_devices(bool refresh_catalog = true) const;
+    // The device list as the OS has it now: forces a refresh and waits up to
+    // `wait` for it (the plain call answers from the background-refreshed
+    // list). For an output asked for by name that the list does not have.
+    std::vector<DeviceInfo> enumerate_devices_fresh(std::chrono::milliseconds wait) const;
 
     // Open the platform's default playback device with `output_channels`
     // channels at the engine's mix rate.
@@ -328,6 +337,17 @@ public:
     // Main needs a device and runs without the engine mutex.
     MixerChannelId ensure_main_output(const std::function<DeviceId()>& open,
                                       bool route_unassigned = false);
+    // Program plays through Main. Moves Main (masters 0/1) onto `device`,
+    // which the caller opened for it; Main keeps that reference. `previous`
+    // is the device Main played through before (possibly the same one), whose
+    // reference the caller releases. Not bound when `device` is not open.
+    struct MainOutputBinding {
+        bool     bound = false;
+        DeviceId previous;
+    };
+    MainOutputBinding retarget_main_output(const DeviceId& device);
+    // The device Main plays through, or empty when Main has none.
+    DeviceId main_output_device() const;
 
     // ---- Mixer channels --------------------------------------------------
     MixerChannelId create_mixer_channel(std::string display_name);
@@ -424,11 +444,21 @@ public:
 
     // ---- Introspection ---------------------------------------------------
     const EngineConfig& config() const noexcept { return cfg_; }
+    // How far what is heard trails the render position: the audio queued for
+    // the clock-master output plus the period its device is playing.
+    double output_delay_seconds() const noexcept;
 
 #ifndef LIVEPLAY_TEST_ACCESS
 private:
 #endif
-    static constexpr FrameCount kDeviceRingBlocks = 8;
+    // An output's ring holds kDeviceRingBlocks. Its clock is matched around
+    // the middle of kDeviceClockBlocks (target 4.5 blocks); the rest is
+    // headroom. When the clock master's queue is reset (a reroute, a lost
+    // stream), render refills it with three blocks back to back, which land
+    // on every other output too: those play on and catch up, at most 0.5%
+    // fast for a few seconds, instead of overflowing into a hard resync.
+    static constexpr FrameCount kDeviceRingBlocks = 12;
+    static constexpr FrameCount kDeviceClockBlocks = 8;
     static constexpr FrameCount kMasterQueueBlocks = 3;
 
     struct OutputChannelState {
@@ -463,7 +493,26 @@ private:
         std::string                 display_name;
         ChannelCount                channels = 2;
         SampleRate                  sample_rate = kDefaultMixSampleRate;
+        // Opened as "System Default": the OS moves this stream when the
+        // computer's default output changes. Set before the device is shared.
+        bool                        follows_default = false;
+        // What a recovery needs to build a fresh native stream for this
+        // device (set at open): the engine's device lifecycle lock, the
+        // native context (null: miniaudio's own) and the period size.
+        std::shared_ptr<std::timed_mutex> lifecycle;
+        ma_context*                 native_context = nullptr;
+        FrameCount                  period_frames = 0;
+        std::atomic<std::uint64_t>  native_reopens{0};
+        // Watchdog only: when a lost output may next be retried.
+        std::chrono::steady_clock::time_point next_auto_recovery{};
         std::unique_ptr<ma_device>  ma_dev;
+        // The native stream's identity, kept apart from ma_dev so an open can
+        // tell outputs apart while one is busy recovering (its native_mutex
+        // held). Set at open and by each reopen, under identity_mutex.
+        mutable std::mutex          identity_mutex;
+        bool                        has_native_identity = false;
+        ma_backend                  native_backend{};
+        ma_device_id                native_id{};
         std::mutex                  native_mutex; // One stop/start/uninit per device.
         mutable std::mutex          state_mutex;  // Short recovery/watchdog publication only.
         std::atomic<bool>           cleanup_done{false};
@@ -484,6 +533,19 @@ private:
         std::atomic<bool>           callback_active{false};
         std::atomic<bool>           reset_requested{true};
         bool                        reset_applied = false; // render thread only
+        // Every reset request is numbered, so one made after an earlier reset
+        // was applied (an output dropping out again while it refilled, then
+        // coming back) is applied too, not mistaken for the one already done.
+        // How often the native stream calls back, in mix-rate frames (0 when
+        // unknown). A Windows output often calls back every 10 ms, longer
+        // than two render blocks: its quiet gaps are normal, not a stall.
+        std::atomic<std::uint32_t>  callback_period_frames{0};
+        std::atomic<std::uint64_t>  reset_epoch{0};
+        std::uint64_t               applied_reset_epoch = 0; // render thread only
+        void request_reset() noexcept {
+            reset_epoch.fetch_add(1, std::memory_order_acq_rel);
+            reset_requested.store(true, std::memory_order_release);
+        }
         std::atomic<bool>           clock_master{false};
         std::atomic<DeviceRuntimeState> runtime_state{
             DeviceRuntimeState::Starting};
@@ -526,6 +588,8 @@ private:
     // Per-output-channel gains (index matches master channel index). Fixed-size
     // atomics let the render thread read without copying or taking mutex_.
     std::unique_ptr<std::atomic<float>[]>         output_channel_gains_;
+    // Render thread only: each master's gain at the end of the last block.
+    std::vector<float>                            master_applied_gains_;
     // miniaudio device init/uninit mutates backend-global state on some
     // platforms. Retained across engine lifetimes by unfinished native jobs.
     std::shared_ptr<std::timed_mutex>             device_lifecycle_mutex_;
@@ -544,7 +608,12 @@ private:
     // on RT; rebuilds reclaim completed records after all readers let go.
     std::vector<std::shared_ptr<PreparedFollow>> prepared_follows_;
     DeviceList                                   devices_;
-    std::vector<std::pair<ma_backend, ma_device_id>> starting_devices_; // Guarded by mutex_.
+    struct StartingDevice {
+        ma_backend   backend;
+        ma_device_id id;
+        bool         follows_default;
+    };
+    std::vector<StartingDevice> starting_devices_; // Guarded by mutex_.
     std::condition_variable                      device_started_;
     // Closed devices remain owned until all snapshot readers have drained.
     DeviceList                                   retired_devices_;
@@ -638,8 +707,11 @@ private:
         const std::shared_ptr<std::timed_mutex>& lifecycle, ma_context* test_context);
     void retire_device(const std::shared_ptr<Device>& device);
     void device_watchdog_loop();
-    static void recover_device(const std::shared_ptr<Device>& device, std::uint64_t generation) noexcept;
+    static void recover_device(const std::shared_ptr<Device>& device, std::uint64_t generation,
+                               bool reopen = false) noexcept;
+    static bool reopen_native_device(Device& device) noexcept;
     bool reset_device_if_requested(Device& device) noexcept;
+    static void note_callback_period(Device& device) noexcept;
 
     Device* find_device_locked(const DeviceId& id) const;
     const OutputChannelState* output_state_locked(MasterChannelIndex master) const;

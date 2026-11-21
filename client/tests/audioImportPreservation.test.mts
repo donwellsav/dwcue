@@ -383,6 +383,7 @@ test('media copy sends the captured project and destination identity', async () 
     currentProjectForImport: { value: { folderPath: '/shows/A/' } },
     projectPathForImport: { value: '/shows/A/A.dwcue' },
     detachedProjectForImport: { value: null },
+    MEDIA_COPY_TIMEOUT_MS: 60 * 60 * 1000,
     rest: async (_url: string, init: RequestInit) => {
       body = JSON.parse(String(init.body));
       return { dest_path: '/shows/A/media/original.wav' };
@@ -399,6 +400,7 @@ test('detached media copy uses the owner project identity', async () => {
     currentProjectForImport: { value: { folderPath: '/shows/A' } },
     projectPathForImport: { value: '' },
     detachedProjectForImport: { value: { projectPath: '/shows/A/A.dwcue', projectEpoch: 1, ownerSessionId: 'owner' } },
+    MEDIA_COPY_TIMEOUT_MS: 60 * 60 * 1000,
     rest: async (_url: string, init: RequestInit) => {
       body = JSON.parse(String(init.body));
       return { dest_path: '/shows/A/media/original.wav' };
@@ -417,12 +419,62 @@ test('a rejected local copy is not bypassed by uploading the same file', async (
     currentProjectForImport: { value: { folderPath: '/shows/A' } },
     projectPathForImport: { value: '/shows/A/A.dwcue' },
     detachedProjectForImport: { value: null },
-    copyToMedia: async () => { throw new Error('400 Bad Request — Choose Link'); },
+    copyToMediaResult: async () => { throw new Error('400 Bad Request — Choose Link'); },
     uploadFile: async () => { uploads++; return { saved: ['/shows/A/media/original.m3u'] }; },
     console: { warn() {}, error() {} },
   }, 'resolveDroppedFileToMedia');
   await assert.rejects(resolve({ name: 'original.m3u' }), /Choose Link/);
   assert.equal(uploads, 0);
+});
+
+const droppedFileResolver = (copyToMediaResult: (path: string, policy: string) => Promise<unknown>,
+  uploads: { count: number }) =>
+  compile(section(serverSource, 'async function resolveDroppedFileToMedia(', '  // Queue an async waveform')
+    .replaceAll('import.meta.client', 'true'), {
+    window: { electronAPI: { getFilePath: () => '/drive/Opening film.mov' } },
+    isLocalServer: { value: true },
+    currentProjectForImport: { value: { folderPath: '/shows/A' } },
+    projectPathForImport: { value: '/shows/A/A.dwcue' },
+    detachedProjectForImport: { value: null },
+    copyToMediaResult,
+    uploadFile: async () => { uploads.count++; return { saved: ['/shows/A/media/Opening film (2).mov'] }; },
+    console: { warn() {}, error() {} },
+  }, 'resolveDroppedFileToMedia');
+
+test('a long local copy is not uploaded a second time', async () => {
+  const uploads = { count: 0 };
+  const resolve = droppedFileResolver(async () => {
+    throw new DOMException('The operation timed out.', 'TimeoutError');
+  }, uploads);
+  await assert.rejects(resolve({ name: 'Opening film.mov' }), /timed out/);
+  assert.equal(uploads.count, 0, 'the engine may still be copying it');
+});
+
+test('a dropped file reuses an identical copy already in the show', async () => {
+  const policies: string[] = [];
+  const resolve = droppedFileResolver(async (_path, policy) => {
+    policies.push(policy);
+    return { destPath: '/shows/A/media/Opening film.mov' };
+  }, { count: 0 });
+  assert.equal(await resolve({ name: 'Opening film.mov' }), '/shows/A/media/Opening film.mov');
+  assert.deepEqual(policies, ['reuse']);
+});
+
+test('a media copy waits as long as the copy takes', async () => {
+  let signal: AbortSignal | undefined;
+  const copy = compile(section(serverSource, 'async function copyToMediaResult(', '  // Land a file dropped'), {
+    currentProjectForImport: { value: { folderPath: '/shows/A' } },
+    projectPathForImport: { value: '/shows/A/A.dwcue' },
+    detachedProjectForImport: { value: null },
+    MEDIA_COPY_TIMEOUT_MS: 60 * 60 * 1000,
+    rest: async (_url: string, init: RequestInit) => {
+      signal = init.signal ?? undefined;
+      return { dest_path: '/shows/A/media/original.wav' };
+    },
+  }, 'copyToMediaResult');
+  await copy('/original.wav', 'keep');
+  assert.ok(signal, 'its own deadline, not the 30-second default for ordinary requests');
+  assert.match(section(serverSource, 'const MEDIA_COPY_TIMEOUT_MS', ';'), /60 \* 60 \* 1000/);
 });
 
 test('playlist import verifies the final copied file', async () => {
@@ -456,4 +508,25 @@ test('a playlist file drop cannot carry imported paths into a different project'
   }, 'handleDrop');
   await handleDrop({ preventDefault() {}, dataTransfer: { getData: () => '', files: [{ name: 'original.wav' }] } });
   assert.equal(imported, 0);
+});
+
+test('restoring a backup lets the restored show replace an unsaved one', async () => {
+  const list = read('components/ShowBackupsList.vue');
+  const build = (restoreShowBackup: () => Promise<void>) => {
+    const state = { hasUnsavedChanges: { value: true }, seenUnsaved: [] as boolean[] };
+    const restore = compile(section(list, 'async function restore(', '// Listed when Settings'), {
+      restoring: { value: false }, restoreError: { value: '' }, confirming: { value: 'x' },
+      hasUnsavedChanges: state.hasUnsavedChanges, showHeaderWarning() {}, t: (key: string) => key,
+      formatWhen: () => '', reason: (error: unknown) => String(error), refresh: async () => {},
+      server: { restoreShowBackup: async () => { state.seenUnsaved.push(state.hasUnsavedChanges.value); await restoreShowBackup(); } },
+    }, 'restore');
+    return { state, restore };
+  };
+  const done = build(async () => {});
+  await done.restore({ name: 'My Show 2026-11-20 10.00.00.dwcue', savedAt: 0, size: 1 });
+  assert.deepEqual(done.state.seenUnsaved, [false], 'the show it replaces is no longer held as unsaved');
+  assert.equal(done.state.hasUnsavedChanges.value, false);
+  const refused = build(async () => { throw new Error('A cue is playing.'); });
+  await refused.restore({ name: 'My Show 2026-11-20 10.00.00.dwcue', savedAt: 0, size: 1 });
+  assert.equal(refused.state.hasUnsavedChanges.value, true, 'a refused restore leaves the edits unsaved');
 });

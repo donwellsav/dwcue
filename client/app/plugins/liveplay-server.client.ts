@@ -80,6 +80,33 @@ export default defineNuxtPlugin(async () => {
       server.disconnect();
     }
 
+    // An engine that stopped for good (crashed past its own restart limit,
+    // was killed, or could not bind its port) is started again while the
+    // operator window's connection stays lost. It comes back without the
+    // show; the reconnect check then offers to reopen it. One that is still
+    // running but slow is left alone: the socket's own retries find it.
+    const isOperatorWindow = (() => {
+      const query = new URLSearchParams(window.location.search);
+      return query.get('quickPlayWindow') !== '1' && query.get('videoOutput') !== '1';
+    })();
+    let reviving = false;
+    const ENGINE_REVIVE_MS = 5000;
+    if (isOperatorWindow) setInterval(async () => {
+      if (reviving || !server.connectionLost) return;
+      reviving = true;
+      try {
+        const status = await ep.getStatus();
+        const cfg = status?.config ?? await ep.getConfig();
+        if (!cfg || cfg.mode === 'remote' || status?.running) return;
+        console.warn('[liveplay] the local engine is not running; starting it again');
+        await applyElectronConfig(cfg, status, true);
+      } catch (e) {
+        console.warn('[liveplay] could not start the local engine again:', e);
+      } finally {
+        reviving = false;
+      }
+    }, ENGINE_REVIVE_MS);
+
     // Re-target whenever main process tells us the config changed. Revision
     // fencing prevents a slow local start from overriding a newer remote pick.
     ep.onStateChange?.((payload: any) => {

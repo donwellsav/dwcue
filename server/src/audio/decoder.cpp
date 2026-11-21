@@ -29,6 +29,16 @@ extern "C" {
 namespace liveplay::audio {
 namespace {
 
+// Only the chosen audio stream is decoded: let the demuxer skip every other
+// stream's packets (for a video cue, the whole video bitstream) instead of
+// reading them from disk and throwing them away.
+void discard_other_streams(AVFormatContext* format, int keep) {
+    if (!format) return;
+    for (unsigned i = 0; i < format->nb_streams; ++i)
+        format->streams[i]->discard = static_cast<int>(i) == keep ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
+}
+
+
 using namespace std::string_view_literals;
 
 std::uint32_t read_be32(const std::uint8_t* data) {
@@ -631,6 +641,8 @@ struct FfmpegDataSource {
     bool seeking = false;
     bool demux_eof = false;
     bool drain_sent = false;
+    // Damaged frames skipped in a row; a whole run of them is a broken file.
+    int damaged_run = 0;
     std::vector<float> pcm;
     std::vector<ma_channel> channel_map;
     ma_uint64 pcm_offset = 0;
@@ -693,13 +705,20 @@ int64_t frame_position(const FfmpegDataSource& source, const AVFrame& frame) {
                         AVRational{1, static_cast<int>(source.sample_rate)});
 }
 
+// One damaged frame (a bad sector, a broken download) is skipped, as players
+// do: the cue plays on with a few milliseconds missing. Only a long run of
+// them, a file broken beyond that, stops the cue.
+constexpr int kMaxDamagedRun = 64;
+
 int decode_next(FfmpegDataSource& source) {
     source.pcm.clear();
     source.pcm_offset = 0;
 
     for (;;) {
         const int received = avcodec_receive_frame(source.codec, source.frame);
+        if (received == AVERROR_INVALIDDATA && ++source.damaged_run <= kMaxDamagedRun) continue;
         if (received == 0) {
+            source.damaged_run = 0;
             const int capacity = swr_get_out_samples(source.resampler, source.frame->nb_samples);
             if (capacity <= 0) {
                 av_frame_unref(source.frame);
@@ -774,6 +793,7 @@ int decode_next(FfmpegDataSource& source) {
             }
             const int sent = avcodec_send_packet(source.codec, source.packet);
             av_packet_unref(source.packet);
+            if (sent == AVERROR_INVALIDDATA && ++source.damaged_run <= kMaxDamagedRun) continue;
             if (sent < 0 && sent != AVERROR(EAGAIN)) return sent;
             break;
         }
@@ -861,6 +881,7 @@ ma_result on_seek(ma_data_source* data_source, ma_uint64 frame_index) {
         }
         avformat_close_input(&source.format);
         source.format = fresh;
+        discard_other_streams(source.format, source.stream_index);
     }
 
     avcodec_flush_buffers(source.codec);
@@ -1007,6 +1028,7 @@ ma_result open_ffmpeg(const char* path, ma_data_source** backend) {
     if (result >= 0) {
         result = av_find_best_stream(source->format, AVMEDIA_TYPE_AUDIO, -1, -1, nullptr, 0);
         source->stream_index = result;
+        if (result >= 0) discard_other_streams(source->format, result);
     }
 
     // Silent-video transport: no audio stream, but a presentable video stream

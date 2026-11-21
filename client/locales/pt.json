@@ -157,6 +157,11 @@
       "help": "Ajusta a imagem inteira proporcionalmente.",
       "invalid": "Informe dimensões de canvas em números inteiros de 64 a 16384 px e um tamanho de quadro de 25 a 100%."
     },
+    "videoPictureOffset": {
+      "title": "Sincronia da imagem",
+      "label": "Imagem adiantada em relação ao som (ms)",
+      "help": "Compensa um switcher, scaler ou projetor que atrasa a imagem: a imagem corre este tanto à frente do som. Meça o atraso com o cartão de teste Sincronização AV. De 0 a 500 ms."
+    },
     "videoOutputTestCard": "Mostrar cartão de teste",
     "videoOutputStatus": "Status da saída",
     "videoOutputStatusOff": "A saída de vídeo está desligada.",
@@ -325,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: saída de áudio bloqueada — sem callbacks do relógio.",
+    "lost": "{name}: saída de áudio perdida — a reconectar automaticamente.",
     "queued": "{name}: a saída continua bloqueada. Recuperação na fila; aguardando callbacks do relógio.",
     "starting": "{name}: a saída de áudio está a iniciar; aguardando callbacks do relógio.",
     "recoveryFailed": "{name}: não foi possível colocar a recuperação da saída de áudio na fila."
@@ -979,7 +985,6 @@
     "frameUnconfirmed": "Quadro não confirmado",
     "prepared": "Vídeo decodificado e posicionado em {seconds}s",
     "frameAge": "Quadro de {seconds}s atrás",
-    "captureAge": "Captura de {seconds}s atrás",
     "dropped": "Quadros perdidos: {count}",
     "states": {
       "idle": "Preto",
@@ -1303,5 +1308,11 @@
     "trash": "Lixeira",
     "recycleBin": "Lixeira",
     "editModeOnly": "Limpar mídia está disponível no Modo de Edição."
+  },
+  "replacePlaying": {
+    "title": "Um show está tocando",
+    "message": "Mudar para outro show para tudo o que está tocando.",
+    "keep": "Continuar tocando",
+    "switch": "Parar e mudar"
   }
 }

@@ -40,6 +40,11 @@ export function useCueMeters(cueId: () => CueId | null | undefined) {
   const transport = ref<number>(0);
   const playhead  = ref<number>(0);
 
+  // No frames arrive once the connection drops: fall to silence, as promised
+  // above, instead of holding the last level.
+  watch(() => server.connected && !server.connectionLost, (live) => {
+    if (!live) { sources.value = []; transport.value = 0; }
+  });
   const unsubscribe = server.onMeters((m) => {
     const id = cueId();
     if (!id) { sources.value = []; return; }
@@ -109,6 +114,16 @@ export function useMasterMeter(index: () => MasterChannelIndex | null | undefine
   const kwMsS    = ref(0);
   const gainReduction = ref(0);
 
+  const silence = () => {
+    peak.value = SILENT.peak_db; rms.value = SILENT.rms_db;
+    peakMax.value = SILENT.peak_max_db;
+    truePeak.value = SILENT.true_peak_db; truePeakMax.value = SILENT.true_peak_max_db;
+    kwMs.value = 0; kwMsS.value = 0;
+    gainReduction.value = 0;
+  };
+  // No frames arrive once the connection drops: fall to silence, as promised
+  // above, instead of holding the last level.
+  watch(() => server.connected && !server.connectionLost, (live) => { if (!live) silence(); });
   const unsubscribe = server.onMeters((m) => {
     const i = index();
     if (i == null) {

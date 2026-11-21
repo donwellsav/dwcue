@@ -157,6 +157,11 @@
       "help": "按比例缩放以显示完整画面。",
       "invalid": "请输入 64 至 16384 像素的整数画布尺寸，以及 25 至 100% 的画面尺寸。"
     },
+    "videoPictureOffset": {
+      "title": "画面同步",
+      "label": "画面领先声音 (ms)",
+      "help": "补偿会延迟画面的切换台、缩放器或投影机：画面比声音提前这么多。请用 AV 同步 测试卡测量延迟。0 至 500 毫秒。"
+    },
     "videoOutputTestCard": "显示测试卡",
     "videoOutputStatus": "输出状态",
     "videoOutputStatusOff": "视频输出已关闭。",
@@ -325,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}：音频输出停滞 — 未收到时钟回调。",
+    "lost": "{name}：音频输出已丢失 — 正在自动重新连接。",
     "queued": "{name}：输出仍处于停滞状态。恢复已排队，正在等待时钟回调。",
     "starting": "{name}：音频输出正在启动，正在等待时钟回调。",
     "recoveryFailed": "{name}：无法将音频输出恢复加入队列。"
@@ -979,7 +985,6 @@
     "frameUnconfirmed": "帧未确认",
     "prepared": "视频已解码，定位已在 {seconds} 秒稳定",
     "frameAge": "{seconds} 秒前的帧",
-    "captureAge": "{seconds} 秒前截取",
     "dropped": "丢帧：{count}",
     "states": {
       "idle": "黑场",
@@ -1303,5 +1308,11 @@
     "trash": "废纸篓",
     "recycleBin": "回收站",
     "editModeOnly": "清理媒体在编辑模式下可用。"
+  },
+  "replacePlaying": {
+    "title": "演出正在播放",
+    "message": "切换到其他演出会停止正在播放的所有内容。",
+    "keep": "继续播放",
+    "switch": "停止并切换"
   }
 }

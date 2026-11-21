@@ -5,20 +5,20 @@ import { parse } from '@vue/compiler-sfc';
 import * as Vue from 'vue';
 import ts from 'typescript';
 
-test('fresh captures do not claim frame progress and sparse/paused pictures do not trigger a freeze alarm', () => {
+test('sparse/paused pictures do not trigger a freeze alarm; missing health reports do', () => {
   const source = readFileSync(new URL('../app/components/VideoConfidenceChip.vue', import.meta.url), 'utf8');
   const script = parse(source).descriptor.scriptSetup!.content.replaceAll('import.meta.client', 'true');
   const compiled = ts.transpileModule(script, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const build = Function('deps', `const { ref, shallowRef, computed, watch, defineProps, useLocalization, useVideoStandbyCapture, onMounted, onUnmounted } = deps;
-    ${compiled}; return { status, now, lastFrameAt, stale, pictureLabel };`);
+    ${compiled}; return { status, now, stale, pictureLabel };`);
   const scope = Vue.effectScope();
   const chip = scope.run(() => build({ ...Vue, defineProps: () => ({ open: true }),
     useLocalization: () => ({ t: (key: string, args: unknown) => `${key}:${JSON.stringify(args)}` }),
     useVideoStandbyCapture: () => ({ openCapturePanel() {}, standbyCapturePending: Vue.ref(false) }),
     onMounted() {}, onUnmounted() {},
   }));
+  assert.equal(chip.stale.value, true, 'no health report yet is unconfirmed');
   chip.now.value = 100000;
-  chip.lastFrameAt.value = 100000;
   chip.status.value = { rendererReady: true, rendererResponsive: true, pictureHealth: {
     state: 'playing', receivedAt: 100000, presentedAgeMs: 60000, mediaTime: 3, droppedFrames: 1,
   } };
@@ -28,8 +28,7 @@ test('fresh captures do not claim frame progress and sparse/paused pictures do n
   assert.equal(chip.stale.value, false);
   assert.match(chip.pictureLabel.value, /states.paused/);
   chip.now.value += 4000;
-  chip.lastFrameAt.value = chip.now.value;
-  assert.equal(chip.stale.value, true, 'fresh capture cannot hide missing renderer health messages');
+  assert.equal(chip.stale.value, true, 'renderer health messages stopped arriving');
   chip.status.value = { ...chip.status.value, recoveryRequired: true };
   assert.match(chip.pictureLabel.value, /heldBlack/);
   scope.stop();

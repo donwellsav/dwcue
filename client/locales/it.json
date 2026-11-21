@@ -157,6 +157,11 @@
       "help": "Adatta l’immagine intera in proporzione.",
       "invalid": "Inserisci dimensioni del canvas come numeri interi da 64 a 16384 px e una dimensione del riquadro da 25 a 100%."
     },
+    "videoPictureOffset": {
+      "title": "Sincronia immagine",
+      "label": "Immagine in anticipo sul suono (ms)",
+      "help": "Compensa un mixer video, uno scaler o un proiettore che ritarda l'immagine: l'immagine anticipa il suono di questo valore. Misura il ritardo con il monoscopio Sincronizzazione AV. Da 0 a 500 ms."
+    },
     "videoOutputTestCard": "Mostra monoscopio",
     "videoOutputStatus": "Stato uscita",
     "videoOutputStatusOff": "L’uscita video è spenta.",
@@ -325,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: uscita audio bloccata — nessun callback del clock.",
+    "lost": "{name}: uscita audio persa — si riconnette da sola.",
     "queued": "{name}: l’uscita è ancora bloccata. Ripristino in coda; in attesa dei callback del clock.",
     "starting": "{name}: avvio dell’uscita audio; in attesa dei callback del clock.",
     "recoveryFailed": "{name}: impossibile accodare il ripristino dell’uscita audio."
@@ -979,7 +985,6 @@
     "frameUnconfirmed": "Fotogramma non confermato",
     "prepared": "Video decodificato e posizione raggiunta a {seconds}s",
     "frameAge": "Fotogramma di {seconds}s fa",
-    "captureAge": "Cattura di {seconds}s fa",
     "dropped": "Fotogrammi persi: {count}",
     "states": {
       "idle": "Nero",
@@ -1303,5 +1308,11 @@
     "trash": "Cestino",
     "recycleBin": "Cestino",
     "editModeOnly": "Pulisci media è disponibile in Modalità Modifica."
+  },
+  "replacePlaying": {
+    "title": "Uno spettacolo è in riproduzione",
+    "message": "Passare a un altro spettacolo ferma tutto ciò che è in riproduzione.",
+    "keep": "Continua la riproduzione",
+    "switch": "Ferma e cambia"
   }
 }

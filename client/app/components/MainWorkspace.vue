@@ -269,6 +269,7 @@
 </template>
 
 <script setup lang="ts">
+import { isTextEntry } from '~/utils/textEntry';
 import LevelCheckBar from './LevelCheckBar.vue';
 import PreShowCheckPanel from './PreShowCheckPanel.vue';
 import ProjectSettingsModal from './ProjectSettingsModal.vue';
@@ -489,6 +490,9 @@ watch(hasAssignedQuickPlays, (assigned) => {
 const quickPlayFullscreen = ref(false);
 const quickPlayDetached = ref(false);
 const quickPlayVisible = computed(() => !quickPlayClosed.value && !quickPlayDetached.value);
+// MIDI runs while a show is open in this window, whether or not QuickPlays
+// are shown, attached or detached: GO from a controller must always work.
+const { mount: mountMidi, unmount: unmountMidi } = useMidiController();
 const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useQuickPlayHotkeys({
   'toggle-settings': () => { showProjectSettings.value = !showProjectSettings.value; },
   'toggle-properties': () => {
@@ -649,15 +653,27 @@ function toggleQuickPlays() {
 // Monitor strip on the opposite side of the workspace.
 // Keeping the original selection rules here makes this a layout move only:
 // the faders still write the same server-authoritative stereo channel gains.
-const outputPairs = computed(() => {
-  const meters = server.meters;
-  const activeIndices = new Set(
-    (meters?.master_channels ?? []).map((meter: any) => meter.index as number),
-  );
+// Which other output pairs have signal, as a plain key: the strips rebuild
+// only when that changes, not on every meter frame (30 a second), which
+// re-rendered the whole workspace. The meters update themselves.
+const activeOverridePairs = computed(() => {
+  const active = new Set((server.meters?.master_channels ?? []).map((meter: any) => meter.index as number));
+  const pairs: number[] = [];
+  for (let index = 2; index < 30; index += 2) {
+    if (active.has(index) || active.has(index + 1)) pairs.push(index);
+  }
+  return pairs.join(',');
+});
 
-  const configuredId = (currentProject.value as any)?.settings?.defaultOutputDevice;
-  const mainLabel = configuredId
-    ? (server.devices.find((device: any) => device.id === configuredId)?.display_name ?? 'Main')
+const outputPairs = computed(() => {
+  const activeIndices = new Set(activeOverridePairs.value.split(',').filter(Boolean).map(Number));
+
+  // Main plays through the output chosen in Settings (kept by its display
+  // name), or the system default when none is chosen.
+  const configured = (currentProject.value as any)?.settings?.defaultOutputDevice;
+  const mainLabel = configured
+    ? (server.devices.find((device: any) => device.display_name === configured || device.id === configured)
+      ?.display_name ?? configured)
     : (server.devices.find((device: any) => device.is_default)?.display_name ?? 'Main');
   const pairs: Array<{
     key: string;
@@ -668,7 +684,7 @@ const outputPairs = computed(() => {
   const overridePairs: typeof pairs = [];
 
   for (let index = 2; index < 30; index += 2) {
-    if (activeIndices.has(index) || activeIndices.has(index + 1)) {
+    if (activeIndices.has(index)) {
       overridePairs.push({
         key: `out-${index}`,
         leftIndex: index,
@@ -850,12 +866,7 @@ watch(
 
 // True when the user is typing in a text field — selection/clipboard
 // shortcuts must defer to native editing behaviour there.
-const isTextInputFocused = (): boolean => {
-  const el = document.activeElement as HTMLElement | null;
-  if (!el) return false;
-  const tag = el.tagName.toLowerCase();
-  return tag === 'input' || tag === 'textarea' || el.isContentEditable;
-};
+const isTextInputFocused = (): boolean => isTextEntry(document.activeElement);
 
 const isForwardedFromVideoOutput = (e: KeyboardEvent): boolean =>
   (e as KeyboardEvent & { dwcueForwardedFromVideoOutput?: boolean })
@@ -952,6 +963,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 onMounted(() => {
   if (import.meta.client) {
     mountHotkeys();
+    void mountMidi();
     window.addEventListener('keydown', handleKeydown);
     panelObserver = new ResizeObserver(() => {
       visiblePanelHeight.value = lowerPanel.value?.offsetHeight ?? 0;
@@ -966,6 +978,7 @@ onUnmounted(() => {
   if (import.meta.client) {
     panelObserver?.disconnect();
     unmountHotkeys();
+    unmountMidi();
     window.removeEventListener('keydown', handleKeydown);
   }
 });

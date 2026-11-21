@@ -157,6 +157,11 @@
       "help": "Tüm görüntüyü orantılı olarak sığdırır.",
       "invalid": "64 ile 16384 px arasında tam sayı tuval boyutları ve 25 ile 100% arasında bir çerçeve boyutu girin."
     },
+    "videoPictureOffset": {
+      "title": "Görüntü senkronu",
+      "label": "Görüntü sesten önde (ms)",
+      "help": "Görüntüyü geciktiren bir görüntü mikseri, ölçekleyici veya projektörü telafi eder: görüntü sesten bu kadar önde gider. Gecikmeyi AV eşzamanlama test kartıyla ölçün. 0 ile 500 ms arası."
+    },
     "videoOutputTestCard": "Test kartını göster",
     "videoOutputStatus": "Çıkış durumu",
     "videoOutputStatusOff": "Video çıkışı kapalı.",
@@ -325,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: ses çıkışı durdu — saat geri çağrısı yok.",
+    "lost": "{name}: ses çıkışı kayboldu — kendiliğinden yeniden bağlanıyor.",
     "queued": "{name}: çıkış hâlâ durdu. Kurtarma sıraya alındı; saat geri çağrıları bekleniyor.",
     "starting": "{name}: ses çıkışı başlatılıyor; saat geri çağrıları bekleniyor.",
     "recoveryFailed": "{name}: ses çıkışı kurtarma işlemi sıraya alınamadı."
@@ -979,7 +985,6 @@
     "frameUnconfirmed": "Kare doğrulanmadı",
     "prepared": "Video çözüldü ve konum {seconds} sn'de oturdu",
     "frameAge": "Kare {seconds} sn önce",
-    "captureAge": "Yakalama {seconds} sn önce",
     "dropped": "Atlanan kareler: {count}",
     "states": {
       "idle": "Siyah",
@@ -1303,5 +1308,11 @@
     "trash": "Çöp Sepeti",
     "recycleBin": "Geri Dönüşüm Kutusu",
     "editModeOnly": "Medyayı Temizle, Düzenleme Modunda kullanılabilir."
+  },
+  "replacePlaying": {
+    "title": "Bir gösteri çalıyor",
+    "message": "Başka bir gösteriye geçmek çalan her şeyi durdurur.",
+    "keep": "Çalmaya devam et",
+    "switch": "Durdur ve geç"
   }
 }

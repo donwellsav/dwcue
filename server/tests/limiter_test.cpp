@@ -120,6 +120,37 @@ void test_bypass_preserves_latency_and_detector() {
           "detector keeps tracking while bypassed");
 }
 
+// Switching the limiter off while it is holding a loud cue down lets the
+// reduction go at its release rate: in one step it is a sudden jump in level.
+void test_bypass_releases_instead_of_jumping() {
+    Limiter limiter;
+    limiter.configure(48'000, -6.0f, 5.0f, 50.0f);
+    std::vector<Sample> loud(4'800, 1.0f);
+    limiter.process(loud.data(), loud.size(), true);
+    const float held = loud.back();
+    std::vector<Sample> after(48, 1.0f);
+    limiter.process(after.data(), after.size(), false);
+    check(held < 0.55f && after.front() < held * 1.05f,
+          "bypass starts from the level the limiter was holding");
+    std::vector<Sample> later(48'000, 1.0f);
+    limiter.process(later.data(), later.size(), false);
+    check(later.back() > 0.99f, "and releases to full level");
+
+    // A reset (an output reopened) starts clean, not partway up a ramp.
+    Limiter reopened;
+    reopened.configure(48'000, -6.0f, 5.0f, 50.0f);
+    std::vector<Sample> held_down(4'800, 1.0f);
+    reopened.process(held_down.data(), held_down.size(), true);
+    std::vector<Sample> ramping(48, 1.0f);
+    reopened.process(ramping.data(), ramping.size(), false);
+    reopened.reset();
+    std::vector<Sample> fresh(4'800, 0.25f);
+    reopened.process(fresh.data(), fresh.size(), false);
+    const auto first = std::find_if(fresh.begin(), fresh.end(), [](Sample x) { return x != 0.0f; });
+    check(first != fresh.end() && std::fabs(*first - 0.25f) < 1e-6f,
+          "a reset clears a bypass ramp in progress");
+}
+
 void test_limits_intersample_true_peak() {
     constexpr float pi = 3.14159265358979323846f;
     constexpr float ceiling_db = -1.0f;
@@ -176,6 +207,7 @@ int main() {
     test_below_ceiling_audio_keeps_unity_gain();
     test_live_ceiling_preserves_delay();
     test_bypass_preserves_latency_and_detector();
+    test_bypass_releases_instead_of_jumping();
     test_limits_intersample_true_peak();
     test_gain_envelope_cannot_create_true_peak_overs();
     std::printf("%s (%d failure%s)\n",

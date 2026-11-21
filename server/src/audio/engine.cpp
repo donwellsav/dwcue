@@ -18,6 +18,13 @@
 #include <random>
 #include <string>
 
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+#include <mach/thread_policy.h>
+#include <pthread.h>
+#include <pthread/qos.h>
+#endif
 #if defined(_WIN32)
 #  include <windows.h>   // SetThreadPriority
 #endif
@@ -33,6 +40,40 @@ namespace liveplay::audio {
 namespace {
 
 constexpr auto kDeviceBusyWait = std::chrono::milliseconds{500};
+// A device-list refresh holds the native device lock while the OS answers,
+// slow with many or Bluetooth outputs, and opening an output often starts
+// one just before. An open waits that out, still inside the operator's
+// 2.5 s for a GO, before its own bounded wait for the lock. (A cue start
+// waits with its playback lock released, so Stop All is never held up.)
+constexpr auto kCatalogRefreshWait = std::chrono::milliseconds{1500};
+
+// The render thread feeds every output with only a few blocks of headroom:
+// on macOS it runs under the time-constraint (real-time) policy audio
+// threads use, with a period of one block. It blocks between blocks, so it
+// cannot take the machine. Decode workers run at user-interactive priority.
+void make_render_thread_realtime(double block_seconds) noexcept {
+#if defined(__APPLE__)
+    mach_timebase_info_data_t timebase{};
+    if (mach_timebase_info(&timebase) != KERN_SUCCESS || timebase.numer == 0) return;
+    const double ticks_per_second = 1e9 * static_cast<double>(timebase.denom) / static_cast<double>(timebase.numer);
+    thread_time_constraint_policy_data_t policy{};
+    policy.period = static_cast<uint32_t>(block_seconds * ticks_per_second);
+    policy.computation = static_cast<uint32_t>(block_seconds * 0.25 * ticks_per_second);
+    policy.constraint = static_cast<uint32_t>(block_seconds * ticks_per_second);
+    policy.preemptible = TRUE;
+    if (thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_TIME_CONSTRAINT_POLICY,
+            reinterpret_cast<thread_policy_t>(&policy), THREAD_TIME_CONSTRAINT_POLICY_COUNT) != KERN_SUCCESS)
+        Logger::warn("Render thread: real-time scheduling was refused; running at normal priority.");
+#else
+    (void)block_seconds;
+#endif
+}
+
+void raise_decode_thread_priority() noexcept {
+#if defined(__APPLE__)
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+#endif
+}
 
 std::shared_ptr<std::timed_mutex> native_device_mutex() {
     static const auto mutex = std::make_shared<std::timed_mutex>();
@@ -137,6 +178,7 @@ AudioEngine::AudioEngine(EngineConfig cfg) : cfg_(cfg), device_lifecycle_mutex_(
     for (MasterChannelIndex i = 0; i < cfg_.master_channels; ++i) {
         output_channel_gains_[i].store(1.0f, std::memory_order_relaxed);
     }
+    master_applied_gains_.assign(cfg_.master_channels, 1.0f);
 
     // Publish an empty topology so the render thread has something to read.
     auto initial = std::make_shared<Topology>();
@@ -407,7 +449,20 @@ void AudioEngine::refresh_device_catalog(const std::shared_ptr<DeviceCatalog>& c
     catalog->ready.notify_all();
 }
 
-std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
+std::vector<DeviceInfo> AudioEngine::enumerate_devices_fresh(std::chrono::milliseconds wait) const {
+    {
+        std::lock_guard lock{device_catalog_->mutex};
+        if (!device_catalog_->refreshing) device_catalog_->next_refresh = {};   // due now
+    }
+    (void)enumerate_devices(true);
+    {
+        std::unique_lock lock{device_catalog_->mutex};
+        device_catalog_->ready.wait_for(lock, wait, [&] { return !device_catalog_->refreshing; });
+    }
+    return enumerate_devices(false);
+}
+
+std::vector<DeviceInfo> AudioEngine::enumerate_devices(bool refresh_catalog) const {
     std::vector<NativeDeviceInfo> hardware;
     bool refresh = false;
     bool has_snapshot;
@@ -415,7 +470,8 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
         std::lock_guard lock{device_catalog_->mutex};
         hardware = device_catalog_->devices;
         has_snapshot = device_catalog_->has_snapshot;
-        if (!device_catalog_->refreshing && std::chrono::steady_clock::now() >= device_catalog_->next_refresh) {
+        if (refresh_catalog && !device_catalog_->refreshing &&
+            std::chrono::steady_clock::now() >= device_catalog_->next_refresh) {
             device_catalog_->refreshing = refresh = true;
             device_catalog_->next_refresh = std::chrono::steady_clock::now() + std::chrono::seconds{1};
         }
@@ -446,12 +502,16 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
     const auto opened = snapshot_devices();
     std::vector<bool> opened_matched(opened ? opened->size() : 0, false);
 
-    const auto overlay_runtime = [](DeviceInfo& info, const Device& dev) {
+    // `listed`: whether the hardware itself is there. The last stream laid
+    // over an entry decides it, so a lost System Default stream cannot hide
+    // a chosen output running on the same hardware.
+    const auto overlay_runtime = [](DeviceInfo& info, const Device& dev, bool listed) {
         std::lock_guard state_lock{dev.state_mutex};
         // API mutations use the engine's opened-instance id, not the
         // enumeration-only hardware-name id.
         info.id = dev.id;
         info.is_open = true;
+        info.follows_default = dev.follows_default;
         info.recovery_request_id = dev.recovery_request.request_id();
         info.recovery_status = device_recovery_status_name(
             dev.recovery_request.status());
@@ -461,8 +521,8 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
             runtime_state == DeviceRuntimeState::Running &&
             dev.clock_master.load(std::memory_order_acquire);
         info.runtime_state = device_runtime_state_name(runtime_state);
-        if (runtime_state == DeviceRuntimeState::Disconnected || runtime_state == DeviceRuntimeState::Closing ||
-            runtime_state == DeviceRuntimeState::Interrupted) info.is_available = false;
+        info.is_available = listed && runtime_state != DeviceRuntimeState::Disconnected &&
+            runtime_state != DeviceRuntimeState::Closing && runtime_state != DeviceRuntimeState::Interrupted;
         info.underrun_count +=
             dev.underrun_count.load(std::memory_order_acquire);
         info.underrun_frames +=
@@ -492,14 +552,22 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
 
     for (const auto& entry : hardware) {
         auto info = entry.info;
+        const bool listed = entry.info.is_available;
+        // A chosen output's stream goes last so its id wins over a System
+        // Default stream on the same hardware; health adds up from both.
+        // Matched by the identity each output keeps, so one busy recovering
+        // is still listed against its hardware.
+        for (const bool default_pass : {true, false})
         if (opened) for (std::size_t i = 0; i < opened->size(); ++i) {
             const auto& dev = (*opened)[i];
-            if (dev->closing.load(std::memory_order_acquire) || !dev->ma_dev) continue;
-            std::unique_lock native_lock{dev->native_mutex, std::try_to_lock};
-            if (!native_lock.owns_lock() ||
-                !ma_device_id_equal(&dev->ma_dev->playback.id, &entry.native_id)) continue;
+            if (dev->follows_default != default_pass) continue;
+            if (dev->closing.load(std::memory_order_acquire)) continue;
+            {
+                std::lock_guard identity{dev->identity_mutex};
+                if (!dev->has_native_identity || !ma_device_id_equal(&dev->native_id, &entry.native_id)) continue;
+            }
             opened_matched[i] = true;
-            overlay_runtime(info, *dev);
+            overlay_runtime(info, *dev, listed);
         }
         out.emplace_back(std::move(info));
     }
@@ -511,7 +579,7 @@ std::vector<DeviceInfo> AudioEngine::enumerate_devices() const {
         info.channel_count = dev->channels;
         info.sample_rate = dev->sample_rate;
         info.is_available = !has_snapshot;
-        overlay_runtime(info, *dev);
+        overlay_runtime(info, *dev, !has_snapshot);
         out.emplace_back(std::move(info));
     }
     return out;
@@ -551,7 +619,7 @@ void AudioEngine::ma_notification_callback(
                 std::memory_order_release, std::memory_order_acquire)) {
             device->native_recovery_pending.store(
                 true, std::memory_order_release);
-            device->reset_requested.store(true, std::memory_order_release);
+            device->request_reset();
         }
     };
 
@@ -576,19 +644,25 @@ void AudioEngine::ma_notification_callback(
                 device->device_loss_count.fetch_add(
                     1, std::memory_order_relaxed);
             }
-            device->reset_requested.store(true, std::memory_order_release);
+            device->request_reset();
             break;
         }
         case ma_device_notification_type_rerouted:
             device->reroute_count.fetch_add(1, std::memory_order_relaxed);
+            {
+                // The OS moved the stream (System Default following a new
+                // default): its identity is now the new hardware's.
+                std::lock_guard identity{device->identity_mutex};
+                device->native_id = notification->pDevice->playback.id;
+            }
             await_verified_callback(DeviceRuntimeState::Disconnected);
-            device->reset_requested.store(true, std::memory_order_release);
+            device->request_reset();
             break;
         case ma_device_notification_type_interruption_began:
             device->interruption_count.fetch_add(1, std::memory_order_relaxed);
             device->runtime_state.store(
                 DeviceRuntimeState::Interrupted, std::memory_order_release);
-            device->reset_requested.store(true, std::memory_order_release);
+            device->request_reset();
             break;
         case ma_device_notification_type_interruption_ended:
             await_verified_callback(DeviceRuntimeState::Interrupted);
@@ -764,6 +838,16 @@ void AudioEngine::ma_data_callback(ma_device* dev,
     wake_render();
 }
 
+double AudioEngine::output_delay_seconds() const noexcept {
+    const auto devices = snapshot_devices();
+    if (devices) for (const auto& device : *devices) {
+        if (!device->clock_master.load(std::memory_order_acquire)) continue;
+        const auto frames = device->ring_occupancy_frames.load(std::memory_order_relaxed) + cfg_.render_block;
+        return static_cast<double>(frames) / static_cast<double>(cfg_.mix_sample_rate);
+    }
+    return 0.0;
+}
+
 DeviceId AudioEngine::open_default_device(ChannelCount output_channels) {
     return open_device_by_name("", output_channels);
 }
@@ -783,6 +867,9 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
     dev->channels     = output_channels;
     dev->sample_rate  = cfg_.mix_sample_rate;
     dev->display_name = name_substring.empty() ? "Default Output" : name_substring;
+    dev->follows_default = name_substring.empty();
+    dev->lifecycle    = device_lifecycle_mutex_;
+    dev->period_frames = static_cast<FrameCount>(cfg_.render_block);
     dev->ma_dev       = std::make_unique<ma_device>();
     dev->ring         = std::make_unique<ma_pcm_rb>();
     dev->callback_state = callback_state_;
@@ -812,11 +899,13 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         return {};
     }
     dev->clock_resampler_initialized = true;
-    // Center pre-callback occupancy above the half-ring by half a block,
-    // leaving equal room for independently scheduled writes and drains.
+    // Center pre-callback occupancy above the middle of the clock span by
+    // half a block, leaving equal room for independently scheduled writes and
+    // drains; the ring beyond that span is headroom (see kDeviceRingBlocks).
+    const auto clock_frames = static_cast<ma_uint32>(cfg_.render_block * kDeviceClockBlocks);
     dev->clock_controller.configure(
-        ring_frames,
-        (ring_frames + static_cast<ma_uint32>(cfg_.render_block)) / 2);
+        clock_frames,
+        (clock_frames + static_cast<ma_uint32>(cfg_.render_block)) / 2);
 
     ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
     cfg.playback.format    = ma_format_f32;
@@ -831,7 +920,13 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
 #ifdef LIVEPLAY_TEST_HOOKS
     device_context = device_test_context_;
 #endif
+    dev->native_context = device_context;
 
+    {
+        std::unique_lock catalog_lock{device_catalog_->mutex};
+        device_catalog_->ready.wait_for(catalog_lock, kCatalogRefreshWait,
+                                        [&] { return !device_catalog_->refreshing; });
+    }
     std::unique_lock lifecycle_lock{*device_lifecycle_mutex_, std::defer_lock};
     if (!lifecycle_lock.try_lock_for(kDeviceBusyWait)) {
         Logger::warn("Audio device initialization or cleanup is busy; could not open '{}'.", dev->display_name);
@@ -888,57 +983,91 @@ DeviceId AudioEngine::open_device_by_name(const std::string& name_substring,
         ma_pcm_rb_uninit(dev->ring.get());
         return {};
     }
+    note_callback_period(*dev);
     if (dev->ma_dev->playback.name[0] != '\0') {
         dev->display_name = dev->ma_dev->playback.name;
     }
 
-    // Resolve the native device first: "default" and an explicit device name
-    // can address the same hardware, which a request-string comparison misses.
-    // Opening it twice produces doubled/echoing audio.
+    // Share an open stream of the same kind. A chosen output and System
+    // Default never share, even on the same hardware: the OS moves the System
+    // Default stream when the computer's default output changes (a projector
+    // plugged in at the venue), and a chosen output must stay where it is.
+    // Program reaches only Main, so two streams on one device carry
+    // different audio, never the same audio twice.
     const auto backend = dev->ma_dev->pContext->backend;
     const auto native_id = dev->ma_dev->playback.id;
-    const auto matches_start = [&](const auto& start) {
-        return start.first == backend && ma_device_id_equal(&start.second, &native_id);
+    const bool follows_default = dev->follows_default;
+    {
+        std::lock_guard identity{dev->identity_mutex};
+        dev->native_backend = backend;
+        dev->native_id = native_id;
+        dev->has_native_identity = true;
+    }
+    // Every System Default stream follows the same default, wherever the OS
+    // has moved it, so only a chosen output compares hardware ids.
+    const auto same_stream = [&](const StartingDevice& start) {
+        return start.backend == backend && start.follows_default == follows_default &&
+            (follows_default || ma_device_id_equal(&start.id, &native_id));
     };
-    bool identity_pending = false;
+    const auto same_hardware = [&](const StartingDevice& start) {
+        return start.backend == backend && ma_device_id_equal(&start.id, &native_id);
+    };
+    // An output busy recovering (its native_mutex held through a reopen) is
+    // still compared, by the identity it keeps: an open never fails or waits
+    // because some other output is being retried.
     const auto acquire_duplicate_locked = [&]() -> DeviceId {
         const auto existing = std::find_if(devices_.begin(), devices_.end(), [&](const auto& candidate) {
-            if (candidate->closing.load(std::memory_order_acquire) || !candidate->ma_dev) return false;
-            std::unique_lock native_lock{candidate->native_mutex, std::try_to_lock};
-            if (!native_lock.owns_lock()) { identity_pending = true; return false; }
-            return candidate->ma_dev->pContext->backend == backend &&
-                ma_device_id_equal(&candidate->ma_dev->playback.id, &native_id) != MA_FALSE;
+            if (candidate->closing.load(std::memory_order_acquire)) return false;
+            if (candidate->follows_default != follows_default) return false;
+            std::lock_guard identity{candidate->identity_mutex};
+            return candidate->has_native_identity && candidate->native_backend == backend &&
+                (follows_default || ma_device_id_equal(&candidate->native_id, &native_id) != MA_FALSE);
         });
         if (existing == devices_.end()) return {};
         (*existing)->open_references.acquire();
         return (*existing)->id;
     };
-    const auto starting_locked = [&] {
-        return std::any_of(starting_devices_.begin(), starting_devices_.end(), matches_start);
+    const auto starting_locked = [&](const auto& matches) {
+        return std::any_of(starting_devices_.begin(), starting_devices_.end(), matches);
     };
     {
         std::unique_lock lock{mutex_};
-        const auto duplicate = acquire_duplicate_locked();
-        if (!duplicate.empty() || identity_pending || starting_locked()) {
-            lock.unlock();
-            lifecycle_lock.unlock();
-            retire_device(dev);
-            if (!duplicate.empty() || identity_pending) return duplicate;
-            lock.lock();
-            if (device_started_.wait_for(lock, kDeviceBusyWait, [&] { return !starting_locked(); }))
-                return acquire_duplicate_locked();
-            return {};
+        const auto deadline = std::chrono::steady_clock::now() + kDeviceBusyWait;
+        for (;;) {
+            const auto duplicate = acquire_duplicate_locked();
+            if (!duplicate.empty() || starting_locked(same_stream)) {
+                lock.unlock();
+                if (lifecycle_lock.owns_lock()) lifecycle_lock.unlock();
+                retire_device(dev);
+                if (!duplicate.empty()) return duplicate;
+                lock.lock();
+                if (device_started_.wait_until(lock, deadline, [&] { return !starting_locked(same_stream); }))
+                    return acquire_duplicate_locked();
+                return {};
+            }
+            if (!starting_locked(same_hardware)) break;
+            // The other kind is starting on this hardware. A driver stuck in
+            // its start must not take a second stream down with it: wait a
+            // moment, then give up instead of piling in.
+            if (lifecycle_lock.owns_lock()) lifecycle_lock.unlock();
+            if (!device_started_.wait_until(lock, deadline, [&] { return !starting_locked(same_hardware); })) {
+                lock.unlock();
+                retire_device(dev);
+                return {};
+            }
         }
-        starting_devices_.emplace_back(backend, native_id);
+        starting_devices_.push_back({backend, native_id, follows_default});
     }
     const auto finish_start = [&](const ma_device_id*) {
         std::lock_guard lock{mutex_};
-        std::erase_if(starting_devices_, matches_start);
+        std::erase_if(starting_devices_, [&](const StartingDevice& start) {
+            return same_hardware(start) && start.follows_default == follows_default;
+        });
         device_started_.notify_all();
     };
     const std::unique_ptr<const ma_device_id, decltype(finish_start)> reservation{&native_id, finish_start};
     // Release the lifecycle lock before entering the device's own start call.
-    lifecycle_lock.unlock();
+    if (lifecycle_lock.owns_lock()) lifecycle_lock.unlock();
 
     dev->scratch.assign(cfg_.render_block * output_channels, 0.0f);
     dev->output_mono.assign(cfg_.render_block, 0.0f);
@@ -1198,7 +1327,10 @@ void AudioEngine::play(const CueId& id) {
 
 void AudioEngine::stop(const CueId& id) {
     if (auto item = find_cue(id)) {
-        Logger::info("stop() cue='{}'", id.value);
+        // A GO with stop-all stops every other cue in the show; logging the
+        // ones already stopped flushed a line per cue ahead of every start.
+        if (item->stats().transport != TransportState::Stopped)
+            Logger::info("stop() cue='{}'", id.value);
         item->stop();
     }
 }
@@ -1286,6 +1418,27 @@ void AudioEngine::ensure_default_routing_for_cue(const CueId& cue) {
 
 MixerChannelId AudioEngine::ensure_main_output(const std::function<DeviceId()>& open, bool route_unassigned) {
     return ensure_default_routing_impl(route_unassigned ? std::nullopt : std::optional{CueId{}}, open);
+}
+
+AudioEngine::MainOutputBinding AudioEngine::retarget_main_output(const DeviceId& device) {
+    std::lock_guard lock{mutex_};
+    if (device.empty() || !find_device_locked(device)) return {};
+    if (pending_.master_destinations.size() < 2) pending_.master_destinations.resize(2);
+    MainOutputBinding binding{true, {}};
+    for (std::size_t i = 0; i < 2; ++i) {
+        auto& dest = pending_.master_destinations[i];
+        if (dest && binding.previous.empty()) binding.previous = dest->device;
+        dest = MasterDestination{device, static_cast<ChannelIndex>(i)};
+    }
+    rebuild_topology_locked();
+    return binding;
+}
+
+DeviceId AudioEngine::main_output_device() const {
+    std::lock_guard lock{mutex_};
+    for (std::size_t i = 0; i < 2 && i < pending_.master_destinations.size(); ++i)
+        if (pending_.master_destinations[i]) return pending_.master_destinations[i]->device;
+    return {};
 }
 
 MixerChannelId AudioEngine::ensure_default_routing_impl(
@@ -1691,7 +1844,79 @@ float AudioEngine::read_master_gain_reduction_db(MasterChannelIndex master) cons
     return 0.0f;
 }
 
-void AudioEngine::recover_device(const std::shared_ptr<Device>& owned, std::uint64_t generation) noexcept {
+// A lost output (unplugged and back, or cut off by the OS) cannot be started
+// again: the OS gives the returning device a new identity. Build a fresh
+// native stream for it, found by name (or the system default), and keep
+// everything else: the engine id, ring, routes and owners. Caller holds the
+// device's native mutex with the old stream stopped.
+// Record how often a just-initialised native stream calls back, at the mix
+// rate, so a long but regular period is not mistaken for a stall.
+void AudioEngine::note_callback_period(Device& device) noexcept {
+    if (!device.ma_dev) return;
+    const auto& playback = device.ma_dev->playback;
+    const std::uint32_t mix_rate = device.sample_rate;
+    const auto rate = playback.internalSampleRate > 0 ? playback.internalSampleRate : mix_rate;
+    const auto frames = static_cast<std::uint64_t>(playback.internalPeriodSizeInFrames) *
+        mix_rate / std::max<std::uint32_t>(1, rate);
+    device.callback_period_frames.store(static_cast<std::uint32_t>(frames), std::memory_order_relaxed);
+}
+
+bool AudioEngine::reopen_native_device(Device& device) noexcept {
+    try {
+        if (!device.lifecycle) return false;
+        std::unique_lock lifecycle{*device.lifecycle, std::defer_lock};
+        if (!lifecycle.try_lock_for(kDeviceBusyWait)) return false;
+        ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
+        cfg.playback.format    = ma_format_f32;
+        cfg.playback.channels  = device.channels;
+        cfg.sampleRate         = device.sample_rate;
+        cfg.dataCallback       = &AudioEngine::ma_data_callback;
+        cfg.notificationCallback = &AudioEngine::ma_notification_callback;
+        cfg.pUserData          = &device;
+        cfg.periodSizeInFrames = static_cast<ma_uint32>(device.period_frames);
+        ma_device_id id{};
+        if (!device.follows_default) {
+            ma_context local{};
+            ma_context* lookup = device.native_context;
+            const bool owns_lookup = lookup == nullptr;
+            if (owns_lookup && ma_context_init(nullptr, 0, nullptr, &local) != MA_SUCCESS) return false;
+            if (owns_lookup) lookup = &local;
+            ma_device_info* infos = nullptr;
+            ma_uint32 count = 0;
+            bool found = false;
+            if (ma_context_get_devices(lookup, &infos, &count, nullptr, nullptr) == MA_SUCCESS) {
+                for (ma_uint32 i = 0; i < count && !found; ++i) {
+                    if (device.display_name == infos[i].name) {
+                        id = infos[i].id;
+                        found = true;
+                    }
+                }
+            }
+            if (owns_lookup) ma_context_uninit(&local);
+            if (!found) return false;
+            cfg.playback.pDeviceID = &id;
+        }
+        auto fresh = std::make_unique<ma_device>();
+        if (ma_device_init(device.native_context, &cfg, fresh.get()) != MA_SUCCESS) return false;
+        ma_device_uninit(device.ma_dev.get());
+        device.ma_dev = std::move(fresh);
+        note_callback_period(device);
+        {
+            std::lock_guard identity{device.identity_mutex};
+            device.native_backend = device.ma_dev->pContext->backend;
+            device.native_id = device.ma_dev->playback.id;
+            device.has_native_identity = true;
+        }
+        device.native_reopens.fetch_add(1, std::memory_order_relaxed);
+        Logger::info("Output '{}' reopened after it was lost", device.display_name);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+void AudioEngine::recover_device(const std::shared_ptr<Device>& owned, std::uint64_t generation,
+                                 bool reopen) noexcept {
     auto& device = *owned;
     const auto state = device.callback_state;
     const auto current = [&] {
@@ -1708,7 +1933,7 @@ void AudioEngine::recover_device(const std::shared_ptr<Device>& owned, std::uint
             DeviceRuntimeState::Starting, std::memory_order_release);
         device.started.store(false, std::memory_order_release);
         device.clock_master.store(false, std::memory_order_release);
-        device.reset_requested.store(true, std::memory_order_release);
+        device.request_reset();
     }
     state->consumption_counter.fetch_add(1, std::memory_order_release);
     state->consumption_counter.notify_all();
@@ -1734,8 +1959,14 @@ void AudioEngine::recover_device(const std::shared_ptr<Device>& owned, std::uint
             device.clock_correction_ppm.store(0.0f, std::memory_order_relaxed);
             device.ring_occupancy_frames.store(0, std::memory_order_relaxed);
             device.reset_applied = true;
+            device.applied_reset_epoch = device.reset_epoch.load(std::memory_order_acquire);
             device.native_recovery_pending.store(false, std::memory_order_release);
+            // A lost output needs a fresh stream; a stalled one is restarted
+            // first and gets a fresh stream if it will not start.
+            if (reopen && reset_ok && current()) reset_ok = reopen_native_device(device);
             if (reset_ok && current()) started = ma_device_start(device.ma_dev.get()) == MA_SUCCESS;
+            if (!started && !reopen && reset_ok && current() && reopen_native_device(device))
+                started = current() && ma_device_start(device.ma_dev.get()) == MA_SUCCESS;
             if (started && !current()) {
                 ma_device_stop(device.ma_dev.get());
                 started = false;
@@ -1792,6 +2023,27 @@ void AudioEngine::device_watchdog_loop() {
                 catch (const std::system_error& error) {
                     device->recovery_in_progress.store(false, std::memory_order_seq_cst);
                     (void)device->recovery_request.fail(device->recovery_request.request_id());
+                    Logger::error("Device recovery worker failed: {}", error.what());
+                }
+                continue;
+            }
+            // A lost or stalled output is retried by itself every 2 s with a
+            // fresh native stream, one attempt at a time: when the device
+            // comes back, Main and every route on it play again. An output
+            // opened without a native stream (no lifecycle lock) has nothing
+            // to restart; it plays on when its callbacks resume.
+            const auto runtime = device->runtime_state.load(std::memory_order_acquire);
+            const auto now = std::chrono::steady_clock::now();
+            if (device->lifecycle && !device->closing.load(std::memory_order_acquire) &&
+                !device->recovery_in_progress.load(std::memory_order_acquire) &&
+                (runtime == DeviceRuntimeState::Disconnected || runtime == DeviceRuntimeState::Stalled) &&
+                now >= device->next_auto_recovery) {
+                device->next_auto_recovery = now + std::chrono::seconds{2};
+                device->recovery_in_progress.store(true, std::memory_order_seq_cst);
+                const auto generation = callback_state_->run_generation.load(std::memory_order_acquire);
+                try { std::thread([device, generation] { recover_device(device, generation, true); }).detach(); }
+                catch (const std::system_error& error) {
+                    device->recovery_in_progress.store(false, std::memory_order_seq_cst);
                     Logger::error("Device recovery worker failed: {}", error.what());
                 }
             }
@@ -1854,8 +2106,7 @@ void AudioEngine::device_watchdog_loop() {
                         device->device_recovery_count.fetch_add(
                             1, std::memory_order_relaxed);
                     }
-                    device->reset_requested.store(
-                        true, std::memory_order_release);
+                    device->request_reset();
                     wake_render = true;
                 }
             } else if (liveness == CallbackLivenessState::Stalled &&
@@ -1865,8 +2116,7 @@ void AudioEngine::device_watchdog_loop() {
                         std::memory_order_acq_rel, std::memory_order_acquire)) {
                     device->device_loss_count.fetch_add(
                         1, std::memory_order_relaxed);
-                    device->reset_requested.store(
-                        true, std::memory_order_release);
+                    device->request_reset();
                     const auto recovery_request_id =
                         device->started_recovery_request_id;
                     if (recovery_request_id != 0) {
@@ -1887,10 +2137,9 @@ void AudioEngine::device_watchdog_loop() {
 }
 
 bool AudioEngine::reset_device_if_requested(Device& device) noexcept {
-    if (!device.reset_requested.load(std::memory_order_acquire) ||
-        device.reset_applied) {
-        return true;
-    }
+    if (!device.reset_requested.load(std::memory_order_acquire)) return true;
+    const auto epoch = device.reset_epoch.load(std::memory_order_acquire);
+    if (device.reset_applied && epoch == device.applied_reset_epoch) return true;
 
     // The callback never waits for a reset. Symmetrically, the render thread
     // does not touch ring/resampler state until it can claim this flag.
@@ -1925,6 +2174,7 @@ bool AudioEngine::reset_device_if_requested(Device& device) noexcept {
     device.clock_correction_ppm.store(0.0f, std::memory_order_relaxed);
     device.ring_occupancy_frames.store(0, std::memory_order_relaxed);
     device.reset_applied = true;
+    device.applied_reset_epoch = epoch;
     return true;
 }
 
@@ -1945,6 +2195,7 @@ bool AudioEngine::reset_device_if_requested(Device& device) noexcept {
 //   * When no healthy device exists we use a coarse timer so stopped-device
 //     state and later native recovery are still observed.
 void AudioEngine::render_loop() {
+    make_render_thread_realtime(static_cast<double>(cfg_.render_block) / static_cast<double>(cfg_.mix_sample_rate));
 #if defined(LIVEPLAY_HAVE_SSE_DENORMAL)
     // Flush-to-zero + denormals-are-zero for this thread. The limiter and meter
     // states decay exponentially toward zero during silence and can enter
@@ -2015,13 +2266,21 @@ void AudioEngine::render_loop() {
                             dev->device_loss_count.fetch_add(
                                 1, std::memory_order_relaxed);
                         }
-                        dev->reset_requested.store(
-                            true, std::memory_order_release);
+                        dev->request_reset();
                     }
                 }
 
                 const auto now = CallbackLivenessMonitor::Clock::now();
                 const auto callback_grace = block_duration * 2;
+                // An output is quiet for longer than this only when stalled:
+                // two of its own callback periods, two render blocks at least.
+                const auto grace_for = [&](const Device& dev) {
+                    const auto period = static_cast<long long>(
+                        dev.callback_period_frames.load(std::memory_order_relaxed));
+                    const auto own = std::chrono::nanoseconds{
+                        2 * period * 1'000'000'000LL / static_cast<long long>(cfg_.mix_sample_rate)};
+                    return std::max<std::chrono::nanoseconds>(callback_grace, own);
+                };
                 std::shared_ptr<Device> first_healthy, draining_secondary;
                 for (const auto& dev : *device_snap) {
                     const bool healthy =
@@ -2040,7 +2299,7 @@ void AudioEngine::render_loop() {
                     if (dev->clock_master.load(std::memory_order_acquire)) {
                         clock_master = dev;
                     } else if (!draining_secondary &&
-                               now - dev->render_callback_progress < callback_grace &&
+                               now - dev->render_callback_progress < grace_for(*dev) &&
                                !dev->reset_requested.load(std::memory_order_acquire) &&
                                dev->ring_occupancy_frames.load(std::memory_order_relaxed) <=
                                    cfg_.render_block * 2) {
@@ -2052,7 +2311,7 @@ void AudioEngine::render_loop() {
                 if (!clock_master) {
                     clock_master = first_healthy;
                 } else if (draining_secondary &&
-                           now - clock_master->render_callback_progress >= callback_grace) {
+                           now - clock_master->render_callback_progress >= grace_for(*clock_master)) {
                     clock_master = draining_secondary;
                 }
 
@@ -2064,6 +2323,7 @@ void AudioEngine::render_loop() {
                     if (was_master && !should_be_master) {
                         // Demotion activates the clock adapter, so reset its
                         // phase before the device resumes as a secondary.
+                        dev->reset_epoch.fetch_add(1, std::memory_order_acq_rel);
                         if (!dev->reset_requested.exchange(
                                 true, std::memory_order_acq_rel) &&
                             dev->runtime_state.load(
@@ -2077,6 +2337,10 @@ void AudioEngine::render_loop() {
             }
 
             if (!clock_master) {
+                // Nothing renders without a running output, so stop fades
+                // cannot advance: finish explicit stops so Stop All works.
+                for (const auto& entry : snap->items)
+                    if (entry.item) entry.item->settle_stop_without_output();
                 std::this_thread::sleep_for(block_duration);
                 continue;
             }
@@ -2179,6 +2443,7 @@ void AudioEngine::decode_loop(const std::shared_ptr<DecodeState>& state) {
                         state->shutdown.load(std::memory_order_acquire)) break;
                     if (!state->workers.insert(item.get()).second) continue;
                     std::thread([state, item] {
+                        raise_decode_thread_priority();
                         while (state->active.load(std::memory_order_acquire) &&
                                !state->shutdown.load(std::memory_order_acquire)) {
                             const auto transport = item->stats().transport;
@@ -2244,7 +2509,14 @@ void AudioEngine::render_one_block(const Topology& topo) {
             }
             const auto stats = follow->source->stats();
             if (stats.transport == TransportState::Paused) continue;
-            if (stats.playhead_frame >= follow->end_frame) {
+            // The follow starts when its source has finished: at the file's
+            // end, or once the fade from a soft Out point has played out. A
+            // compressed file's length is an estimate, so the end frame only
+            // marks where to split the block: firing there cut a fade (and
+            // started the next cue a fade early), cut audio still playing, or
+            // missed a source that ended short of it. A manual stop or a
+            // decode error has already cancelled the follow above.
+            if (stats.transport == TransportState::Stopped) {
                 auto expected = PreparedFollow::State::Armed;
                 if (!follow->status.compare_exchange_strong(
                         expected, PreparedFollow::State::Firing,
@@ -2259,10 +2531,7 @@ void AudioEngine::render_one_block(const Topology& topo) {
                 follow->status.store(fired ? PreparedFollow::State::Fired
                     : retry ? PreparedFollow::State::Armed : PreparedFollow::State::Cancelled,
                                       std::memory_order_release);
-            } else if (stats.transport == TransportState::Stopped) {
-                follow->status.store(PreparedFollow::State::Cancelled,
-                                      std::memory_order_release);
-            } else {
+            } else if (stats.playhead_frame < follow->end_frame) {
                 count = std::min<std::size_t>(
                     count, follow->end_frame - stats.playhead_frame);
             }
@@ -2304,10 +2573,19 @@ void AudioEngine::render_one_block(const Topology& topo) {
         const float gain_lin = m->peek_gain_linear();
         const bool  audible  = !m->is_muted() && (!any_soloed || m->is_soloed());
         const float effective = audible ? gain_lin : 0.0f;
+        // Ramp from where the last block ended: a fader move, mute or solo
+        // that jumped at the block edge clicked.
+        const float last = m->exchange_applied_gain(effective);
+        const float from = last < 0.0f ? effective : last;
+        const float step = (effective - from) / static_cast<float>(block);
         for (ChannelIndex lane = 0; lane < kMixerLanes; ++lane) {
             Sample* buf =
                 topo.mixer_accumulators[i * kMixerLanes + lane].data();
-            for (std::size_t s = 0; s < block; ++s) buf[s] *= effective;
+            if (step == 0.0f) {
+                for (std::size_t s = 0; s < block; ++s) buf[s] *= effective;
+            } else {
+                for (std::size_t s = 0; s < block; ++s) buf[s] *= from + step * static_cast<float>(s + 1);
+            }
             m->update_meter(lane, buf, block);
         }
     }
@@ -2327,15 +2605,18 @@ void AudioEngine::render_one_block(const Topology& topo) {
     const float mg = master_gain_linear_.load(std::memory_order_acquire);
     for (MasterChannelIndex mc = 0; mc < cfg_.master_channels; ++mc) {
         Sample* buf = topo.master_accumulators[mc].data();
-        // Global master gain
-        if (mg != 1.0f) {
-            for (std::size_t s = 0; s < block; ++s) buf[s] *= mg;
-        }
-        // Per-output-channel gain (independent fader per device output pair)
+        // Global master gain times the output pair's own fader, ramped from
+        // where the last block ended so a fader move never jumps.
         const float og =
             output_channel_gains_[mc].load(std::memory_order_acquire);
-        if (og != 1.0f) {
-            for (std::size_t s = 0; s < block; ++s) buf[s] *= og;
+        const float gain = mg * og;
+        const float from = master_applied_gains_[mc];
+        master_applied_gains_[mc] = gain;
+        if (from != gain) {
+            const float step = (gain - from) / static_cast<float>(block);
+            for (std::size_t s = 0; s < block; ++s) buf[s] *= from + step * static_cast<float>(s + 1);
+        } else if (gain != 1.0f) {
+            for (std::size_t s = 0; s < block; ++s) buf[s] *= gain;
         }
         master_state_[mc].meter->push_block(buf, block);
     }
@@ -2408,7 +2689,8 @@ void AudioEngine::render_one_block(const Topology& topo) {
             dev->overrun_count.fetch_add(
                 1, std::memory_order_relaxed);
             dev->reset_applied = false;
-            if (!dev->reset_requested.exchange(
+            dev->reset_epoch.fetch_add(1, std::memory_order_acq_rel);
+                        if (!dev->reset_requested.exchange(
                     true, std::memory_order_acq_rel)) {
                 dev->hard_resync_count.fetch_add(
                     1, std::memory_order_relaxed);

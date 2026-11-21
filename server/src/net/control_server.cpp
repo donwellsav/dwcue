@@ -39,6 +39,10 @@
 #include <curl/curl.h>
 
 #include <algorithm>
+#if defined(__APPLE__)
+#include <pthread.h>
+#include <pthread/qos.h>
+#endif
 #include <array>
 #include <atomic>
 #include <cctype>
@@ -235,6 +239,29 @@ struct ControlServer::Impl {
     std::unordered_map<std::string, std::string> ws_command_results;
     std::unordered_map<std::string, std::shared_future<std::string>> ws_commands_inflight;
     std::deque<std::string>                     ws_command_order;
+
+    // WebSocket commands run on their own workers, never on the server's
+    // connection threads. A GO waiting on storage (a drive that stopped
+    // answering) then holds only its own connection: a Stop All, which may
+    // be handled on the same connection thread, and every other client go
+    // on. One connection's commands still run one at a time, in order.
+    // Connections are told apart by id, so a reply never reaches another
+    // connection that took a closed one's address.
+    struct WsCommand {
+        crow::websocket::connection* conn = nullptr;
+        std::uint64_t id = 0;
+        std::string remote_ip;
+        std::string data;
+    };
+    std::unordered_map<crow::websocket::connection*, std::uint64_t> ws_client_ids; // ws_mutex
+    std::uint64_t                               ws_next_client_id{0};              // ws_mutex
+    std::mutex                                  ws_work_mutex;
+    std::condition_variable                     ws_work_cv;
+    std::unordered_map<std::uint64_t, std::deque<WsCommand>> ws_work_queues;
+    std::deque<std::uint64_t>                   ws_work_ready;
+    std::unordered_set<std::uint64_t>           ws_work_busy;
+    std::vector<std::thread>                    ws_workers;
+    bool                                        ws_work_stop{false};
 
     // Async waveform-generation queue. REST handler enqueues a task and
     // returns immediately; waveform_worker() processes them one at a time and
@@ -810,6 +837,13 @@ bool ControlServer::start() {
     }
     impl_->waveform_thread  = std::thread([this] { waveform_worker(); });
     impl_->http_thread = std::thread([this] { http_action_worker(); });
+    {
+        std::lock_guard lock{impl_->ws_work_mutex};
+        impl_->ws_work_stop = false;
+    }
+    constexpr int kWsCommandWorkers = 4;
+    for (int i = 0; i < kWsCommandWorkers; ++i)
+        impl_->ws_workers.emplace_back([this] { ws_command_worker(); });
     Logger::success("Control server listening on {}:{}", cfg_.bind_address, cfg_.port);
     return true;
 }
@@ -833,6 +867,15 @@ void ControlServer::stop() {
         impl_->http_generation.fetch_add(1);
     }
     impl_->http_cv.notify_one();
+    {
+        std::lock_guard lock{impl_->ws_work_mutex};
+        impl_->ws_work_stop = true;
+        impl_->ws_work_queues.clear();
+        impl_->ws_work_ready.clear();
+    }
+    impl_->ws_work_cv.notify_all();
+    for (auto& worker : impl_->ws_workers) if (worker.joinable()) worker.join();
+    impl_->ws_workers.clear();
     if (impl_->broadcast_thread.joinable()) impl_->broadcast_thread.join();
     if (impl_->waveform_thread.joinable())  impl_->waveform_thread.join();
     if (impl_->http_thread.joinable()) impl_->http_thread.join();
@@ -854,6 +897,7 @@ void ControlServer::broadcast_loop() {
 
     using CueStateSignature = std::pair<audio::TransportState, std::optional<long long>>;
     std::unordered_map<std::string, CueStateSignature> prev_cue_states;
+    std::unordered_map<std::string, std::string> prev_cue_items;  // cue id -> item uuid
 
     // Absolute-deadline schedule. sleep_for(period - work) systematically
     // undershoots the target rate on Windows (~15.6 ms sleep granularity
@@ -868,6 +912,7 @@ void ControlServer::broadcast_loop() {
     std::unordered_map<std::string, DeviceStateSignature> prev_device_states;
     auto next_download_cleanup = clock::now() + std::chrono::minutes(1);
     auto next_upload_cleanup = clock::now() + std::chrono::minutes(1);
+    auto next_device_list_rebuild = clock::now();
 
     while (running_.load(std::memory_order_acquire)) {
         // Guard the entire tick: an exception escaping this thread would call
@@ -892,6 +937,8 @@ void ControlServer::broadcast_loop() {
         payload["stop_revision"] = state_.stop_revision();
 
         json item_meters = json::array();
+        // What is heard trails the render position by the main output's queue.
+        const double heard_delay = engine_.output_delay_seconds();
         // Helper: append a meter frame for an arbitrary engine cue. Used for
         // both project cues and the preview cue (which is engine-only, not in
         // state_.list_cues()).
@@ -904,6 +951,7 @@ void ControlServer::broadcast_loop() {
             m["cue_id"]            = cue_id.value;
             m["transport"]         = static_cast<int>(stats.transport);
             m["playhead_seconds"]  = stats.playhead_seconds;
+            m["audible_seconds"]   = std::max(0.0, stats.playhead_seconds - heard_delay);
             json srcs = json::array();
             for (audio::ChannelIndex c = 0; c < item->source_channel_count(); ++c) {
                 auto snap = item->source_meter_consume(c);
@@ -981,13 +1029,16 @@ void ControlServer::broadcast_loop() {
         // trigger order. Publish that change even if transport stays Playing.
         std::vector<std::string> cue_state_events;
         try {
+            std::unordered_set<std::string> listed;
             for (auto& cue : state_.list_cues()) {
+                listed.insert(cue.id.value);
                 const auto item = engine_.find_cue(cue.id);
                 const auto stats = item ? item->stats() : audio::PlaybackItemStats{};
                 auto& prev = prev_cue_states[cue.id.value];
                 if (stats.transport == audio::TransportState::Stopped &&
                     prev.first == audio::TransportState::Stopped) continue;
                 const auto uuid = state_.cue_to_item_uuid(cue.id);
+                if (uuid) prev_cue_items[cue.id.value] = *uuid;
                 const auto seq = uuid ? state_.item_trigger_seq(*uuid) : std::nullopt;
                 const CueStateSignature current{stats.transport, seq};
                 if (current == prev) continue;
@@ -1003,13 +1054,40 @@ void ControlServer::broadcast_loop() {
                 cue_state_events.push_back(evt.dump());
                 prev = current;
             }
+            // A cue retired while it played (another show opened, a playing
+            // cue deleted, its media replaced, or moved between folders)
+            // leaves the list with no Stopped edge: send one, or every client
+            // keeps showing it as playing, with a Stop button that does nothing.
+            for (auto it = prev_cue_states.begin(); it != prev_cue_states.end();) {
+                if (listed.contains(it->first)) { ++it; continue; }
+                if (it->second.first != audio::TransportState::Stopped) {
+                    json evt{
+                        {"type", "cue_state"},
+                        {"cue_id", it->first},
+                        {"transport", static_cast<int>(audio::TransportState::Stopped)},
+                        {"playhead_seconds", 0.0},
+                    };
+                    if (const auto uuid = prev_cue_items.find(it->first); uuid != prev_cue_items.end())
+                        evt["item_uuid"] = uuid->second;
+                    // The pass it ends: the video output ignores a stop without it.
+                    if (it->second.second) evt["trigger_seq"] = *it->second.second;
+                    cue_state_events.push_back(evt.dump());
+                }
+                prev_cue_items.erase(it->first);
+                it = prev_cue_states.erase(it);
+            }
         } catch (const std::exception& e) {
             Logger::error("broadcast_loop: failed to build cue_state events: {}", e.what());
         }
 
         std::vector<std::string> device_state_events;
         try {
-            for (const auto& device : engine_.enumerate_devices()) {
+            // Live device state every tick from the cached list; rebuild the
+            // hardware list (so newly plugged devices appear) every 5 s, not
+            // every second: a rebuild holds the device lock an output needs.
+            const bool rebuild_device_list = clock::now() >= next_device_list_rebuild;
+            if (rebuild_device_list) next_device_list_rebuild = clock::now() + std::chrono::seconds(5);
+            for (const auto& device : engine_.enumerate_devices(rebuild_device_list)) {
                 const auto signature = DeviceStateSignature{
                     device.runtime_state,
                     device.is_clock_master,
@@ -1056,6 +1134,7 @@ void ControlServer::broadcast_loop() {
             if (batch_epoch != impl_->http_generation.load(std::memory_order_acquire)) {
                 // Rebuild fresh edges next tick; reconnect snapshots stay pending.
                 prev_cue_states.clear();
+                prev_cue_items.clear();
                 prev_device_states.clear();
             } else for (auto* c : impl_->ws_clients) {
                 try {
@@ -1210,6 +1289,13 @@ void ControlServer::http_action_worker() {
 // (which can take a few seconds for long files) then broadcasts a
 // waveform_ready doc_patch so every connected client can update its UI.
 void ControlServer::waveform_worker() {
+    // Waveform and loudness analysis is background work: on a first open it
+    // decodes every file in the show while cues may already be playing.
+#if defined(__APPLE__)
+    pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
+#elif defined(_WIN32)
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+#endif
     for (;;) {
         Impl::WaveformTask task;
         {
@@ -1404,7 +1490,7 @@ static std::vector<std::string> selection_anchors(audio::AudioEngine& engine,
 // Returns a non-empty string if a direct reply to this specific client is
 // needed (pong, error). The caller sends it under ws_mutex so it doesn't
 // race with broadcast_loop's concurrent send_text calls on the same conn.
-static std::string handle_ws_message(crow::websocket::connection& conn,
+static std::string handle_ws_message(const std::string& remote_ip,
                                      const std::string& msg,
                                      audio::AudioEngine& engine,
                                      core::ProjectState& state,
@@ -1413,7 +1499,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                                      std::unordered_map<std::string, std::string>& command_results,
                                      std::unordered_map<std::string, std::shared_future<std::string>>& commands_inflight,
                                      std::deque<std::string>& command_order) {
-    Logger::api_request("Client ({}) -> Server ({}) : {}", conn.get_remote_ip(), server_addr, msg);
+    Logger::api_request("Client ({}) -> Server ({}) : {}", remote_ip, server_addr, msg);
 
     json j;
     try { j = json::parse(msg); }
@@ -1658,7 +1744,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                     return command_error("gain: cue not loaded into engine");
                 const float db = j.value("db", 0.0f);
                 Logger::api_request("Client ({}) -> Server ({}) : WS gain cue_id={} db={:.1f}",
-                                    conn.get_remote_ip(), server_addr, cue->value, db);
+                                    remote_ip, server_addr, cue->value, db);
                 state.set_cue_gain_db(*cue, db);
             } else return command_error("gain: no valid cue target");
         }
@@ -1670,7 +1756,7 @@ static std::string handle_ws_message(crow::websocket::connection& conn,
                 const auto in_ms  = j.value("in_ms",  (long long)0);
                 const auto out_ms = j.value("out_ms", (long long)0);
                 Logger::api_request("Client ({}) -> Server ({}) : WS fade cue_id={} in={}ms out={}ms",
-                                    conn.get_remote_ip(), server_addr, cue->value, in_ms, out_ms);
+                                    remote_ip, server_addr, cue->value, in_ms, out_ms);
                 state.set_cue_fade_in (*cue, std::chrono::milliseconds{in_ms});
                 state.set_cue_fade_out(*cue, std::chrono::milliseconds{out_ms});
             } else return command_error("fade: no valid cue target");
@@ -2138,8 +2224,18 @@ void ControlServer::install_routes() {
             Logger::api_request("Client ({}) -> Server ({}) : {} /api/transport/go",
                                 req.remote_ip_address, impl_->server_addr,
                                 crow::method_name(req.method));
-            const std::string uuid = state_.go();
+            // A press made before a Stop All must not land after it, even if
+            // it waited behind a start that was reading media.
+            const auto stop_revision = state_.stop_revision();
+            const std::string uuid = state_.go(stop_revision);
             if (uuid.empty()) {
+                if (state_.stop_revision() != stop_revision)
+                    return json_err(409, "Stop All came first; GO was not run");
+                const auto next = state_.state_summary()["next"];
+                if (next.is_object() && !next.value("itemUuid", std::string{}).empty()) {
+                    Logger::warn("GO — Up Next {} could not start", next.value("itemUuid", std::string{}));
+                    return json_err(409, "Up Next could not start");
+                }
                 Logger::warn("GO — nothing armed or derivable to play");
                 return json_err(404, "nothing armed or playing to GO to");
             }
@@ -2198,11 +2294,14 @@ void ControlServer::install_routes() {
     CROW_ROUTE(app, "/api/transport/play_selected")
         .methods(crow::HTTPMethod::Post)
         ([this]{
+            const auto stop_revision = state_.stop_revision();
             const auto uuid = state_.selected_item_uuid();
             if (uuid.empty()) return json_err(404, "nothing is selected");
             Logger::playback("PLAY SELECTED: {}", item_playback_info(uuid, state_));
-            if (!state_.trigger_item(uuid))
-                return json_err(404, "item not loaded into engine");
+            if (!state_.trigger_item(uuid, -1.0, audio::CueId{}, true, stop_revision))
+                return state_.stop_revision() != stop_revision
+                    ? json_err(409, "Stop All came first; the cue was not started")
+                    : json_err(404, "item not loaded into engine");
             return json_ok(json({{"ok", true}, {"itemUuid", uuid}}));
         });
 
@@ -2213,27 +2312,27 @@ void ControlServer::install_routes() {
     CROW_ROUTE(app, "/api/transport/pause_toggle")
         .methods(crow::HTTPMethod::Post)
         ([this]{
+            const auto stop_revision = state_.stop_revision();
             const json summary = state_.state_summary();
             std::vector<std::string> paused, sounding;
             for (const auto& p : summary.value("playing", json::array())) {
                 const auto uuid = p.value("itemUuid", std::string{});
                 if (uuid.empty()) continue;
+                const auto transport = p.value("transport", std::string{});
                 if (p.value("paused", false)) paused.push_back(uuid);
-                else                          sounding.push_back(uuid);
+                // A cue fading out (a stop, Stop All, a crossfade) is on its way
+                // out: holding it would leave it sounding.
+                else if (transport == "playing" || transport == "fading_in") sounding.push_back(uuid);
             }
             if (paused.empty() && sounding.empty())
                 return json_err(404, "nothing is on air");
             const bool resuming = !paused.empty();
-            for (const auto& uuid : resuming ? paused : sounding) {
-                if (auto cue = state_.item_to_cue_id(uuid)) {
-                    if (auto pi = engine_.find_cue(*cue)) {
-                        (void)state_.set_item_paused(uuid, !resuming);
-                    }
-                }
-            }
+            std::size_t changed = 0;
+            for (const auto& uuid : resuming ? paused : sounding)
+                if (state_.set_item_paused(uuid, !resuming, stop_revision)) ++changed;
             Logger::playback("PAUSE TOGGLE: {} {} item(s)",
-                             resuming ? "resumed" : "paused",
-                             resuming ? paused.size() : sounding.size());
+                             resuming ? "resumed" : "paused", changed);
+            if (changed == 0) return json_err(409, "nothing was paused or resumed");
             return json_ok(json({{"ok", true}, {"resumed", resuming}}));
         });
 
@@ -2286,11 +2385,14 @@ void ControlServer::install_routes() {
                 }
                 if (path.empty())
                     return json_err(400, "index must be a non-empty array of child indices");
+                const auto stop_revision = state_.stop_revision();
                 const std::string uuid = state_.item_uuid_by_index(path);
                 if (uuid.empty()) return json_err(404, "no item at that index");
                 Logger::playback("TRIGGER: {}", item_playback_info(uuid, state_));
-                if (!state_.trigger_item(uuid))
-                    return json_err(404, "item not loaded into engine");
+                if (!state_.trigger_item(uuid, -1.0, audio::CueId{}, true, stop_revision))
+                    return state_.stop_revision() != stop_revision
+                        ? json_err(409, "Stop All came first; the cue was not started")
+                        : json_err(404, "item not loaded into engine");
                 return json_ok(json({{"ok", true}, {"uuid", uuid}, {"index", path}}));
             } catch (const std::exception& e) { return json_err(400, e.what()); }
         });
@@ -2302,11 +2404,14 @@ void ControlServer::install_routes() {
             Logger::api_request("Client ({}) -> Server ({}) : {} /api/transport/quickplay/{}/play",
                                 req.remote_ip_address, impl_->server_addr,
                                 crow::method_name(req.method), slot);
+            const auto stop_revision = state_.stop_revision();
             const std::string uuid = state_.quick_play_slot_item_uuid(slot);
             if (uuid.empty()) return json_err(404, "QuickPlay slot is empty");
             Logger::playback("QUICKPLAY {}: {}", slot, item_playback_info(uuid, state_));
-            if (!state_.trigger_item(uuid))
-                return json_err(404, "item not loaded into engine");
+            if (!state_.trigger_item(uuid, -1.0, audio::CueId{}, true, stop_revision))
+                return state_.stop_revision() != stop_revision
+                    ? json_err(409, "Stop All came first; the cue was not started")
+                    : json_err(404, "item not loaded into engine");
             return json_ok(json({{"ok", true}, {"slot", slot}, {"uuid", uuid}}));
         });
 
@@ -2368,7 +2473,15 @@ void ControlServer::install_routes() {
                     (j.contains("enabled") && j["enabled"].is_boolean())
                         ? j["enabled"].get<bool>()
                         : !engine_.limiter_enabled();
-                engine_.set_limiter_enabled(enabled);
+                // Through the show's settings, as the app's own switch does: a
+                // bypass set from a remote is saved with the show, and the
+                // next settings save cannot switch the limiter back on.
+                if (!state_.patch_settings(json{{"disableLimiter", !enabled}}))
+                    return json_err(409, "the limiter could not be changed");
+                broadcast_doc_patch(json{
+                    {"type", "doc_patch"}, {"op", "settings_patched"},
+                    {"settings", state_.full_document()["settings"]},
+                });
                 broadcast_doc_patch(json{
                     {"type", "doc_patch"}, {"op", "limiter_changed"},
                     {"enabled", enabled},
@@ -3434,7 +3547,12 @@ void ControlServer::install_routes() {
                 // WebSocket control channels sharing it (observed as EPIPE
                 // write errors coinciding with WS disconnects). A shortened
                 // 206 is legal — the client re-requests the next window.
-                constexpr std::uint64_t kMaxRangeWindow = 16ull * 1024 * 1024;
+                // The window is read whole before the first byte goes out,
+                // so it sets the wait for every video start and seek: 4 MB is
+                // tens of milliseconds even from a USB disk or network share
+                // (16 MB was up to half a second), and even 100 Mb/s video
+                // needs only about three windows a second.
+                constexpr std::uint64_t kMaxRangeWindow = 4ull * 1024 * 1024;
                 const bool hasRange = range.rfind("bytes=", 0) == 0 && size > 0;
                 if (hasRange && end - begin + 1 > kMaxRangeWindow) {
                     end = begin + kMaxRangeWindow - 1;
@@ -3473,6 +3591,16 @@ void ControlServer::install_routes() {
 
                 // Content-Length is derived from r.body by Crow — never set
                 // it manually (a duplicate header would corrupt framing).
+#ifdef LIVEPLAY_TEST_HOOKS
+                // Stands in for storage that stops answering mid-show.
+                if (const char* gate = std::getenv("DWCUE_TEST_MEDIA_READ_GATE");
+                    gate && fs::exists(gate)) {
+                    std::ofstream{std::string{gate} + ".entered", std::ios::app} << '.';
+                    const auto release = std::chrono::steady_clock::now() + std::chrono::seconds{5};
+                    while (fs::exists(gate) && std::chrono::steady_clock::now() < release)
+                        std::this_thread::sleep_for(std::chrono::milliseconds{5});
+                }
+#endif
                 std::ifstream in(file_path, std::ios::binary);
                 if (!in) return json_err(404, "not found");
                 in.seekg(static_cast<std::streamoff>(begin), std::ios::beg);
@@ -4620,6 +4748,7 @@ void ControlServer::install_routes() {
       .onopen([this](crow::websocket::connection& conn) {
           std::lock_guard lock{impl_->ws_mutex};
           impl_->ws_clients.insert(&conn);
+          impl_->ws_client_ids[&conn] = ++impl_->ws_next_client_id;
           // Mark this client for a playback_snapshot push on the next
           // broadcast tick. The snapshot can't be sent inline here because
           // build_playback_snapshot takes both engine and project locks
@@ -4633,6 +4762,14 @@ void ControlServer::install_routes() {
           std::lock_guard lock{impl_->ws_mutex};
           impl_->ws_clients.erase(&conn);
           impl_->ws_clients_pending_snapshot.erase(&conn);
+          if (const auto id = impl_->ws_client_ids.find(&conn); id != impl_->ws_client_ids.end()) {
+              {
+                  // Its commands not yet started go with it.
+                  std::lock_guard work{impl_->ws_work_mutex};
+                  impl_->ws_work_queues.erase(id->second);
+              }
+              impl_->ws_client_ids.erase(id);
+          }
           Logger::info("WS client disconnected ({}); {} remaining",
                        reason, impl_->ws_clients.size());
       })
@@ -4640,35 +4777,81 @@ void ControlServer::install_routes() {
                         const std::string& data,
                         bool is_binary) {
           if (is_binary) return;
-          std::string direct_reply;
-          try {
-              direct_reply = handle_ws_message(
-                  conn, data, engine_, state_, impl_->server_addr,
-                  impl_->ws_command_mutex, impl_->ws_command_results,
-                  impl_->ws_commands_inflight, impl_->ws_command_order);
-          } catch (const std::exception& e) {
-              Logger::error("WS onmessage threw past handler: {}", e.what());
-          } catch (...) {
-              Logger::error("WS onmessage caught unknown exception.");
-          }
-          // Send any direct reply (pong, error) under ws_mutex so it is
-          // serialised with broadcast_loop's concurrent send_text calls.
-          // Calling send_text from the ASIO thread without the mutex while
-          // broadcast_loop is also writing to the same conn causes the
-          // "not safe for concurrent writes" crash described in the Impl comment.
-          if (!direct_reply.empty()) {
+          // Hand the command to the workers (see Impl::WsCommand): the
+          // connection thread is free again at once.
+          Impl::WsCommand command{&conn, 0, conn.get_remote_ip(), data};
+          {
               std::lock_guard lock{impl_->ws_mutex};
-              try { conn.send_text(direct_reply); } catch (...) {}
+              const auto id = impl_->ws_client_ids.find(&conn);
+              if (id == impl_->ws_client_ids.end()) return;
+              command.id = id->second;
           }
-          // After applying any state-mutating WS message, fan out the
-          // relevant change to every other client so multi-client mirroring
-          // stays consistent (the originating client gets the echo too —
-          // its local state already matches so the apply is a no-op).
+          {
+              std::lock_guard lock{impl_->ws_work_mutex};
+              if (impl_->ws_work_stop) return;
+              const auto id = command.id;
+              auto& queue = impl_->ws_work_queues[id];
+              const bool idle = queue.empty() && !impl_->ws_work_busy.contains(id);
+              queue.push_back(std::move(command));
+              if (idle) impl_->ws_work_ready.push_back(id);
+          }
+          impl_->ws_work_cv.notify_one();
           // Note: set_next_item fan-out is handled centrally by the
           // next_item_broadcaster installed on ProjectState (it fires for both
           // client-requested and server-armed changes), so we don't broadcast
           // it again here.
       });
+}
+
+void ControlServer::ws_command_worker() {
+    for (;;) {
+        Impl::WsCommand command;
+        {
+            std::unique_lock lock{impl_->ws_work_mutex};
+            impl_->ws_work_cv.wait(lock, [this] {
+                return impl_->ws_work_stop || !impl_->ws_work_ready.empty();
+            });
+            if (impl_->ws_work_stop) return;
+            const auto id = impl_->ws_work_ready.front();
+            impl_->ws_work_ready.pop_front();
+            const auto queue = impl_->ws_work_queues.find(id);
+            if (queue == impl_->ws_work_queues.end() || queue->second.empty()) continue;
+            command = std::move(queue->second.front());
+            queue->second.pop_front();
+            impl_->ws_work_busy.insert(id);
+        }
+        std::string direct_reply;
+        try {
+            direct_reply = handle_ws_message(
+                command.remote_ip, command.data, engine_, state_, impl_->server_addr,
+                impl_->ws_command_mutex, impl_->ws_command_results,
+                impl_->ws_commands_inflight, impl_->ws_command_order);
+        } catch (const std::exception& e) {
+            Logger::error("WS command threw past handler: {}", e.what());
+        } catch (...) {
+            Logger::error("WS command caught unknown exception.");
+        }
+        // Send any direct reply (ack, pong, error) under ws_mutex so it is
+        // serialised with broadcast_loop's concurrent send_text calls, and
+        // only to the connection that sent the command, if still open.
+        if (!direct_reply.empty()) {
+            std::lock_guard lock{impl_->ws_mutex};
+            const auto id = impl_->ws_client_ids.find(command.conn);
+            if (id != impl_->ws_client_ids.end() && id->second == command.id) {
+                try { command.conn->send_text(direct_reply); } catch (...) {}
+            }
+        }
+        {
+            std::lock_guard lock{impl_->ws_work_mutex};
+            impl_->ws_work_busy.erase(command.id);
+            const auto queue = impl_->ws_work_queues.find(command.id);
+            if (queue != impl_->ws_work_queues.end()) {
+                if (queue->second.empty()) impl_->ws_work_queues.erase(queue);
+                else impl_->ws_work_ready.push_back(command.id);
+            }
+        }
+        impl_->ws_work_cv.notify_one();
+    }
 }
 
 } // namespace liveplay::net

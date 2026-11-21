@@ -1,5 +1,6 @@
 import { QUICK_PLAY_SLOT_COUNT_LIMITS, type AudioItem } from '~/types/project';
 import { buildQuickPlayCells } from '~/utils/quickPlays';
+import { controlPressed } from '~/utils/midiPress';
 
 // MIDI binding: identifies a specific control on a MIDI device
 export interface MidiBinding {
@@ -106,6 +107,9 @@ let onLearnCapture: ((binding: MidiBinding) => void) | null = null;
 let mounted = false;
 // Last raw master-volume value seen, used to derive movement direction.
 let lastMasterVolumeRaw: number | null = null;
+// Whether each control mapped to a button action is held past its midpoint:
+// a CC button or fader fires once as it crosses, not on every message.
+const controlsHeld = new Map<string, boolean>();
 
 const preferredDevice = computed(() => config.value.preferredDevice ?? null);
 
@@ -313,18 +317,11 @@ export const useMidiController = () => {
 
         if (action.continuous) {
           dispatchContinuous(actionId as MidiActionId, parsed.value);
-        } else if (parsed.type === 'pitchbend') {
-          // Pitchbend as discrete: trigger at top of range
-          if (parsed.value > 63) {
-            void dispatchDiscrete(actionId as MidiActionId);
-          }
+        } else if (parsed.type === 'note') {
+          if (parsed.value > 0) void dispatchDiscrete(actionId as MidiActionId);
         } else {
-          // Only trigger on note-on or CC > 63 (button press)
-          if (parsed.type === 'note' && parsed.value > 0) {
-            void dispatchDiscrete(actionId as MidiActionId);
-          } else if (parsed.type === 'cc' && parsed.value > 63) {
-            void dispatchDiscrete(actionId as MidiActionId);
-          }
+          const key = `${parsed.channel}:${parsed.type}:${parsed.number}`;
+          if (controlPressed(controlsHeld, key, parsed.value)) void dispatchDiscrete(actionId as MidiActionId);
         }
         break;
       }

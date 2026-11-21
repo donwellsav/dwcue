@@ -107,9 +107,10 @@ test('an owned project header commits its server session together with the local
   const saveFailed = { value: true };
   const emptyReadiness = { loading: false, failedCount: 0 };
   const audioLoadingProgress = { value: { loading: true, failedCount: 1 } };
+  const hasUnsavedChanges = { value: false };
   const apply = projectFunction('applyServerHeader', {
     currentProject, projectFilePathRef: path, serverProjectSessionId: session,
-    projectEpoch: { value: 0 }, hasUnsavedChanges: { value: false }, saveFailed,
+    projectEpoch: { value: 0 }, hasUnsavedChanges, saveFailed,
     repairNotice, audioLoadingProgress, EMPTY_AUDIO_READINESS: emptyReadiness,
     useLiveplayServer: () => ({ serverUrl: 'http://engine' }),
     projectPathFromHeader: (h: any) => h.server.projectFilePath,
@@ -128,6 +129,11 @@ test('an owned project header commits its server session together with the local
   assert.equal(audioLoadingProgress.value, emptyReadiness);
   assert.equal(repairNotice.value.session, 'new-session');
   assert.deepEqual(repairNotice.value.issues, ['duplicate cue']);
+  assert.equal(hasUnsavedChanges.value, false, 'a show the engine has just opened or saved is clean');
+  // Rejoining after the window reloaded: the engine still holds unsaved edits.
+  apply({ hasOpenProject: true, name: 'New', unsavedChanges: true,
+    server: { projectFilePath: '/new.dwcue', projectSessionId: 'new-session' } });
+  assert.equal(hasUnsavedChanges.value, true, 'unsaved edits held by the engine stay unsaved after a reload');
   apply({ hasOpenProject: false, server: { projectFilePath: '', projectSessionId: 'closed-session' } });
   assert.equal(currentProject.value, null);
   assert.equal(session.value, 'closed-session');

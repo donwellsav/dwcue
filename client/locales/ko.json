@@ -157,6 +157,11 @@
       "help": "전체 화면을 비율에 맞춰 표시합니다.",
       "invalid": "캔버스 크기는 64~16384px의 정수, 프레임 크기는 25~100%로 입력하세요."
     },
+    "videoPictureOffset": {
+      "title": "영상 동기",
+      "label": "소리보다 앞선 영상 (ms)",
+      "help": "영상을 지연시키는 스위처, 스케일러, 프로젝터를 보정합니다. 영상이 소리보다 이만큼 앞서 재생됩니다. AV 동기화 테스트 카드로 지연을 측정하세요. 0~500 ms."
+    },
     "videoOutputTestCard": "테스트 카드 표시",
     "videoOutputStatus": "출력 상태",
     "videoOutputStatusOff": "비디오 출력이 꺼져 있습니다.",
@@ -325,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name}: 오디오 출력이 멈췄습니다 — 클록 콜백이 없습니다.",
+    "lost": "{name}: 오디오 출력이 끊겼습니다 — 자동으로 다시 연결하는 중입니다.",
     "queued": "{name}: 출력이 계속 멈춰 있습니다. 복구가 대기열에 추가되었으며 클록 콜백을 기다리는 중입니다.",
     "starting": "{name}: 오디오 출력 시작 중; 클록 콜백을 기다리는 중입니다.",
     "recoveryFailed": "{name}: 오디오 출력 복구를 대기열에 추가하지 못했습니다."
@@ -979,7 +985,6 @@
     "frameUnconfirmed": "프레임 미확인",
     "prepared": "비디오 디코딩 및 {seconds}초 탐색 완료",
     "frameAge": "{seconds}초 전 프레임",
-    "captureAge": "{seconds}초 전 캡처",
     "dropped": "누락된 프레임: {count}",
     "states": {
       "idle": "검은 화면",
@@ -1303,5 +1308,11 @@
     "trash": "휴지통",
     "recycleBin": "휴지통",
     "editModeOnly": "미디어 정리는 편집 모드에서 사용할 수 있습니다."
+  },
+  "replacePlaying": {
+    "title": "공연이 재생 중입니다",
+    "message": "다른 공연으로 전환하면 재생 중인 모든 것이 멈춥니다.",
+    "keep": "계속 재생",
+    "switch": "중지하고 전환"
   }
 }

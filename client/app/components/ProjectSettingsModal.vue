@@ -546,6 +546,15 @@
                 </div>
                 <p class="settings-help">{{ t('settings.videoFraming.help') }}</p>
               </section>
+              <h3 class="settings-section-title">{{ t('settings.videoPictureOffset.title') }}</h3>
+              <section class="settings-field video-framing">
+                <div class="video-framing-row">
+                  <label for="video-picture-offset" class="settings-label">{{ t('settings.videoPictureOffset.label') }}</label>
+                  <input id="video-picture-offset" v-model.number="voPictureOffset" type="number" class="settings-input"
+                    min="0" max="500" step="1" :disabled="!voStatus || voPictureOffsetPending" @change="applyPictureOffset">
+                </div>
+                <p class="settings-help">{{ t('settings.videoPictureOffset.help') }}</p>
+              </section>
             </div>
             <div class="settings-rows">
               <h3 class="settings-section-title">{{ t('settings.captureSection') }}</h3>
@@ -914,6 +923,9 @@ const voFramingDirty = computed(() => {
   return saved.width !== draft.width || saved.height !== draft.height || saved.scale !== draft.scale || saved.scaling !== draft.scaling;
 });
 const voDiagnosticsCopied = ref(false);
+// Picture sync: milliseconds the picture runs ahead of the sound (0-500).
+const voPictureOffset = ref(0);
+const voPictureOffsetPending = ref(false);
 const voTestCardConfig = ref<TestCardConfig>(createTestCardConfig());
 
 const voEnabled  = computed(() => voStatus.value?.enabled === true);
@@ -969,6 +981,8 @@ function receiveVideoOutputStatus(status: VideoOutputStatus, forceConfig = false
     voFramePreset.value = VIDEO_FRAME_PRESETS.find(preset => preset.width === voFraming.value.width
       && preset.height === voFraming.value.height)?.id ?? 'custom';
   }
+  if (!voPictureOffsetPending.value && (forceConfig || voPictureOffset.value === (voStatus.value?.pictureOffsetMs ?? 0)))
+    voPictureOffset.value = status.pictureOffsetMs ?? 0;
   voStatus.value = status;
   if (voTestCardConfigWriting) return;
   if (forceConfig || !voHasLocalTestCardConfigIntent) {
@@ -999,6 +1013,21 @@ async function applyVideoFraming(): Promise<void> {
   try { receiveVideoOutputStatus(await api.setFraming(framing), true); }
   catch (error) { settingsError.value = describeSettingsError(error); }
   finally { voFramingPending.value = false; }
+}
+
+async function applyPictureOffset(): Promise<void> {
+  const api = window.electronAPI?.videoOutput;
+  const value = Math.round(Math.min(500, Math.max(0, Number(voPictureOffset.value) || 0)));
+  voPictureOffset.value = value;
+  if (!api?.setPictureOffset || voPictureOffsetPending.value || value === (voStatus.value?.pictureOffsetMs ?? 0)) return;
+  voPictureOffsetPending.value = true;
+  settingsError.value = '';
+  try { receiveVideoOutputStatus(await api.setPictureOffset(value), true); }
+  catch (error) {
+    settingsError.value = describeSettingsError(error);
+    voPictureOffset.value = voStatus.value?.pictureOffsetMs ?? 0;
+  }
+  finally { voPictureOffsetPending.value = false; }
 }
 
 async function onVideoOutputEnableChange(event: Event) {

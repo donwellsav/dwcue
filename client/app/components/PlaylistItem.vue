@@ -314,6 +314,7 @@
 </template>
 
 <script setup lang="ts">
+import { secondsLeft } from '~/utils/countdown';
 import { countdownColorForSeconds, countdownInk, type AudioItem, type GroupItem, type BaseItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
 import ItemLevel from './ItemLevel.vue';
@@ -482,7 +483,7 @@ const durationDisplay = computed(() => {
   // If playing, show countdown
   if (isPlaying.value) {
     const timeRemaining = playbackDuration.value - currentPlaybackTime.value;
-    const totalSeconds = Math.floor(timeRemaining);
+    const totalSeconds = secondsLeft(timeRemaining);
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;

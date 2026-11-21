@@ -157,6 +157,11 @@
       "help": "Ajuste l’image entière en conservant les proportions.",
       "invalid": "Saisissez des dimensions de canevas entières de 64 à 16384 px et une taille de cadre de 25 à 100 %."
     },
+    "videoPictureOffset": {
+      "title": "Synchronisation de l'image",
+      "label": "Image en avance sur le son (ms)",
+      "help": "Compense un mélangeur, un scaler ou un projecteur qui retarde l'image : l'image précède le son de cette valeur. Mesurez le retard avec la mire Synchronisation AV. De 0 à 500 ms."
+    },
     "videoOutputTestCard": "Afficher la mire",
     "videoOutputStatus": "État de la sortie",
     "videoOutputStatusOff": "La sortie vidéo est désactivée.",
@@ -325,6 +330,7 @@
   },
   "audioHealth": {
     "stalled": "{name} : sortie audio bloquée — aucun rappel d’horloge.",
+    "lost": "{name} : sortie audio perdue — reconnexion automatique en cours.",
     "queued": "{name} : la sortie reste bloquée. Récupération mise en file d’attente ; attente des rappels d’horloge.",
     "starting": "{name} : démarrage de la sortie audio ; attente des rappels d’horloge.",
     "recoveryFailed": "{name} : impossible de mettre en file d’attente la récupération de la sortie audio."
@@ -979,7 +985,6 @@
     "frameUnconfirmed": "Trame non confirmée",
     "prepared": "Vidéo décodée et positionnement stabilisé à {seconds} s",
     "frameAge": "Trame il y a {seconds} s",
-    "captureAge": "Capture il y a {seconds} s",
     "dropped": "Trames perdues : {count}",
     "states": {
       "idle": "Noir",
@@ -1303,5 +1308,11 @@
     "trash": "Corbeille",
     "recycleBin": "Corbeille",
     "editModeOnly": "Nettoyer les médias est disponible en Mode Édition."
+  },
+  "replacePlaying": {
+    "title": "Un spectacle est en cours",
+    "message": "Passer à un autre spectacle arrête tout ce qui est en lecture.",
+    "keep": "Continuer la lecture",
+    "switch": "Arrêter et changer"
   }
 }

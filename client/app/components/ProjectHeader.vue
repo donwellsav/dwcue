@@ -119,6 +119,8 @@
 </template>
 
 <script setup lang="ts">
+import { quickPlayFollowsUpNext } from '~/utils/quickPlays';
+import { secondsLeft } from '~/utils/countdown';
 import Btn from './Btn.vue';
 import VideoConfidenceChip from './VideoConfidenceChip.vue';
 import { useVideoOutputToggle } from '~/composables/useQuickPlayHotkeys';
@@ -127,7 +129,7 @@ import { formatClockSeconds, playlistRemainingSeconds } from '~/utils/playlistRe
 
 const { currentProject, findItemByUuid, findItemByIndex, getAllItemsFlat, autoSaveEnabled, hasUnsavedChanges, saveFailed, saveProject, setAutoSave } = useProject();
 const { t } = useLocalization();
-const { activeCues, effectiveNextUuid } = useAudioEngine();
+const { activeCues, effectiveNextUuid, cueFollowOverrides } = useAudioEngine();
 const { uiMode, toggleUiMode } = useUiMode();
 const { warning, silenceRemaining } = useHeaderWarnings();
 
@@ -147,8 +149,17 @@ async function retrySave() {
 }
 
 // Match PlaylistView's primary-cue convention: during a seamless advance the
-// newest cue is the one the operator is now following.
-const primaryActiveCue = computed(() => [...activeCues.value.values()].at(-1) ?? null);
+// newest cue is the one the operator is now following. Time Left is for the
+// show's cue: a QuickPlay fired over it (a stinger) does not take the clock
+// unless nothing else is playing.
+const primaryActiveCue = computed(() => {
+  const cues = [...activeCues.value.values()];
+  const playlist = cues.filter((cue) => {
+    const item = findItemByUuid(cue.uuid) as any;
+    return !!item && !item.quickPlay;
+  });
+  return playlist.at(-1) ?? cues.at(-1) ?? null;
+});
 const displayedRemainingSeconds = computed<number | null>(() => {
   const cue = primaryActiveCue.value;
   if (!cue
@@ -157,7 +168,7 @@ const displayedRemainingSeconds = computed<number | null>(() => {
       || cue.duration <= 0) {
     return null;
   }
-  return Math.max(0, Math.ceil(cue.duration - cue.currentTime));
+  return secondsLeft(cue.duration - cue.currentTime);
 });
 const timeLeft = computed(() => {
   const total = displayedRemainingSeconds.value;
@@ -240,6 +251,13 @@ const checkForSilence = () => {
 };
 
 const validateEndBehavior = (audioItem: any): boolean => {
+  // A QuickPlay that follows Up Next (Play Next, or Cue to Continue armed on
+  // the pass) hands over to whatever is armed, not to a sibling.
+  if (audioItem.quickPlay || (Array.isArray(audioItem.index) && audioItem.index[0] < 0)) {
+    if (quickPlayFollowsUpNext(audioItem, cueFollowOverrides.value.get(audioItem.uuid))) {
+      return !!effectiveNextUuid.value && effectiveNextUuid.value !== audioItem.uuid;
+    }
+  }
   if (!audioItem.endBehavior || audioItem.endBehavior.action === 'nothing') return false;
   const action = audioItem.endBehavior.action;
   if (action === 'next' || action === 'play-next') {

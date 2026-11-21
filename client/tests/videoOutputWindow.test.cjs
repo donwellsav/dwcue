@@ -379,7 +379,7 @@ test('every window is kept out of fullscreen Spaces, and the control window fill
 // Fullscreen changes the display's metrics (on a Mac the menu bar and Dock go),
 // which wakes the display watchdog. Only a physical output whose own display
 // has gone may be closed by it; the preview window has no display to lose.
-function displayWatchdog({ outputWindow, displays = [laptop], target = null }) {
+function displayWatchdog({ outputWindow, displays = [laptop], target = null, platform = 'darwin' }) {
   const listeners = {};
   const timers = [];
   const closes = [];
@@ -398,9 +398,10 @@ function displayWatchdog({ outputWindow, displays = [laptop], target = null }) {
     screen: { getAllDisplays: () => displays, on: (name, listener) => { listeners[name] = listener; } },
     setTimeout: (callback) => { timers.push(callback); return timers.length; },
     clearTimeout() {},
-    process: { platform: 'darwin' },
+    process: { platform },
   };
-  vm.runInNewContext(functionSource('installVideoOutputWatchdog'), context);
+  vm.runInNewContext(['parkVideoOutputWindow', 'restoreVideoOutputWindow', 'installVideoOutputWatchdog']
+    .map(functionSource).join('\n'), context);
   context.installVideoOutputWatchdog();
   const fire = (name) => { listeners[name](); timers.splice(0).forEach(run => run()); };
   return { closes, actions, metricsChange: () => fire('display-metrics-changed'), displayAdded: () => fire('display-added') };
@@ -413,9 +414,18 @@ test('the preview window stays open when going fullscreen changes the display me
   assert.deepEqual(rig.closes, [], 'the preview window is not closed by a display it never had');
 });
 
-test('a physical output still closes when its own display has gone', () => {
-  const output = { isDestroyed: () => false, videoOutputTargetDisplayId: 99 };
+test('on a Mac a physical output whose display has gone is hidden and kept, not closed', () => {
+  let hidden = false;
+  const output = { isDestroyed: () => false, videoOutputTargetDisplayId: 99, hide: () => { hidden = true; } };
   const rig = displayWatchdog({ outputWindow: output });
+  rig.metricsChange();
+  assert.equal(hidden, true, 'it cannot sit on the control screen');
+  assert.deepEqual(rig.closes, [], 'kept, so it comes back live when the display returns');
+});
+
+test('elsewhere a physical output still closes when its own display has gone', () => {
+  const output = { isDestroyed: () => false, videoOutputTargetDisplayId: 99 };
+  const rig = displayWatchdog({ outputWindow: output, platform: 'win32' });
   rig.metricsChange();
   assert.deepEqual(JSON.parse(JSON.stringify(rig.closes)), [{ preserveSession: true }]);
 });
@@ -467,7 +477,8 @@ function videoOutputSettings(fileText) {
     createTestCardConfig: value => value ?? { cardType: 'bars' },
     console,
   };
-  vm.runInNewContext([declarations, functionSource('videoOutputConfigPath'),
+  vm.runInNewContext([declarations, 'const PICTURE_OFFSET_MAX_MS = 500;', functionSource('readPictureOffset'),
+    functionSource('videoOutputConfigPath'),
     functionSource('readVideoOutputConfig'), functionSource('writeVideoOutputConfig')].join('\n'), context);
   return { disk, read: () => context.readVideoOutputConfig(), write: cfg => context.writeVideoOutputConfig(cfg) };
 }
@@ -495,9 +506,17 @@ test('a screen chosen now holds for this run and is never written to disk', () =
     assert.equal(key in saved, false, `${key} is not saved`);
   }
   assert.ok(saved.framing && saved.testCardConfig, 'framing and test card settings are still saved');
+  assert.equal(saved.pictureOffsetMs, 0, 'picture sync is saved with them');
   const again = settings.read();
   assert.equal(again.displayId, '5');
   assert.equal(again.displayFingerprint, '1920x1080:EPSON PJ');
   assert.deepEqual([...again.displayLookalikes], ['6']);
   assert.equal(again.captureDisplayId, '7');
+});
+
+test('picture sync takes whole milliseconds from 0 to 500 and nothing else', () => {
+  const context = {};
+  vm.runInNewContext(`const PICTURE_OFFSET_MAX_MS = 500;\n${functionSource('readPictureOffset')}\nthis.read = readPictureOffset;`, context);
+  for (const value of [0, 33, 500]) assert.equal(context.read(value), value);
+  for (const value of [-1, 501, 12.5, '80', null, undefined, Number.NaN]) assert.equal(context.read(value), null);
 });

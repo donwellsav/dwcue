@@ -163,18 +163,12 @@ export const useConnectionGuard = () => {
   // useState/useProject would throw there — runWithContext restores it.
   const nuxtApp = useNuxtApp();
   const isDetachedWindow = import.meta.client && new URLSearchParams(window.location.search).get('quickPlayWindow') === '1';
-  server.onReconnected((signal) => {
-    void nuxtApp.runWithContext(async () => {
-      if (signal.aborted) return;
-      if (!currentProject.value || sessionLost.value || recovering.value) {
-        server.showVerification = null;
-        return;
-      }
-      let verified = false;
-      try {
+  // One check of the show after a new socket. 'stop' ends the checking
+  // (decided, or no longer this check's to decide); 'retry' tries again.
+  const verifyShow = async (signal: AbortSignal, info: { socketSwap: boolean }): Promise<'verified' | 'retry' | 'stop'> => {
         const { hasUnsavedChanges, tryRejoinExistingProject } = useProject();
         const header = await server.fetchProjectHeader(signal);
-        if (signal.aborted) return;
+        if (signal.aborted) return 'stop';
         if (typeof header?.hasOpenProject !== 'boolean' ||
             (header.hasOpenProject && !header.server?.projectSessionId)) {
           throw new Error('Server returned an invalid show identity');
@@ -182,18 +176,20 @@ export const useConnectionGuard = () => {
         if (isDetachedWindow) {
           // The primary window owns the document. A new or missing engine
           // session can only be adopted through its verified snapshot.
-          if (server.showVerification !== 'checking') return;
+          if (server.showVerification !== 'checking') return 'stop';
           sessionLost.value = !header.hasOpenProject || header.server.projectSessionId !== server.projectSessionId;
-          verified = true;
-          return;
+          return 'verified';
         }
         if (!header.hasOpenProject) {
           projectChanged.value = false;
           serverProjectName.value = '';
           sessionLost.value = true;
-          verified = true;
-          return;
+          return 'verified';
         }
+
+        // This window swapped its own socket a moment ago onto the same engine
+        // show: nothing could have changed, so nothing needs choosing.
+        if (info.socketSwap && header.server.projectSessionId === server.projectSessionId) return 'verified';
 
         if (hasUnsavedChanges.value) {
           // Identity equality cannot prove the remote document stayed equal
@@ -202,15 +198,42 @@ export const useConnectionGuard = () => {
           serverProjectName.value = header.name || 'Untitled';
           projectChanged.value = true;
           sessionLost.value = true;
-          verified = true;
-          return;
+          return 'verified';
         }
 
         // A clean mirror can always accept the authoritative reconnect header,
         // including same-project edits made by another client while offline.
-        verified = await tryRejoinExistingProject(header, signal);
-      } catch (e) {
-        if (!signal.aborted) console.warn('[connectionGuard] post-reconnect project probe failed:', e);
+        return await tryRejoinExistingProject(header, signal) ? 'verified' : 'retry';
+  };
+
+  // A check that fails (a fetch timing out, another client saving at that
+  // moment) is tried again a few times before GO waits on the Reconnect button.
+  const VERIFY_ATTEMPTS = 4;
+  const VERIFY_RETRY_MS = 2000;
+  server.onReconnected((signal, info) => {
+    void nuxtApp.runWithContext(async () => {
+      if (signal.aborted) return;
+      if (!currentProject.value || sessionLost.value || recovering.value) {
+        server.showVerification = null;
+        return;
+      }
+      let verified = false;
+      let decided = false;
+      try {
+        for (let attempt = 0; attempt < VERIFY_ATTEMPTS && !decided; attempt++) {
+          if (attempt > 0) {
+            await new Promise(resolve => setTimeout(resolve, VERIFY_RETRY_MS));
+            if (signal.aborted) return;
+          }
+          try {
+            const outcome = await verifyShow(signal, info);
+            verified = outcome === 'verified';
+            decided = outcome !== 'retry';
+          } catch (e) {
+            if (signal.aborted) return;
+            console.warn('[connectionGuard] post-reconnect project probe failed:', e);
+          }
+        }
       } finally {
         if (!signal.aborted && (!isDetachedWindow || server.showVerification === 'checking')) {
           server.showVerification = verified ? null : 'failed';
