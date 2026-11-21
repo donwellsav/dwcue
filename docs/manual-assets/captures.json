@@ -1,8 +1,8 @@
 {
   "application": "DonWells Cue",
-  "sourceRevision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
-  "packageVersion": "2.8.0",
-  "edition": "19 November 2026, 2.8.0: the welcome screen (version number) and the docked Video Output settings (the new Picture sync setting), retaken from the packaged 2.8.0 app",
+  "sourceRevision": "b2ff02f90b97ab9c908cf3e1ff84743809523dc7",
+  "packageVersion": "2.8.1",
+  "edition": "21 November 2026, 2.8.1. Updated project launcher, operator workspace, transport, shortcuts, and Video Output settings.",
   "images": [
     {
       "file": "music-continuity-current.png",
@@ -23,19 +23,19 @@
     },
     {
       "file": "welcome-current.png",
-      "view": "Welcome screen using the audio engine on this computer, showing version 2.8.0.",
-      "version": "2.8.0",
-      "sourceRevision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
-      "nativeSourceRevision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
-      "capturedOn": "2026-11-19",
-      "surface": "DonWells Cue desktop app (packaged build on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
+      "view": "Localized 2.8.1 project launcher with the local engine ready and New Show and Open Project available.",
+      "version": "2.8.1",
+      "sourceRevision": "b2ff02f90b97ab9c908cf3e1ff84743809523dc7",
+      "nativeSourceRevision": "d831de773e5b7c12fe4c2f0982fc898293fe62ea",
+      "capturedOn": "2026-11-21",
+      "surface": "DonWells Cue packaged macOS app, dark theme, 1400 × 868 CSS pixels, 100% interface scale, 2× device pixel ratio.",
       "dimensions": [
-        768,
-        378
+        1480,
+        700
       ],
-      "sha256": "eadd201682512596ddf2d26a69c6752abf82544e74ba531ff8a839e633247f1b",
-      "fixture": "No show open; a disposable practice folder. Local audio engine on the capture computer.",
-      "captureMethod": "Chrome DevTools Protocol screenshot of the running app window, clipped to the panel or control.",
+      "sha256": "cc33799d5918523e17ad0246a97c245efb5308570849e111636db5e9271b1d30",
+      "fixture": "Disposable isolated profile, local audio engine, no show open.",
+      "captureMethod": "Electron webContents.capturePage in a hidden packaged app window.",
       "presentation": "Unaltered crop of the panel or control."
     },
     {
@@ -57,20 +57,20 @@
     },
     {
       "file": "edit-workspace.png",
-      "view": "Edit Mode at the default window size with the attached QuickPlay panel at its 336-pixel default width: the QuickPlay tiles, List Left, the cue search and both locators, the Up Next cue edged in green, the two-line shortcut bar, and Basic Info open for a different cue.",
-      "version": "2.7.1",
-      "sourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
-      "nativeSourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
-      "capturedOn": "2026-11-17",
-      "surface": "DonWells Cue desktop app (packaged build on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
+      "view": "Edit Mode with the practice playlist, active elapsed time, QuickPlays, Up Next, output console, and cue Basic Info.",
+      "version": "2.8.1",
+      "sourceRevision": "b2ff02f90b97ab9c908cf3e1ff84743809523dc7",
+      "nativeSourceRevision": "d831de773e5b7c12fe4c2f0982fc898293fe62ea",
+      "capturedOn": "2026-11-21",
+      "surface": "DonWells Cue packaged macOS app, dark theme, 1400 × 868 CSS pixels, 100% interface scale, 2× device pixel ratio.",
       "dimensions": [
-        1400,
-        868
+        2800,
+        1736
       ],
-      "sha256": "194d883a484a17219b830f9a1f696ebfd590c5d117c96ae1bcc87fec777358b9",
-      "fixture": "Disposable Conference rehearsal show with generated WAV files; every cue that was played is silent. Local audio engine on the capture computer.",
-      "captureMethod": "Chrome DevTools Protocol screenshot of the running app window.",
-      "presentation": "Full window screenshot."
+      "sha256": "5d0386a0f42990f7d3a14b1ef4cfcebb26e27206e3e371edf90a10bf4a0f2e67",
+      "fixture": "Disposable Conference rehearsal show, generated silent media, local audio engine, Video Output closed.",
+      "captureMethod": "Electron webContents.capturePage in a hidden packaged app window.",
+      "presentation": "Full window content."
     },
     {
       "file": "cue-basic-current.png",
@@ -91,20 +91,20 @@
     },
     {
       "file": "show-mode.png",
-      "view": "Show Mode at the same window size as the Edit Mode figure: the same screen without the editing controls, with the silence warning, the playing cue edged in red, Up Next in green, and the two-line shortcut bar.",
-      "version": "2.7.1",
-      "sourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
-      "nativeSourceRevision": "5f90fd093c5991f60dffdfd7ed5537eef0764476",
-      "capturedOn": "2026-11-17",
-      "surface": "DonWells Cue desktop app (packaged build on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
+      "view": "Show Mode at the same window size with the active cue, green Loop, Up Next, and output meters.",
+      "version": "2.8.1",
+      "sourceRevision": "b2ff02f90b97ab9c908cf3e1ff84743809523dc7",
+      "nativeSourceRevision": "d831de773e5b7c12fe4c2f0982fc898293fe62ea",
+      "capturedOn": "2026-11-21",
+      "surface": "DonWells Cue packaged macOS app, dark theme, 1400 × 868 CSS pixels, 100% interface scale, 2× device pixel ratio.",
       "dimensions": [
-        1400,
-        868
+        2800,
+        1736
       ],
-      "sha256": "58f1d28b0aeb88188a3b5031e00369265ce20e716498399c7921b98ccbe92388",
-      "fixture": "Disposable Conference rehearsal show with generated WAV files; every cue that was played is silent. Local audio engine on the capture computer.",
-      "captureMethod": "Chrome DevTools Protocol screenshot of the running app window.",
-      "presentation": "Full window screenshot. The flashing end-of-cue warning edge on the playing row is shown at the low point of its pulse."
+      "sha256": "4e944b98c220d46034ed82db3f78403fc8788d1d50e528f664c3e1a34d18d38b",
+      "fixture": "Disposable Conference rehearsal show, generated silent media, local audio engine, Video Output closed.",
+      "captureMethod": "Electron webContents.capturePage in a hidden packaged app window.",
+      "presentation": "Full window content."
     },
     {
       "file": "import-media.png",
@@ -261,19 +261,19 @@
     },
     {
       "file": "transport-detail-current.png",
-      "view": "Transport during the looping practice cue: striped Stop All Cues, the playing cue, and the green Play Next.",
-      "version": "2.6.24 development",
-      "sourceRevision": "e9b377212209556ae11eea24deaecfc718cd1fd4",
-      "nativeSourceRevision": "73f6ef4f623c88bc928182d82444c01d22e490df",
-      "capturedOn": "2026-11-16",
-      "surface": "DonWells Cue desktop app (development build in Electron on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
+      "view": "Striped Stop All Cues, large elapsed time on the active cue, and green Play Next.",
+      "version": "2.8.1",
+      "sourceRevision": "b2ff02f90b97ab9c908cf3e1ff84743809523dc7",
+      "nativeSourceRevision": "d831de773e5b7c12fe4c2f0982fc898293fe62ea",
+      "capturedOn": "2026-11-21",
+      "surface": "DonWells Cue packaged macOS app, dark theme, 1400 × 868 CSS pixels, 100% interface scale, 2× device pixel ratio.",
       "dimensions": [
-        1400,
-        104
+        2800,
+        208
       ],
-      "sha256": "60e35f64ff9616fb381f4233bad79e6a9de07cf0455fb8decee2ef7097a030b2",
-      "fixture": "Disposable Conference rehearsal show with generated WAV files; every cue that was played is silent. Local audio engine on the capture computer.",
-      "captureMethod": "Chrome DevTools Protocol screenshot of the running app window, clipped to the panel or control.",
+      "sha256": "9249626dc425ecbb1c6cf8dba8a4e4fc586e1cb9f639c77ca341513ebfbb8305",
+      "fixture": "Disposable Conference rehearsal show, generated silent media, local audio engine, Video Output closed.",
+      "captureMethod": "Electron webContents.capturePage in a hidden packaged app window.",
       "presentation": "Unaltered crop of the panel or control."
     },
     {
@@ -312,19 +312,19 @@
     },
     {
       "file": "shortcuts-current.png",
-      "view": "Docked Shortcuts with the two capture keys, Q for QuickPlays and Shift+Q for the detached window.",
-      "version": "2.6.24 development",
-      "sourceRevision": "e9b377212209556ae11eea24deaecfc718cd1fd4",
-      "nativeSourceRevision": "73f6ef4f623c88bc928182d82444c01d22e490df",
-      "capturedOn": "2026-11-16",
-      "surface": "DonWells Cue desktop app (development build in Electron on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
+      "view": "Keyboard controls in Settings, including F for Video Output fullscreen and slash and question mark for playlist locators.",
+      "version": "2.8.1",
+      "sourceRevision": "b2ff02f90b97ab9c908cf3e1ff84743809523dc7",
+      "nativeSourceRevision": "d831de773e5b7c12fe4c2f0982fc898293fe62ea",
+      "capturedOn": "2026-11-21",
+      "surface": "DonWells Cue packaged macOS app, dark theme, 1400 × 868 CSS pixels, 100% interface scale, 2× device pixel ratio.",
       "dimensions": [
-        1400,
-        312
+        2800,
+        534
       ],
-      "sha256": "ba54864d1d77ea880b7b6481101e0edc365c49611f024afa3d32475028b965b6",
-      "fixture": "Disposable Conference rehearsal show with generated WAV files; every cue that was played is silent. Local audio engine on the capture computer.",
-      "captureMethod": "Chrome DevTools Protocol screenshot of the running app window, clipped to the panel or control.",
+      "sha256": "901957e842f3a59937097ebdb41731bbc26353434c95f645c9fb1ef03fb835d5",
+      "fixture": "Disposable Conference rehearsal show, generated silent media, local audio engine, Video Output closed.",
+      "captureMethod": "Electron webContents.capturePage in a hidden packaged app window.",
       "presentation": "Unaltered crop of the panel or control."
     },
     {
@@ -346,20 +346,20 @@
     },
     {
       "file": "video-settings-current.png",
-      "view": "Docked Video Output with the pre-show video check, picture framing, Picture sync, standby and capture, and test card controls.",
-      "version": "2.8.0",
-      "sourceRevision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
-      "nativeSourceRevision": "38734a2c2196d89a6eb9863da70ddfbff2b5c7d9",
-      "capturedOn": "2026-11-19",
-      "surface": "DonWells Cue desktop app (packaged build on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
+      "view": "Video Output settings with the 1080p59.94 default, a closed output, framing, standby, and the test card controls.",
+      "version": "2.8.1",
+      "sourceRevision": "b2ff02f90b97ab9c908cf3e1ff84743809523dc7",
+      "nativeSourceRevision": "d831de773e5b7c12fe4c2f0982fc898293fe62ea",
+      "capturedOn": "2026-11-21",
+      "surface": "DonWells Cue packaged macOS app, dark theme, 1400 × 868 CSS pixels, 100% interface scale, 2× device pixel ratio.",
       "dimensions": [
-        1400,
-        465
+        2800,
+        1736
       ],
-      "sha256": "0dd9b870408934ef88591c70908c56ed0e295114de8a8f6ba0dbcab1b574bdc1",
-      "fixture": "Disposable Conference rehearsal show with generated WAV files; nothing was played. Local audio engine on the capture computer.",
-      "captureMethod": "Chrome DevTools Protocol screenshot of the running app window, clipped to the panel or control.",
-      "presentation": "Unaltered crop of the panel or control."
+      "sha256": "ad8133a842dc59de099983cee9471aae1ea08e1a6d5289982625ed731fb5976f",
+      "fixture": "Disposable Conference rehearsal show, generated silent media, local audio engine, Video Output closed.",
+      "captureMethod": "Electron webContents.capturePage in a hidden packaged app window.",
+      "presentation": "Full window content."
     },
     {
       "file": "server-connection-current.png",
@@ -380,36 +380,36 @@
     },
     {
       "file": "video-recovery-current.png",
-      "view": "Output status with Restart Output disabled and Copy diagnostics available.",
-      "version": "2.6.24 development",
-      "sourceRevision": "e9b377212209556ae11eea24deaecfc718cd1fd4",
-      "nativeSourceRevision": "73f6ef4f623c88bc928182d82444c01d22e490df",
-      "capturedOn": "2026-11-16",
-      "surface": "DonWells Cue desktop app (development build in Electron on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
+      "view": "Output status while Video Output is closed, Restart Output disabled, and Copy diagnostics.",
+      "version": "2.8.1",
+      "sourceRevision": "b2ff02f90b97ab9c908cf3e1ff84743809523dc7",
+      "nativeSourceRevision": "d831de773e5b7c12fe4c2f0982fc898293fe62ea",
+      "capturedOn": "2026-11-21",
+      "surface": "DonWells Cue packaged macOS app, dark theme, 1400 × 868 CSS pixels, 100% interface scale, 2× device pixel ratio.",
       "dimensions": [
-        346,
-        56
+        684,
+        108
       ],
-      "sha256": "9ef1f961e9a45312b084e2dc2c830f9cc6532c501d6dbd9be0eb04274293165e",
-      "fixture": "Disposable Conference rehearsal show with generated WAV files; every cue that was played is silent. Local audio engine on the capture computer.",
-      "captureMethod": "Chrome DevTools Protocol screenshot of the running app window, clipped to the panel or control.",
+      "sha256": "6d86c7890400f6a2ebb9b781d3ddd62a597384e3bfad4195f868495ba49b9c88",
+      "fixture": "Disposable Conference rehearsal show, generated silent media, local audio engine, Video Output closed.",
+      "captureMethod": "Electron webContents.capturePage in a hidden packaged app window.",
       "presentation": "Unaltered crop of the panel or control."
     },
     {
       "file": "video-framing-current.png",
-      "view": "The default Full HD canvas, Fit to display scaling, and 100 percent frame size.",
-      "version": "2.6.24 development",
-      "sourceRevision": "ac0650e367eb1a24ebae88edc3a1a9fe5ed50103",
-      "nativeSourceRevision": "73f6ef4f623c88bc928182d82444c01d22e490df",
-      "capturedOn": "2026-11-16",
-      "surface": "DonWells Cue desktop app (development build in Electron on macOS), dark theme, window content 1400 × 868 CSS pixels at 100% interface scale.",
+      "view": "Full HD 1920×1080, Fit entire picture, and 100 percent frame size.",
+      "version": "2.8.1",
+      "sourceRevision": "b2ff02f90b97ab9c908cf3e1ff84743809523dc7",
+      "nativeSourceRevision": "d831de773e5b7c12fe4c2f0982fc898293fe62ea",
+      "capturedOn": "2026-11-21",
+      "surface": "DonWells Cue packaged macOS app, dark theme, 1400 × 868 CSS pixels, 100% interface scale, 2× device pixel ratio.",
       "dimensions": [
-        346,
-        136
+        684,
+        246
       ],
-      "sha256": "a1e755227e41e6865c7e94faefbee8d40280f0598bcfd29f93c610b607e0126f",
-      "fixture": "Disposable Conference rehearsal show with generated WAV files; every cue that was played is silent. Local audio engine on the capture computer.",
-      "captureMethod": "Chrome DevTools Protocol screenshot of the running app window, clipped to the panel or control.",
+      "sha256": "558dd914410bdd580f33b21250db2ccf80048a2a0cf9f5f98372a0ee6dfaef3d",
+      "fixture": "Disposable Conference rehearsal show, generated silent media, local audio engine, Video Output closed.",
+      "captureMethod": "Electron webContents.capturePage in a hidden packaged app window.",
       "presentation": "Unaltered crop of the panel or control."
     },
     {

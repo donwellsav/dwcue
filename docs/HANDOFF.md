@@ -1,23 +1,26 @@
 # Handoff: where DonWells Cue stands
 
-Last updated 2026-11-21, right after the 2.8.0 release. Read
+Last updated 2026-11-21 for the 2.8.1 release. Read
 [../AGENTS.md](../AGENTS.md) for the owner's rules and the build commands.
 
 ## Snapshot
 
 | What | Where |
 |---|---|
-| Released | **2.8.0**, published 2026-11-21 by release run 44836789461: GitHub release (18 installers) and dwcue.com (version 2.8.0, manual `manual/operators-manual-2.8.0.pdf`) |
+| Previous release | **2.8.0**, published 2026-11-21 by release run 44836789461: GitHub release (18 installers) and dwcue.com (version 2.8.0, manual `manual/operators-manual-2.8.0.pdf`) |
 | Tag | `v2.8.0` at `dfb3cc7` |
 | `main` | `568fbca`, the 2.8.0 merge (`[skip ci]`) |
 | `release/2.8.0` | `dfb3cc7`, finished; do not add to it |
 | Work branch | `next`, from `main`: start new work here (local only until the owner asks for a push) |
-| Website repo | `../dwcue-site`, `main` at `1e70166` |
+| Website repo | `../dwcue-site`. The release workflow publishes a selected commit after installer validation. |
 | Release notes | [release-notes/v2.8.0.md](release-notes/v2.8.0.md): every operator-facing change in 2.8.0 |
 
-Everything below was checked by tests only. **The packaged app has not been
-run since the reviews of this release**, so nothing listed here has been seen
-in the real app.
+The 2.8.1 documentation and release work start from the 2.8.0 release above.
+The [2.8.1 release notes](release-notes/v2.8.1.md) cover the new operator controls
+and Mac HDMI behavior. The 2.8.1 local macOS bundle launched with an isolated
+profile. Video Output client and native tests cover the mode selection and
+restoration logic. Independent receiver timing and physical reconnect on the
+release revision remain open.
 
 ## Owner decisions in 2.8.0 (keep them)
 
@@ -44,7 +47,7 @@ show header; restoring a backup keeps unsaved edits in its undo copy.
 
 ## Open work, most useful first
 
-1. **See 2.8.0 in the real app.** Run the packaged or dev app on a second or
+1. **Rehearse live workflows with a practice show.** Run the packaged or dev app on a second or
    virtual display with a practice show (audio, a video, a still) and walk
    through: GO while a loop plays; a stinger fired over a bed; stopping a Play
    Next cue by hand; GO pressed twice on a slow cue; a sound effect over a

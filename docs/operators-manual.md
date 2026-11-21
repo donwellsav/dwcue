@@ -1,15 +1,15 @@
 # DonWells Cue — Operator's Manual
 
-**Version:** 2.8.0
-**Source revision:** 5f1187f
-**Native engine baseline:** 5e259d0
-**Edition:** 20 November 2026 · English · Operator edition
+**Version:** 2.8.1
+**Source revision:** b2ff02f
+**Native engine baseline:** d831de7
+**Edition:** 21 November 2026 · English · Operator edition
 
 A practical handbook for the person preparing and running audio cues in a live show. Includes same-machine video output, remote control, recovery procedures, and printable checklists.
 
-This edition covers docked controls, live playlist and group shuffle, group levels, the QuickPlay handoff to Up Next, same-cue picture recovery, and the expanded pre-show video check.
+This edition covers Mac HDMI timing, Video Output framing, playlist Loop and live sample-over indicators, the larger elapsed-time readout, and the new locate and fullscreen shortcuts.
 
-The interface captures use practice media and software audio output. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
+The interface captures use generated practice media. The updated macOS captures use silent media with the local audio engine. **docs/manual-assets/captures.json** records each capture's date, source revision and hash. Equipment photographs remain illustrative.
 
 ## 1. Read this before the show
 
@@ -63,7 +63,7 @@ Connect the audio interface before opening the show. Confirm the correct outputs
 
 On launch, the desktop normally starts its managed local server automatically. The welcome screen indicates **Using the audio engine on this computer** once connected. If the engine is starting, wait for connection rather than repeatedly reopening the app. The **Connect to a server on the network…** option reveals remote setup; see chapter 10 before using it.
 
-![Welcome screen using the audio engine on this computer, showing version 2.8.0.](manual-assets/welcome-current.png)
+![Welcome screen using the audio engine on this computer, showing version 2.8.1.](manual-assets/welcome-current.png)
 
 **Procedure — establish a known starting state**
 
@@ -108,7 +108,7 @@ DonWells Cue creates `<show name>.dwcue` and `media/` in the selected folder; po
 
 ### Edit Mode
 
-Use Edit Mode to import, organize, and configure the show. The top bar contains Settings, Video Output, Autosave, and the Show Mode switch. **Pre-show check** and **Level Check** open from the top row of **Settings → Audio Routing**. Open **Settings → Shortcuts** for the keyboard reference and editor. While a Settings tab has focus, Left and Right move between tabs and Enter opens the focused tab. Transport sits below the top bar with **Stop All Cues** in its yellow-and-black striped frame, the active-cue area, and the green **Play Next**. The button shows the cue name on multiple lines, its number, and the playable duration. A wider window has room for cue type, group, and loop or group start behavior where applicable. Hover for the full name. The output strip shows the selected device, main level, meters, and true-peak limiter. The clocks at the right of the top bar are **Time Left** for the cue that is playing, **List Left**, and the time of day. **List Left** is the running time from here to the end of the playlist: the rest of the playing cue, then **Up Next** and every cue after it. Time spent waiting for GO is not counted. A narrow window hides List Left to keep the other two clocks.
+Use Edit Mode to import, organize, and configure the show. The top bar contains Settings, Video Output, Autosave, and the Show Mode switch. **Pre-show check** and **Level Check** open from the top row of **Settings → Audio Routing**. Open **Settings → Shortcuts** for the keyboard reference and editor. While a Settings tab has focus, Left and Right move between tabs and Enter opens the focused tab. Transport sits below the top bar with **Stop All Cues** in its yellow-and-black striped frame, the active-cue area, and the green **Play Next**. The button shows the cue name on multiple lines, its number, and the playable duration. A wider window has room for cue type, group, and loop or group start behavior where applicable. Hover for the full name. The active-cue card shows elapsed time in large type beside the title. Use **Time Left** in the header for the remaining time. The output strip shows the selected device, main level, meters, and true-peak limiter. The clocks at the right of the top bar are **Time Left** for the cue that is playing, **List Left**, and the time of day. **List Left** is the running time from here to the end of the playlist: the rest of the playing cue, then **Up Next** and every cue after it. Time spent waiting for GO is not counted. A narrow window hides List Left to keep the other two clocks.
 
 ![Edit Mode with the playlist, the Up Next cue edged in green, Basic Info and the output console.](manual-assets/edit-workspace.png)
 
@@ -315,14 +315,14 @@ The colors follow the tally lights of a vision mixer.
 
 - **Red is live.** The cue that is playing has a red edge, a red number with a play arrow, and a red **Playing** badge in the playlist. A playing QuickPlay has the same red edge and badge on its tile. A paused cue keeps its edge in grey.
 - **Green is next.** The **Up Next** cue has a green edge and a green number with the same double arrow as **Play Next**. **Play Next** and the Play buttons are green. The arrows mean the two can be told apart without relying on color.
-- **Stop is never red.** **Stop All Cues** sits in a frame of yellow-and-black stripes, and each cue's own Stop button has the same striped edge.
+- **Stop uses yellow-and-black stripes.** Use the Stop control on the active-cue card or QuickPlay tile, or use **Stop All Cues**. A playing audio row in the playlist offers **Restart** and the green **Toggle Loop** control.
 - **Yellow and amber are warnings**, such as the end-of-cue border that takes over as a cue approaches its end.
 - **Words stay white.** Titles are not colored, because white is the easiest to read in a dark room.
 - **The countdown is a stop light of its own.** The time on the live row and **Time Left** in the top bar run green, then yellow, then red as the cue nears its end. It is the one place where green and red do not mean next and live. Change the ranges in **Settings → User Interface → Time Left colors**.
 
 ### Find a cue
 
-Two locate buttons sit beside **Playlist** in both modes. The red one with the play arrow scrolls to the cue that is playing, and the green one with the double arrow scrolls to **Up Next**; each opens the group that holds its cue. A button is lit only while there is such a cue.
+Two locate buttons sit beside **Playlist** in both modes. The red one with the play arrow scrolls to the cue that is playing, and the green one with the double arrow scrolls to **Up Next**; each opens the group that holds its cue. A button is lit only while there is such a cue. The default **/** shortcut locates the playing cue and **?** locates Up Next.
 
 Type part of a cue's title, note or number in **Find cue** at the top of the playlist, or press **Ctrl+F** (**Cmd+F** on a Mac) to put the cursor there. The playlist jumps to the first match, opens the group that holds it, and outlines the row. **Enter** goes to the next match and **Shift+Enter** to the previous one, and the field shows which match you are on. The list is never filtered or reordered. In Edit Mode the match is also selected. The search works the same way in Show Mode.
 
@@ -424,6 +424,8 @@ Balance cues at their own level controls first, then use the main output level f
 
 The selected output target influences meter presentation, loudness targets, and limiter ceiling. The Live target uses a true-peak ceiling of approximately **−0.1 dBTP** by default. The **TP Limiter** control shows gain reduction; the ceiling can be adjusted. Keep the limiter enabled unless you have a specific, rehearsed reason not to.
 
+A playing playlist cue shows **+dBFS** after the live sample meter detects a peak above 0 dBFS. The mark lasts for that pass. The true-peak limiter continues to catch peaks above its ceiling, including peaks between samples.
+
 The limiter is a maximum, not a measurement target. Signals below its ceiling keep their gain. It only attenuates overs, with continuous lookahead through a ceiling change or an explicit bypass. It does not normalize the show or lift a quiet cue. When Main and Preview share a physical channel, their combined signal receives the final protection; the mapped meters and gain-reduction display report that physical sum.
 
 A limiter reduces digital peaks; it does not protect against an inappropriate acoustic level, a badly balanced cue, a wrong output patch, or downstream console gain. Persistent large gain reduction is a reason to lower and rebalance the source, not to raise the ceiling until the warning disappears. Use **Level Check** (**Settings → Audio Routing**) during preparation and resolve problems before switching to Show Mode.
@@ -470,7 +472,7 @@ The line at the top reads **Ready** when nothing needs attention. If the show ch
 4. On the cue call, press **Play Next** or its assigned shortcut once.
 5. Confirm the expected active cue and progress, then prepare the next target.
 
-![Transport during the looping practice cue: Stop All Cues in its striped frame, the playing cue with its own controls, and the green Play Next.](manual-assets/transport-detail-current.png)
+![The transport shows striped Stop All Cues, the active cue and its elapsed time, and green Play Next.](manual-assets/transport-detail-current.png)
 
 ![Production digital-mixer control surface as an operator-position reference. Use it to discuss sightlines and disciplined access to controls; the photograph does not certify the venue, equipment configuration, or show readiness.](manual-assets/stage-operator-photo.jpg)
 
@@ -590,7 +592,7 @@ Press **Q** to show or hide the docked bank. Press **Shift+Q** to open or close 
 
 Open **Settings → Shortcuts**, select a binding, and press the desired key. For a MIDI controller, open **Settings → MIDI** and use **Learn** beside the action. Use the **×** button beside a binding to clear it. Resolve any reserved combinations or conflicts before rehearsal. **Show shortcuts bar** toggles the two-line reference at the bottom of the window. It lists the keys used while a show runs first (Play Next, Pause / Resume, Stop All, Up Next, selection, Cue to Continue, Jump Cue, Loop), then the two **QuickPlays (defaults)** key ranges, then the window and set-up keys, as many as the window is wide enough for. **Customize Shortcuts…** opens the full list. The arrow beside a number on a tile means Shift. Individual tile settings also provide **Keyboard Shortcut**, **Assign shortcut**, and **Clear shortcut**.
 
-![Keyboard bindings in the docked Shortcuts tab, including the two QuickPlays window controls.](manual-assets/shortcuts-current.png)
+![Keyboard bindings in the docked Shortcuts tab.](manual-assets/shortcuts-current.png)
 
 **Procedure — hand over a keyboard-controlled show**
 
@@ -655,9 +657,9 @@ Choose the audience display in **Settings → Video Output**. On a Mac, the list
 
 If the switcher uses a fixed show standard, open **Advanced signal settings**, select its exact format and choose **Apply signal format**. For example, 1080i59.94 carries 59.94 fields per second, whereas 1080p59.94 carries 59.94 complete frames per second. Cue saves the preference on this Mac and applies it only to the assigned audience output. Changing a live HDMI format can briefly blank the input while it locks. GO and clip changes leave the selected format alone.
 
-Cue saves a live format change after macOS confirms the selected timing. A failed change keeps the previous saved format. Closing Video Output ends Cue's temporary display configuration so macOS can restore the previous HDMI timing.
+Cue saves a live format change after macOS confirms the selected timing. If the change fails, Cue keeps the prior format setting and retains the previously confirmed feed when it is still available. When the assigned display returns, Cue checks its identity and timing before showing the audience picture again. Closing Video Output releases Cue’s temporary mode and attempts to restore the previous timing. Settings reports when macOS could not confirm restoration.
 
-**Other Mac display timings** lists additional fixed modes reported by the driver for that display. **Keep current Mac display mode** uses the existing timing. **Mac reports** shows the operating system's active mode. For an independent signal measurement, read the switcher's input before any internal conversion. Some switchers advertise several timings while accepting only the current production standard.
+**Other Mac display timings** lists additional fixed modes reported by the driver for that display. **Keep current Mac display mode** uses the existing timing. **Mac reports** shows the active timing as reported by macOS, using the HDMI driver’s active timing when available. For an independent signal measurement, read the switcher's input before any internal conversion. Some switchers advertise several timings while accepting only the current production standard.
 
 
 **Procedure — line up picture and optional AV Sync**
@@ -674,7 +676,7 @@ In **Settings → Video Output → Test card**, drop or paste a PNG, JPEG, WebP,
 
 ### What the audience sees
 
-The output shows one picture at a time and cuts to the newest sounding cue that has a picture, a video or a cue image. A sound-only cue started over a playing video, such as an effect, leaves the video on screen. **Full HD**, **Fit to display**, and **100%** are the default picture settings. A 16:9 cue fills a 1920 × 1080 output edge to edge. Video and stills retain their proportions and show the entire source. Black fills any space around the picture.
+The output shows one picture at a time and cuts to the newest sounding cue that has a picture, a video or a cue image. A sound-only cue started over a playing video, such as an effect, leaves the video on screen. **Full HD**, **Fit entire picture**, and **100%** are the default picture settings. A 16:9 cue fills a 1920 × 1080 output edge to edge. Video and stills retain their proportions and show the entire source. Black fills any space around the picture.
 
 When a cue has no usable video, the output uses the first available layer in this order: the cue's own **Cue image**, the show's **Standby image**, then black. A captured picture becomes one of those two. The native audio engine drives the soundtrack. Preview/headphone playback stays off the audience output. A video can play on Video Output while the operator auditions that same cue in Preview.
 
@@ -710,6 +712,7 @@ In **Settings → Video Output → Picture framing**, click the current **Canvas
 
 | Canvas | Dimensions | Shape |
 | --- | --- | --- |
+| Match the output window | Uses the output window’s current bounds | Matches the window |
 | Full HD (default), HD, UHD | 1920 × 1080, 1280 × 720, 3840 × 2160 | 16:9 |
 | WUXGA, WXGA | 1920 × 1200, 1280 × 800 | 16:10 |
 | XGA | 1024 × 768 | 4:3 |
@@ -718,9 +721,9 @@ In **Settings → Video Output → Picture framing**, click the current **Canvas
 | Portrait signage | 1080 × 1920 | 9:16 |
 | Custom dimensions | 64–16384 px for each side | Width divided by height |
 
-**Fit to display** makes the canvas as large as the window allows. **Cap at canvas size** limits the canvas to the selected dimensions in display pixels and shrinks it to fit a smaller window. **Frame size** scales the result from 25% to 100% around the center. Use custom dimensions for the active raster supplied by the LED or signage technician. Both scaling modes preserve media proportions.
+**Fit entire picture** preserves the full image and adds black bars where the aspect ratios differ. **Fill canvas (crop)** fills the canvas while preserving picture proportions, cropping the edges when needed. With a fixed canvas, **Fit without enlarging the canvas** caps the canvas at its selected pixel size and shrinks it to fit a smaller window. **Frame size** scales the centered frame from 25% to 100%. Use custom dimensions for the active raster supplied by the LED or signage technician. Fullscreen controls the window’s coverage. These settings control the picture inside it.
 
-On macOS, choose the HDMI timing in **Advanced signal settings**. On other platforms, set the display timing in the operating system. Confirm the received signal at the switcher or display. For a standard projector or TV, rehearse at Full HD with Fit to display at 100%. Check that the corner markers and edges of a framing pattern are visible and its circle is round.
+On macOS, choose the HDMI timing in **Advanced signal settings**. On other platforms, set the display timing in the operating system. Confirm the received signal at the switcher or display. For a standard projector or TV, rehearse at Full HD with Fit entire picture at 100%. Check that the corner markers and edges of a framing pattern are visible and its circle is round.
 
 ### Set picture sync
 
@@ -761,7 +764,7 @@ The video status in the header comes from the output itself: the frames it prese
 
 The output assigned to a display covers that display and no other screen. On a Mac it does this without macOS full screen, so the control screen is left alone whatever the Mac's **Displays have separate Spaces** setting, and the assigned output has no fullscreen choice to make. On Windows and Linux, and on the preview window everywhere, double-click or use the output window's context menu to change fullscreen; a Mac preview window in fullscreen covers only the screen it is on. For the same reason no DonWells Cue window uses macOS full screen: on a Mac the control window fills its screen with **View > Zoom** or the green window button.
 
-If the assigned display disappears, the app closes that output instead of moving it onto the control display or onto another screen, even one of the same model and resolution; it can reacquire the assignment when the display returns while the session remains enabled. If you reopened the output in the meantime, the preview window on the control screen becomes the output on the returned display. If two connected screens could both be the assigned one, the app does not guess: it reports the display as missing until you choose the output display again in Settings. Recheck the physical output after reconnecting a cable.
+If the assigned display disappears, Cue parks the picture on macOS or closes the audience window on other platforms. The session remains enabled, so Cue can reacquire the assigned display when it returns. Cue keeps the audience feed off the control display while it waits. If the assignment is ambiguous, choose the intended output in Settings. Confirm the picture and input timing at the destination after a reconnect.
 
 While the output is on, the app keeps checking that the picture sits exactly on the assigned display: filling it, and reaching onto no other screen. An output that comes out too small, too large, shifted, or on the wrong screen is put back by itself. If it cannot be put right, the Video Output settings show a warning that the output is not sitting exactly on its display. There is only ever one output window.
 
@@ -1009,7 +1012,7 @@ First protect the audience using the rehearsed stop/mute procedure. Then identif
 | A group does not leave its last cue | Check the group's End Behavior and destination, then confirm that the selected descendant run completed rather than being manually stopped or cancelled. Stale child completion cannot fire the group ending after cancellation. |
 | QuickPlay does not fire | Check the keyboard/MIDI mapping, retrigger Ignore, connection and media readiness. Use the tile's Stop button to stop playback. |
 | MIDI volume appears to move the wrong stage | Confirm the mapping is Master Volume and make one small directional movement after its reference value. It changes separate engine state and does not move the visible main Master output fader or other output faders; verify the audible result only through the rehearsed destination. |
-| Video is black or shows a still image | Check the active cue and Video Output status. With no video playing, an audio-only cue shows its still or the standby. If a video is playing audio and the picture stays black, use **Copy Output Diagnostics** before restarting the output. |
+| Video is black or shows a still image | Check the active cue and Video Output status. With no video playing, an audio-only cue shows its still or the standby. If a video is playing audio and the picture stays black, use **Copy diagnostics** before restarting the output. |
 | The server appears in discovery but will not connect | UDP discovery does not prove TCP reachability or authentication. Verify address, control port, firewall, and current token. |
 | Changes are missing after a restart | Check which copy was opened, whether the last save succeeded, Autosave state, and available disk backups. Unsaved edits are not in a disk-only backup. |
 | A moved show reports missing media | Restore the whole project folder, check external linked paths and mounted volumes, or replace the missing file in cue Properties and recheck its trims. |
@@ -1127,7 +1130,7 @@ These are source defaults, not a promise about a project's customized assignment
 | Cmd/Ctrl+Q | Exit / quit workflow |
 | F11 | Fullscreen (Windows and Linux; on a Mac use **View > Zoom** or the green window button) |
 
-The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. New Show, Open Project, archive import and export, Quit, **Unsaved Changes**, and the main window's recovery panel reserve Escape for Stop All. With Video Output focused, Escape also exits its fullscreen mode. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
+The default **Escape** Stop All shortcut works while editing, including in the limiter ceiling and Preview In/Out fields. New Show, Open Project, archive import and export, Quit, **Unsaved Changes**, and the main window's recovery panel reserve Escape for Stop All. With the preview focused, Escape also leaves preview fullscreen. In Level Check, R / [ / ] / Q have the temporary meanings described in chapter 12. MIDI bindings belong to the machine; keyboard playback assignments belong to the project.
 
 ### Operating boundaries
 
@@ -1141,7 +1144,7 @@ The default **Escape** Stop All shortcut works while editing, including in the l
 
 ### About this edition
 
-This edition covers **2.8.0**, based on application source **5f1187f**. The interface captures use generated media, a software audio output, and fixture display, MIDI and locale methods. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
+This edition covers **2.8.1**, based on application source **b2ff02f**. The 2.8.1 captures use a packaged macOS build, an isolated profile, and generated silent media. Earlier illustrations retain their own capture provenance. Each capture's source revision is recorded in **docs/manual-assets/captures.json**.
 
 Earlier checkpoints passed 13 native suites, 74 API checks, client checks, type checking, and renderer generation. Held storage tests exercised late Open, Save ordering, and direct cue registration. Chromium exercised Stop All during field editing, deletion, and imports with a software output and simulated online providers.
 

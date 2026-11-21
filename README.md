@@ -1,6 +1,6 @@
 # DonWells Cue
 
-DonWells Cue **2.8.0** keeps sound and picture steady during a show: Program plays through one path you can meter and fade, outputs that drop out come back by themselves, the clicks and gaps found in testing are gone, video holds its frames in step with the sound, and a new Picture sync setting makes up for a video chain that delays the picture. MIDI controllers work again. See the [2.8.0 release notes](docs/release-notes/v2.8.0.md). It builds on 2.7, which made a running show easier to read (red is live, green is next, Stop is striped), kept Video Output on the one display it was given, converted videos the computer cannot show, and added a pre-show check, show backups and a printable cue sheet. Read the first section of the [2.7.0 release notes](docs/release-notes/v2.7.0.md) before updating from 2.6 a machine that shares shows with others.
+DonWells Cue **2.8.1** adds HDMI signal selection on macOS, with 1080p59.94 as the default for compatible output chains. Video Output has separate fullscreen and picture framing controls. The playlist has green Loop, live sample-over indicators, and shortcuts to locate the playing cue and Up Next. The transport shows a larger elapsed time next to the cue title. See the [2.8.1 release notes](docs/release-notes/v2.8.1.md) and the [Operator’s Manual](docs/operators-manual.pdf). Read the first section of the [2.7.0 release notes](docs/release-notes/v2.7.0.md) before updating from 2.6 a machine that shares shows with others.
 
 **Enter** sets Up Next and **Space** runs it after the engine confirms the target. **Q** toggles QuickPlays and **Shift+Q** toggles the detached window. The number row triggers slots **1–10**, and holding **Shift** triggers **11–20**. **S** opens Settings, **Shift+S** opens Properties, and **V** toggles Video Output. The [workplan](docs/superpowers/plans/2026-11-03-live-show-reliability.md) records software verification and the deferred line-level audio and 1080p HDMI checks.
 
@@ -10,7 +10,7 @@ You build a **show** as a list of cues plus a grid of one-touch buttons, then tr
 
 This is the active DonWells Cue repository. Build targets are configured for **Windows x64, macOS Intel (x64), macOS Apple Silicon (arm64), and Linux x64**. Published macOS packages are Developer ID signed, notarized, and package-validated.
 
-> The current source builds **v2.8.0**. Match the installed About version to the release notes before rehearsal.
+> The current source builds **v2.8.1**. Match the installed About version to the release notes before rehearsal.
 
 > **Operating a show?** Use the [operator manual (PDF)](docs/operators-manual.pdf) or its [Markdown source](docs/operators-manual.md). Those instructions track the current source. The client and server READMEs linked later are developer references, not show-day instructions.
 
@@ -49,15 +49,15 @@ The screenshots in this README are representative captures and may lag the newes
 
 ## Video output
 
-Video cues are ordinary audio cues whose media file also carries a picture (H.264 or HEVC — ProRes and other production codecs are not supported yet). The audio track plays through the normal engine, mixer, fades and metering; the picture renders in a separate **Video Output** window designed to sit fullscreen on the machine's video output (HDMI → switcher → projector). Cues with video show a 🎬 badge in the playlist.
+Video cues are ordinary audio cues whose media file also carries a picture (including H.264 and HEVC, with automatic H.264 conversion for other supported sources such as ProRes). The audio track plays through the normal engine, mixer, fades and metering; the picture renders in a separate **Video Output** window designed to sit fullscreen on the machine's video output (HDMI → switcher → projector). Video cues show a thumbnail in the playlist.
 
 - **Open it for each session** from the toolbar **Video Output** button or Project Settings → **Video Output**. The app always launches with Video Output closed and no display assigned: screens are chosen fresh each time the app starts.
 - **Identify the physical screens** before assigning one: click **Identify displays** to show a large number, OS display name and resolution on every connected screen for five seconds. You can choose the display while the output is closed. If no independent display is assigned, DonWells Cue opens a normal preview window rather than taking over the control screen with fullscreen black.
-- **Picture framing** — 16:9 Full HD is the default. **Settings → Video Output** offers common HD, UHD, projector, stage and signage sizes, plus custom dimensions. Fit to display or cap the frame at its selected size and scale it proportionally. Choose the HDMI resolution and refresh rate in the operating system.
+- **Picture framing** — 16:9 Full HD is the default. **Settings → Video Output** offers common HD, UHD, projector, stage and signage sizes, plus custom dimensions. Choose a fixed canvas or match the output window, fit the entire picture or fill with cropping, and scale the centered frame. On macOS, choose a supported HDMI resolution and rate in **Advanced signal settings**. The default is 1080p59.94. On other platforms, set timing in the operating system.
 - **Output display, Canvas, and Scaling** expand in the lower panel. The playlist and **GO** stay available. **Escape** runs Stop All even if you changed its shortcut. Use **Apply framing** to save the Canvas and Scaling changes.
 - **Recover from the output itself** by right-clicking it. The context menu can enter or leave fullscreen, show the test card, or **Exit Video Output**. On a Mac the assigned output always covers its display, and only that display, so its menu has no fullscreen item. On Windows, **Alt+F4** also closes only the Video Output window. **Esc** is Stop All: on an assigned display the picture stays full screen, and only the single-screen preview window leaves fullscreen. Closing it disarms the output for the rest of the session until you open it again.
 - **Keep using shortcuts** even if the Video Output window owns keyboard focus. DonWells Cue forwards application and QuickPlay shortcuts to the control window while preserving operating-system and native app shortcuts such as Windows Alt+F4 and the normal Ctrl/Cmd file commands.
-- **Standby stills** — press **G** to capture Video Output or **Shift+G** to capture the display chosen in **Settings → Video Output**. Capture for the selected cue or use a session-wide fallback. Clicking the confidence thumbnail captures Video Output for the selected cue. The picture falls back through assigned cue art, captured cue art, captured session standby, saved project standby and black.
+- **Standby stills** — press **G** to capture Video Output as the show’s standby picture or **Shift+G** to save a cue picture. Choose another capture source in **Settings → Video Output** when needed. An audio-only cue uses its own picture or the standby picture.
 - **In sync with audio** — the picture follows the native engine clock, including file-absolute paused seeks, loops, and authored Out points. It freezes when native progress stops and resumes only with fresh progress; it does not free-run through an audio stall.
 - **Silent videos** — a video file with no audio track still plays: the engine runs a silent transport of the container's duration so the cue advances, auto-follows and reports progress exactly like an audible cue.
 - **Grouped cues and QuickPlays** — nested video/image cues and QuickPlay-only video are supported; video uses the same media resolution as native audio. Reopening the output restores the most recently fired program source, not arbitrary cue-list order.
@@ -389,7 +389,7 @@ For deeper development notes:
 
 ## Releases & GitHub Actions
 
-A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.8.0**. Find published artefacts and checksums on the release page.
+A release pipeline is configured in [`.github/workflows/build-release.yml`](.github/workflows/build-release.yml). Package metadata is **v2.8.1**. Find published artefacts and checksums on the release page.
 
 ### Triggering a release
 

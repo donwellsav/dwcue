@@ -1,5 +1,24 @@
 # Video cue handoffs and control reliability
 
+## 2.8.1 HDMI and framing
+
+Cue uses the assigned external display's active HDMI timing when macOS exposes
+it. The named broadcast presets check progressive/interlaced timing and
+refresh rate. The 1080p59.94 and 1080p60.00 connection modes use distinct
+clock rates and must match the active driver readback when it is available.
+Closing output releases the temporary mode and warns when restoration is
+unconfirmed. An unavailable setting keeps the last saved preference.
+
+The fullscreen window owns display coverage. Canvas, fit or fill, and frame
+size determine the image inside it. The locked audience fullscreen behavior
+and the preview fullscreen toggle share this framing.
+
+The automated checks and the isolated macOS launch cover app behavior.
+Measuring timing on the cable and verifying recovery after a physical
+reconnect require a receiver or test instrument.
+
+## Earlier video reliability work
+
 **4 November software checkpoint:** `2f372c2` added native loader and driver containment and ordered managed-engine recovery. The earlier ten-minute muted mixed-video soak at `153a1a7` passed 481 SD/1080p rounds. The [workplan](superpowers/plans/2026-11-03-live-show-reliability.md) records software results, open routing and storage work, and deferred physical acceptance.
 
 Initial investigation: 2026-11-03 against the working tree based on `82505580ccb6ae86ccb71e28264b6d4436641419`. The reported pattern was that a standalone video usually worked, while playing video before or after audio/another video caused freezing, loss of control, and apparent crashes. Existing audio/import/Spotify changes were retained.
