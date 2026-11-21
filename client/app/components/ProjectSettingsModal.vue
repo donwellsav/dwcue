@@ -1032,8 +1032,12 @@ async function toggleOutputFullscreen(): Promise<void> {
 
 function selectVideoFramePreset(value: string): void {
   voFramePreset.value = value;
-  voFraming.value.matchOutput = value === 'output' ? true : undefined;
-  if (voFraming.value.matchOutput && voFraming.value.scaling === 'limit') voFraming.value.scaling = 'fit';
+  if (value === 'output') {
+    voFraming.value.matchOutput = true;
+    if (voFraming.value.scaling === 'limit') voFraming.value.scaling = 'fit';
+  } else {
+    delete voFraming.value.matchOutput;
+  }
   const preset = VIDEO_FRAME_PRESETS.find(entry => entry.id === value);
   if (preset) {
     voFraming.value.width = preset.width;

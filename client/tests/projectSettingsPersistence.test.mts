@@ -28,6 +28,10 @@ test('the inline Canvas chooser updates the draft and keeps it when switching to
   choose('custom');
   assert.equal(preset.value, 'custom');
   assert.deepEqual(draft.value, { width: 1280, height: 720, scale: 80, scaling: 'limit' });
+  choose('output');
+  assert.deepEqual(draft.value, { width: 1280, height: 720, scale: 80, scaling: 'fit', matchOutput: true });
+  choose('custom');
+  assert.deepEqual(draft.value, { width: 1280, height: 720, scale: 80, scaling: 'fit' });
 });
 
 test('the inline color editor reads shorthand and full hex while fencing transparency to Test Cards', () => {
