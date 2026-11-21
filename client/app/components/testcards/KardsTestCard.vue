@@ -86,9 +86,9 @@ const props = defineProps({
     type: Object,
     required: true
   },
-  displayFrequency: {
-    type: Number,
-    default: 0
+  displayTiming: {
+    type: String,
+    default: ''
   },
   network: {
     type: Array,
@@ -107,7 +107,9 @@ const borderSize = ref(25)
 const info = reactive({
   cardSize: '',
   circleSize: 500,
-  displayFrequency: 0,
+  get timingLabel() {
+    return [this.cardSize && 'Canvas ' + this.cardSize, props.displayTiming].filter(Boolean).join(' · ')
+  },
   time: '00:00',
   network: [],
   networkIndex: 0,
@@ -272,14 +274,6 @@ function restartNetworkRotation() {
     }, 5000)
   }
 }
-
-watch(
-  () => props.displayFrequency,
-  (value) => {
-    info.displayFrequency = value
-  },
-  { immediate: true }
-)
 
 watch(
   () => props.network,

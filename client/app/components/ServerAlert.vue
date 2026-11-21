@@ -74,8 +74,12 @@ const audioHealthMessage = computed(() => {
     ? t('audioHealth.stalled', { name: device.display_name })
     : t('audioHealth.lost', { name: device.display_name });
 });
-const videoErrorMessage = computed(() => videoStatus.value?.testCardError
-  || videoStatus.value?.playbackError?.message || '');
+const videoErrorMessage = computed(() => {
+  const s = videoStatus.value;
+  if (s?.testCardError || s?.playbackError?.message) return s.testCardError || s.playbackError?.message;
+  return s?.warning === 'signal-format' && s.signal && s.signal.phase !== 'checking'
+    ? t(`settings.videoSignal.phase.${s.signal.phase}`) : '';
+});
 
 watch(() => server.connected ? server.lastErrorEvent : null, (event) => {
   if (event) showHeaderWarning(event.message, event.severity);

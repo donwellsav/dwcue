@@ -40,7 +40,7 @@
     </div>
 
     <div id="bottomText" class="textRow" v-if="config.showInfo">
-      <span v-resize-text="{ratio:2, maxFontSize: '32px'}" style="text-align: left">{{ info.cardSize }} - {{info.displayFrequency}}Hz</span>
+      <span v-resize-text="{ratio:2, maxFontSize: '32px'}" style="text-align: left">{{ info.timingLabel }}</span>
       <span v-resize-text="{ratio:3, maxFontSize: '32px'}" style="text-align: center"><i class="fas fa-volume-up" /> {{ audioDescription }}</span>
       <span v-resize-text="{ratio:2, maxFontSize: '32px'}" style="text-align: right">{{ info.network[info.networkIndex] }}</span>
     </div>

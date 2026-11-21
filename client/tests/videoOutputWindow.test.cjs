@@ -2,6 +2,9 @@
 
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
+const { EventEmitter } = require('node:events');
+const { PassThrough } = require('node:stream');
+const { createMacVideoSignal, isSignalFormat } = require('../electron/mac-video-signal');
 const {
   canToggleOutputFullscreen,
   claimSoleOutput,
@@ -332,6 +335,7 @@ function displayResolver({ saved = [] } = {}) {
   assert.ok(declarations, 'missing videoOutputLookalikes in Electron main process');
   const context = {
     resolveAssignedDisplay,
+    macVideoSignal: null,
     screen: {
       getAllDisplays: () => state.displays,
       getDisplayMatching: () => state.controlOn,
@@ -413,6 +417,7 @@ function displayWatchdog({ outputWindow, displays = [laptop], target = null, pla
   const actions = [];
   const context = {
     videoOutputWatchdogInstalled: false,
+    macVideoSignal: null,
     videoOutputWatchdogTimer: null,
     videoOutputSessionEnabled: true,
     videoOutputWindow: outputWindow,
@@ -500,6 +505,7 @@ function videoOutputSettings(fileText) {
       writeFileSync: (_file, text) => { disk.text = text; },
     },
     readVideoFraming: value => value ?? null,
+    isSignalFormat,
     DEFAULT_VIDEO_FRAMING: { width: 1920, height: 1080, scale: 100, scaling: 'fit' },
     createTestCardConfig: value => value ?? { cardType: 'bars' },
     console,
@@ -546,4 +552,100 @@ test('picture sync takes whole milliseconds from 0 to 500 and nothing else', () 
   vm.runInNewContext(`const PICTURE_OFFSET_MAX_MS = 500;\n${functionSource('readPictureOffset')}\nthis.read = readPictureOffset;`, context);
   for (const value of [0, 33, 500]) assert.equal(context.read(value), value);
   for (const value of [-1, 501, 12.5, '80', null, undefined, Number.NaN]) assert.equal(context.read(value), null);
+});
+
+test('existing shows default to exact 1080p59.94 and signal preferences survive a restart', () => {
+  for (const previous of [null, '{}', '{"signalFormat":"1080p60ish"}']) {
+    assert.equal(videoOutputSettings(previous).read().signalFormat, '1080p59.94');
+  }
+  const raw = 'native:00112233-4455-6677-8899-aabbccddeeff:2f:1920x1080i:29970000';
+  const settings = videoOutputSettings(null);
+  for (const mode of ['auto', '1080i59.94', '720p59.94', '1080p60.00', 'current', raw]) {
+    assert.ok(isSignalFormat(mode));
+    settings.write({ ...settings.read(), signalFormat: mode });
+    assert.equal(videoOutputSettings(settings.disk.text).read().signalFormat, mode);
+  }
+  for (const value of ['1080i29.97', '1080p59.9', 'native:2f', raw + '\ninvalid', null]) {
+    assert.equal(isSignalFormat(value), false);
+  }
+});
+
+test('only the latest native readback can arm the output after Apply, a replug or Close', () => {
+  const worker = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough() });
+  const commands = [];
+  worker.stdin.on('data', line => commands.push(JSON.parse(line)));
+  const signal = createMacVideoSignal(() => '/test/dwcue-display-modes', () => {}, () => worker);
+  const initial = { id: '2', control: '1', enabled: true, format: 'auto' };
+  const reply = (command, id, canPresent) => worker.stdout.write(JSON.stringify({
+    revision: command.revision, uuid: 'assigned-display', id, phase: canPresent ? 'matched' : 'idle', canPresent,
+  }) + '\n');
+  signal.configure(initial);
+  signal.configure(initial);
+  assert.equal(commands.length, 1, 'ordinary status updates do not set a mode again');
+  reply(commands[0], '2', true);
+  signal.configure({ ...initial, format: '1080i59.94' });
+  const apply = commands.at(-1);
+  assert.equal(apply.assign, false);
+  assert.equal(apply.apply, true);
+  assert.equal(apply.uuid, 'assigned-display');
+  signal.displayRemoved(3);
+  assert.equal(commands.at(-1), apply, 'another screen has no effect');
+  signal.displayRemoved(2);
+  const recheck = commands.at(-1);
+  assert.equal(recheck.assign, false);
+  assert.equal(recheck.apply, false);
+  reply(apply, '2', true);
+  assert.equal(signal.state.canPresent, false, 'stale confirmation from before disconnect');
+  reply(recheck, '7', true);
+  assert.equal(signal.state.id, '7', 'the native owner found the same UUID under a new ID');
+  signal.recheck(true);
+  const wake = commands.at(-1);
+  assert.ok(wake.apply && !wake.assign, 'wake reacquires the requested mode on the original physical output');
+  assert.equal(signal.state.canPresent, false);
+  reply(wake, '7', true);
+  signal.configure({ ...initial, enabled: false, format: '1080i59.94' });
+  reply(wake, '7', true);
+  assert.equal(signal.state.canPresent, false, 'a late reply cannot re-open a closed feed');
+  reply(commands.at(-1), '7', false);
+  worker.stdout.end();
+  worker.stdin.end();
+});
+
+test('Mac audience pictures follow confirmed native identity and keep a previously verified feed on a failed Apply', () => {
+  const cfg = { displayId: '2' };
+  const returned = { ...display(7, 'EPSON PJ', 1280, 720), bounds: { x: 1728, y: 0, width: 1280, height: 720 } };
+  let displays = [laptop, audienceProjector, stageMonitor];
+  let control = laptop;
+  const actions = [];
+  const ctx = {
+    videoOutputSessionEnabled: true, videoOutputScreens: cfg, videoOutputWindow: null,
+    macVideoSignal: { state: {} }, process: { platform: 'darwin' },
+    mainWindow: { isDestroyed: () => false, getBounds: () => ({}) },
+    screen: { getAllDisplays: () => displays, getDisplayMatching: () => control },
+    readVideoOutputConfig: () => cfg, broadcastVideoOutputStatus() {}, resetVideoOutputGeometry() {},
+    seatPhysicalOutput: (_win, _platform, bounds) => actions.push(['seat', bounds]),
+    createVideoOutputWindow: () => actions.push('create'),
+  };
+  vm.runInNewContext(['resolveVideoOutputDisplay', 'parkVideoOutputWindow', 'restoreVideoOutputWindow',
+    'reconcileMacVideoSignal'].map(functionSource).join('\n'), ctx);
+  const report = (id, phase, canPresent) => {
+    ctx.macVideoSignal.state = { id, phase, canPresent };
+    ctx.reconcileMacVideoSignal();
+    return actions.splice(0);
+  };
+  assert.deepEqual(report('2', 'unavailable', false), []);
+  assert.deepEqual(report('2', 'matched', true), ['create']);
+  ctx.videoOutputWindow = { videoOutputTargetDisplayId: 2, isDestroyed: () => false,
+    getBounds: () => undefined, hide: () => actions.push('hide'), show: () => actions.push('show') };
+  assert.deepEqual(report('2', 'unavailable', true), [], 'a verified previous timing can keep playing');
+  assert.deepEqual(report('2', 'mismatch', false), ['hide']);
+  displays = [laptop, stageMonitor, returned];
+  assert.deepEqual(report(null, 'missing', false), [], 'an identical monitor must not be substituted');
+  assert.deepEqual(report('7', 'matched', true), [['seat', returned.bounds], 'show']);
+  control = returned;
+  assert.deepEqual(report('7', 'matched', true), ['hide'], 'even a valid report cannot take the operator screen');
+  ctx.videoOutputSessionEnabled = false;
+  ctx.videoOutputWindow = null;
+  control = laptop;
+  assert.deepEqual(report('7', 'matched', true), []);
 });

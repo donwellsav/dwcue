@@ -259,6 +259,7 @@ declare global {
         listDisplays: () => Promise<VideoOutputDisplay[]>;
         identifyDisplays: () => Promise<VideoOutputDisplay[]>;
         setDisplay: (displayId: string | null) => Promise<VideoOutputStatus>;
+        setSignalFormat: (format: string) => Promise<VideoOutputStatus>;
         setFraming: (framing: VideoFraming) => Promise<VideoOutputStatus>;
         setPictureOffset: (ms: number) => Promise<VideoOutputStatus>;
         checkFrame: (request: {
@@ -351,7 +352,8 @@ declare global {
     targetId: string | null;
     targetLabel: string | null;
     displays: VideoOutputDisplay[];
-    warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | 'display-not-covered' | null;
+    signal?: MacVideoSignalStatus | null;
+    warning: 'single-display' | 'display-missing' | 'display-shared-with-control' | 'display-not-covered' | 'signal-format' | null;
     playbackError: VideoPlaybackError | null;
     rendererReady: boolean;
     rendererResponsive: boolean;
@@ -364,6 +366,18 @@ declare global {
     testCardError: string | null;
     testCardInfo: { displayFrequency: number; network: string[] };
     fullscreen: boolean;
+  }
+
+  interface MacVideoSignalStatus {
+    phase: 'idle' | 'checking' | 'current' | 'matched' | 'missing' | 'protected' | 'failed' | 'restoreFailed' | 'mismatch' | 'unavailable' | 'error';
+    requested: string;
+    chosen: string;
+    restoreFailed?: boolean;
+    formats: string[];
+    nativeModes: Record<string, string>;
+    presets: string[];
+    canPresent: boolean;
+    actual: { width?: number; height?: number; hz?: number; format?: string; interlaced?: boolean };
   }
 
   // The show a capture is for, and the cue when it is for one.

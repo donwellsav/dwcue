@@ -184,6 +184,10 @@
         {
           "from": "../server/build/dwcue-server",
           "to": "server-bin/dwcue-server"
+        },
+        {
+          "from": "../server/build/dwcue-display-modes",
+          "to": "server-bin/dwcue-display-modes"
         }
       ]
     },

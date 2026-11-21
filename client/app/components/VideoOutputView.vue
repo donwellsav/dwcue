@@ -14,7 +14,7 @@
         v-if="testCard"
         class="layer"
         :config="config"
-        :display-frequency="status?.testCardInfo.displayFrequency ?? 0"
+        :display-timing="testCardTiming"
         :network="status?.testCardInfo.network ?? []"
         :audio-description="status?.testCardPlayback?.description ?? 'Program output'"
       >
@@ -57,6 +57,16 @@ import { DEFAULT_VIDEO_FRAMING, videoFrameLayout } from '../../electron/video-ou
 
 const server = useLiveplayServer();
 const status = shallowRef<VideoOutputStatus | null>(null);
+const testCardTiming = computed(() => {
+  const s = status.value;
+  if (s?.signal) {
+    const a = s.signal.actual;
+    if (!s.displayId) return 'Preview';
+    if (!a.width || !a.height) return '';
+    return `Mac · ${a.width}×${a.height}${a.interlaced ? 'i' : 'p'}${a.hz ? ' · ' + Number(a.hz.toFixed(5)) + ' Hz' : ''}`;
+  }
+  return s?.testCardInfo.displayFrequency ? `${s.testCardInfo.displayFrequency} Hz` : '';
+});
 const pixelScale = ref(1);
 const frameStyle = computed(() => {
   const { aspect, fraction, maxWidth } = videoFrameLayout(status.value?.framing ?? DEFAULT_VIDEO_FRAMING, pixelScale.value);

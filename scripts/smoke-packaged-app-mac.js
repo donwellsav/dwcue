@@ -203,15 +203,15 @@ async function main() {
   fs.accessSync(executable, fs.constants.X_OK);
   console.log(`${prefix} app: ${path.relative(REPO_ROOT, appPath)}`);
 
-  const lipo = run('/usr/bin/lipo', ['-archs', executable]);
-  if (lipo.status !== 0) {
-    throw new Error(`Could not inspect app architecture: ${(lipo.stderr || lipo.error?.message || '').trim()}`);
-  }
-  const architectures = lipo.stdout.trim();
+  const displayHelper = path.join(appPath, 'Contents', 'Resources', 'server-bin', 'dwcue-display-modes');
   const expectedMachOArch = requestedArch === 'x64' ? 'x86_64' : 'arm64';
-  if (architectures !== expectedMachOArch) {
-    throw new Error(`Expected a ${requestedArch} app, found: ${architectures || 'no architecture'}`);
+  for (const binary of [executable, displayHelper]) {
+    const lipo = run('/usr/bin/lipo', ['-archs', binary]);
+    if (lipo.status !== 0 || lipo.stdout.trim() !== expectedMachOArch) {
+      throw new Error(`Expected ${expectedMachOArch} in ${binary}: ${lipo.stderr || lipo.stdout || lipo.error?.message}`);
+    }
   }
+  if (run(displayHelper, ['--self-test']).status !== 0) throw new Error('Packaged display helper failed its format checks.');
   console.log(`${prefix} architecture: ${requestedArch}`);
 
   if (runningPid()) throw new Error(`${productName} is already running; quit it and retry.`);

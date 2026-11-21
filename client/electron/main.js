@@ -1,4 +1,4 @@
-const { app, BrowserWindow, View, ipcMain, dialog, shell, Menu, net, session, screen, desktopCapturer, powerSaveBlocker, webContents } = require('electron');
+const { app, BrowserWindow, View, ipcMain, dialog, shell, Menu, net, session, screen, desktopCapturer, powerMonitor, powerSaveBlocker, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
@@ -39,6 +39,7 @@ const { createQuickPlayMutationBroker, validateIdentity, sameIdentity } = requir
 const { findCaptureCue, captureImageUrl } = require('./video-standby-capture');
 const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('./video-output-framing.mjs');
 const { planGeometryCorrection, readViewportReport } = require('./video-output-geometry');
+const { broadcastFormats, createMacVideoSignal, isSignalFormat } = require('./mac-video-signal');
 const {
   canToggleOutputFullscreen,
   claimSoleOutput,
@@ -951,9 +952,7 @@ function lastLiveplayServerLogError() {
   }
 }
 
-function resolveServerBinaryPath() {
-  const exeName = process.platform === 'win32' ? 'dwcue-server.exe' : 'dwcue-server';
-
+function resolveServerBinaryPath(exeName = process.platform === 'win32' ? 'dwcue-server.exe' : 'dwcue-server') {
   if (app.isPackaged) {
     // Bundled via electron-builder extraResources → resourcesPath/server-bin/
     return path.join(process.resourcesPath, 'server-bin', exeName);
@@ -2668,6 +2667,12 @@ function createWindow() {
   reloadAfterRendererCrash(mainWindow, 'main-window');
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.on('moved', () => {
+    if (macVideoSignal && videoOutputScreens.displayId) {
+      syncMacVideoSignal();
+      reconcileMacVideoSignal();
+    }
+  });
 
   // Veto the first close so the renderer can run its quit-confirmation
   // flow (unsaved changes → optionally shut the local audio server down).
@@ -2810,6 +2815,9 @@ let capturingVideoStandby = false;
 let displayIdentifierWindows = [];
 let displayIdentifierTimer = null;
 const videoOutputWindowsPreservingSession = new WeakSet();
+const macVideoSignal = process.platform === 'darwin'
+  ? createMacVideoSignal(() => resolveServerBinaryPath('dwcue-display-modes'), reconcileMacVideoSignal)
+  : null;
 
 // Placement check for a physical output (see video-output-geometry.js). The
 // output page reports what it really covers; main puts back a window that is
@@ -2952,17 +2960,19 @@ function readPictureOffset(value) {
 }
 
 function readVideoOutputConfig() {
+  const defaultSignalFormat = '1080p59.94';
   const screens = { ...videoOutputScreens, displayLookalikes: [...videoOutputScreens.displayLookalikes] };
   try {
     const parsed = JSON.parse(fs.readFileSync(videoOutputConfigPath(), 'utf-8'));
     return {
       ...screens,
+      signalFormat: isSignalFormat(parsed.signalFormat) ? parsed.signalFormat : defaultSignalFormat,
       framing: readVideoFraming(parsed.framing) ?? DEFAULT_VIDEO_FRAMING,
       pictureOffsetMs: readPictureOffset(parsed.pictureOffsetMs) ?? 0,
       testCardConfig: createTestCardConfig(parsed.testCardConfig),
     };
   } catch {
-    return { ...screens, framing: DEFAULT_VIDEO_FRAMING, pictureOffsetMs: 0, testCardConfig: createTestCardConfig() };
+    return { ...screens, signalFormat: defaultSignalFormat, framing: DEFAULT_VIDEO_FRAMING, pictureOffsetMs: 0, testCardConfig: createTestCardConfig() };
   }
 }
 
@@ -2973,7 +2983,7 @@ function writeVideoOutputConfig(cfg) {
   videoOutputScreens.captureDisplayId = cfg.captureDisplayId ?? null;
   try {
     fs.writeFileSync(videoOutputConfigPath(),
-      JSON.stringify({ framing: cfg.framing, pictureOffsetMs: cfg.pictureOffsetMs ?? 0,
+      JSON.stringify({ framing: cfg.framing, signalFormat: cfg.signalFormat, pictureOffsetMs: cfg.pictureOffsetMs ?? 0,
         testCardConfig: cfg.testCardConfig }, null, 2));
     return true;
   } catch (e) {
@@ -3017,6 +3027,11 @@ function resolveVideoOutputDisplay(cfg) {
   const displays = screen.getAllDisplays();
   const control = mainWindow && !mainWindow.isDestroyed()
     ? screen.getDisplayMatching(mainWindow.getBounds()) : null;
+  if (macVideoSignal && cfg.displayId) {
+    // The native owner follows the assigned display UUID across resolution
+    // and ID changes. A look-alike must never inherit an HDMI mode switch.
+    return displays.find(d => String(d.id) === macVideoSignal.state.id && control && d.id !== control.id) ?? null;
+  }
   const target = resolveAssignedDisplay({
     displays,
     displayId: cfg.displayId,
@@ -3044,7 +3059,9 @@ function videoOutputStatus() {
   const target = resolveVideoOutputDisplay(cfg);
   let warning = null;
   if (videoOutputSessionEnabled) {
-    if (!target) {
+    if (macVideoSignal && cfg.displayId && !['matched', 'current'].includes(macVideoSignal.state.phase)) {
+      warning = 'signal-format';
+    } else if (!target) {
       // One logical display can also mean the OS is mirroring — either way the
       // projector is not independently addressable right now.
       warning = displays.length < 2 ? 'single-display' : 'display-missing';
@@ -3061,7 +3078,8 @@ function videoOutputStatus() {
   return {
     enabled: videoOutputSessionEnabled,
     open: videoOutputWindow !== null && !videoOutputWindow.isDestroyed(),
-    displayId: cfg.displayId,
+    displayId: cfg.displayId ? (macVideoSignal?.state.id ?? cfg.displayId) : null,
+    signal: macVideoSignal ? { ...macVideoSignal.state, requested: cfg.signalFormat, presets: broadcastFormats } : null,
     captureDisplayId: cfg.captureDisplayId,
     framing: cfg.framing,
     pictureOffsetMs: cfg.pictureOffsetMs ?? 0,
@@ -3080,7 +3098,7 @@ function videoOutputStatus() {
     testCardPlayback: testCardPlayback.playback,
     testCardError: testCardPlayback.error ? sanitizeVideoPlaybackErrorMessage(testCardPlayback.error) : null,
     testCardInfo: {
-      displayFrequency: (target || (videoOutputWindow && !videoOutputWindow.isDestroyed()
+      displayFrequency: macVideoSignal ? (macVideoSignal.state.actual.hz || 0) : (target || (videoOutputWindow && !videoOutputWindow.isDestroyed()
         ? screen.getDisplayMatching(videoOutputWindow.getBounds()) : screen.getPrimaryDisplay())).displayFrequency || 0,
       network: [...new Set(Object.values(os.networkInterfaces()).flat()
         .filter(entry => entry && entry.family === 'IPv4' && !entry.internal)
@@ -3100,6 +3118,30 @@ function broadcastVideoOutputStatus() {
     }
   }
   return status;
+}
+
+function syncMacVideoSignal(cfg = readVideoOutputConfig(), force = false) {
+  if (!macVideoSignal) return;
+  const control = mainWindow && !mainWindow.isDestroyed() ? screen.getDisplayMatching(mainWindow.getBounds()) : null;
+  macVideoSignal.configure({ id: cfg.displayId, control: control ? String(control.id) : null,
+    enabled: videoOutputSessionEnabled, format: cfg.signalFormat }, force);
+}
+
+function reconcileMacVideoSignal() {
+  if (videoOutputSessionEnabled && videoOutputScreens.displayId) {
+    const target = resolveVideoOutputDisplay(readVideoOutputConfig());
+    const win = videoOutputWindow;
+    if (!target || !macVideoSignal.state.canPresent) {
+      if (win && !win.isDestroyed() && win.videoOutputTargetDisplayId != null) parkVideoOutputWindow(win);
+    } else if (!win || win.isDestroyed()) {
+      createVideoOutputWindow();
+    } else if (win.videoOutputDisplayLost || win.videoOutputTargetDisplayId !== target.id) {
+      restoreVideoOutputWindow(win, target);
+    } else if (JSON.stringify(win.getBounds()) !== JSON.stringify(target.bounds)) {
+      seatPhysicalOutput(win, process.platform, target.bounds);
+    }
+  }
+  broadcastVideoOutputStatus();
 }
 function videoOutputContextLabels() {
   const t = menuTranslations[currentLocale] || menuTranslations.en || {};
@@ -3478,6 +3520,7 @@ function createVideoOutputWindow() {
   const cfg = readVideoOutputConfig();
   const target = resolveVideoOutputDisplay(cfg);
   const realOutput = target !== null && screen.getAllDisplays().length > 1;
+  if (macVideoSignal && cfg.displayId && (!realOutput || !macVideoSignal.state.canPresent)) return;
 
   const options = {
     title: 'DonWells Cue - Video Output',
@@ -3625,7 +3668,10 @@ function createVideoOutputWindow() {
 
 function closeVideoOutputWindow({ preserveSession = false, playbackError = null } = {}) {
   const outputWindow = videoOutputWindow;
-  if (!preserveSession) videoOutputSessionEnabled = false;
+  if (!preserveSession) {
+    videoOutputSessionEnabled = false;
+    if (macVideoSignal) syncMacVideoSignal();
+  }
   // Release this generation before destroy can emit a late closed event.
   videoOutputWindow = null;
   videoOutputPlaybackError = playbackError;
@@ -3692,6 +3738,11 @@ function installVideoOutputWatchdog() {
     videoOutputWatchdogTimer = setTimeout(() => {
       videoOutputWatchdogTimer = null;
       const cfg = readVideoOutputConfig();
+      if (macVideoSignal && cfg.displayId) {
+        syncMacVideoSignal(cfg);
+        reconcileMacVideoSignal();
+        return;
+      }
       if (!videoOutputSessionEnabled) { broadcastVideoOutputStatus(); return; }
       const target = resolveVideoOutputDisplay(cfg);
       if (videoOutputWindow && videoOutputWindow.videoOutputTargetDisplayId != null && !target) {
@@ -3744,14 +3795,19 @@ function installVideoOutputWatchdog() {
     }, 300);
   };
   screen.on('display-added', onDisplayChange);
-  screen.on('display-removed', onDisplayChange);
+  screen.on('display-removed', (_event, display) => {
+    if (macVideoSignal) macVideoSignal.displayRemoved(display.id);
+    onDisplayChange();
+  });
   screen.on('display-metrics-changed', onDisplayChange);
+  if (macVideoSignal) powerMonitor.on('resume', () => macVideoSignal.recheck(true));
 }
 
 
 function openVideoOutputWindow() {
   videoOutputSessionEnabled = true;
   installVideoOutputWatchdog();
+  if (macVideoSignal) syncMacVideoSignal();
   createVideoOutputWindow();
 }
 
@@ -4238,7 +4294,7 @@ ipcMain.handle('video-output:capture-standby', async (event, source, target) => 
 });
 
 ipcMain.handle('video-output:set-display', (event, displayId) => {
-  requireTrustedIpc(event);
+  requireVideoCheckOwner(event);
   const checked = displayId === null
     ? null
     : requireIpcString(displayId, 'displayId', 64);
@@ -4247,17 +4303,29 @@ ipcMain.handle('video-output:set-display', (event, displayId) => {
   const target = checked
     ? screen.getAllDisplays().find((d) => String(d.id) === checked)
     : null;
+  if (checked && !target) throw new Error('The selected display is no longer connected.');
   cfg.displayFingerprint = target ? videoOutputFingerprint(target) : null;
   // A new assignment starts a clean record of its look-alikes.
   cfg.displayLookalikes = target ? videoOutputLookalikeIds(screen.getAllDisplays(), target) : [];
   videoOutputLookalikes.clear();
   writeVideoOutputConfig(cfg);
-  if (videoOutputSessionEnabled && videoOutputWindow) {
+  if (macVideoSignal) syncMacVideoSignal(cfg);
+  if (videoOutputSessionEnabled) {
     // Re-place on the new display; recreate is the only clean way to move a
     // fullscreen frameless window across displays.
     closeVideoOutputWindow({ preserveSession: true });
     createVideoOutputWindow();
   }
+  return broadcastVideoOutputStatus();
+});
+
+ipcMain.handle('video-output:set-signal-format', (event, format) => {
+  requireVideoCheckOwner(event);
+  if (!macVideoSignal || !isSignalFormat(format)) throw new Error('Unknown Mac video signal format.');
+  const cfg = readVideoOutputConfig();
+  cfg.signalFormat = format;
+  if (!writeVideoOutputConfig(cfg)) throw new Error('Could not save the video signal format.');
+  syncMacVideoSignal(cfg, true);
   return broadcastVideoOutputStatus();
 });
 

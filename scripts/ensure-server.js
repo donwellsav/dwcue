@@ -23,7 +23,8 @@ const BIN_CANDIDATES = [
 ];
 
 function findBinary() {
-  return BIN_CANDIDATES.find(p => fs.existsSync(p));
+  return BIN_CANDIDATES.find(p => fs.existsSync(p) && (process.platform !== 'darwin' ||
+    fs.existsSync(path.join(path.dirname(p), 'dwcue-display-modes'))));
 }
 
 function run(cmd, args, opts = {}) {

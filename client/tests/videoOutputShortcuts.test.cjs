@@ -371,7 +371,7 @@ function createVideoWindowHarness() {
     powerSaveBlocker: { isStarted: () => false, start: () => ++powerId, stop: id => powerStops.push(id) },
     shouldForwardVideoOutputShortcut, toRendererShortcut, showVideoOutputContextMenu() {},
     // The real per-platform window rules, on the platform with the most to do.
-    ...outputWindowRules, process: { platform: 'darwin' },
+    ...outputWindowRules, process: { platform: 'darwin' }, macVideoSignal: null,
     console: { error: (...args) => errors.push(args) },
   };
   const closeStart = mainSource.indexOf('function closeVideoOutputWindow(');

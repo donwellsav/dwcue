@@ -478,6 +478,7 @@
                   </button>
                 </div>
               </section>
+              <MacVideoSignalSettings v-if="voStatus?.signal" :signal="voStatus.signal" @apply="applySignalFormat" />
               <section class="settings-field">
                 <label class="settings-label settings-label--checkbox">
                   <input
@@ -973,12 +974,21 @@ const voStatusText = computed(() => {
 
 const voWarningText = computed(() => {
   const w = voStatus.value?.warning;
+  if (w === 'signal-format') return t(`settings.videoSignal.phase.${voStatus.value?.signal?.phase}`);
   if (w === 'single-display') return t('settings.videoOutputWarnSingleDisplay');
   if (w === 'display-missing') return t('settings.videoOutputWarnMissing');
   if (w === 'display-shared-with-control') return t('settings.videoOutputWarnShared');
   if (w === 'display-not-covered') return t('settings.videoOutputWarnNotCovered');
   return '';
 });
+
+async function applySignalFormat(format: string) {
+  const api = window.electronAPI?.videoOutput;
+  if (!api) return;
+  settingsError.value = '';
+  try { receiveVideoOutputStatus(await api.setSignalFormat(format)); }
+  catch (error) { settingsError.value = describeSettingsError(error); }
+}
 
 let voTestCardConfigWriting = false;
 let voHasLocalTestCardConfigIntent = false;

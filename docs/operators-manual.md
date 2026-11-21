@@ -647,7 +647,15 @@ Use **V** or the toolbar's **Video Output** button to open or close the output w
 - **Common mistake:** Treating the single-display preview window as the assigned fullscreen output.
 - **Recovery:** Disable the session output, correct mirroring/cabling/assignment, identify again, then reopen and verify at the physical destination.
 
-With only one display or no dedicated assignment, the app uses a normal preview window rather than automatically taking over the control screen fullscreen. Do not mistake a preview window for a correctly assigned projector output. Use an extended desktop, not operating-system display mirroring, when you need separate operator and audience surfaces.
+With no audience display assigned, Video Output opens a preview. A separate audience feed needs an extended display. On the Mac, Cue waits for that assigned display when it disconnects or shares the operator screen.
+
+### Match a Mac HDMI output to a switcher
+
+Choose the audience display in **Settings → Video Output**. The default is **1080p59.94**. If the display offers only older 59.94 formats, Settings shows a button to apply a compatible one by name. **Automatic NTSC** checks for 1080p59.94, 1080i59.94, 720p59.94, 480i59.94, then 480p59.94. A 60.00 Hz mode requires an explicit selection.
+
+If the switcher uses a fixed show standard, open **Advanced signal settings**, select its exact format and choose **Apply signal format**. For example, 1080i59.94 carries 59.94 fields per second, whereas 1080p59.94 carries 59.94 complete frames per second. Cue saves the preference on this Mac and applies it only to the assigned audience output. Changing a live HDMI format can briefly blank the input while it locks. GO and clip changes leave the selected format alone.
+
+**Other Mac display timings** lists additional fixed modes reported by the driver for that display. **Keep current Mac display mode** uses the existing timing. **Mac reports** shows the operating system's active mode. For an independent signal measurement, read the switcher's input before any internal conversion. Some switchers advertise several timings while accepting only the current production standard.
 
 
 **Procedure — line up picture and optional AV Sync**
@@ -710,7 +718,7 @@ In **Settings → Video Output → Picture framing**, click the current **Canvas
 
 **Fit to display** makes the canvas as large as the window allows. **Cap at canvas size** limits the canvas to the selected dimensions in display pixels and shrinks it to fit a smaller window. **Frame size** scales the result from 25% to 100% around the center. Use custom dimensions for the active raster supplied by the LED or signage technician. Both scaling modes preserve media proportions.
 
-Set the HDMI resolution, refresh rate, and display rotation in the operating system. Confirm the received signal at the switcher or display. For a standard projector or TV, rehearse at Full HD with Fit to display at 100%. Check that the corner markers and edges of a framing pattern are visible and its circle is round.
+On macOS, choose the HDMI timing in **Advanced signal settings**. On other platforms, set the display timing in the operating system. Confirm the received signal at the switcher or display. For a standard projector or TV, rehearse at Full HD with Fit to display at 100%. Check that the corner markers and edges of a framing pattern are visible and its circle is round.
 
 ### Set picture sync
 

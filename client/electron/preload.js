@@ -295,6 +295,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listDisplays: ()           => ipcRenderer.invoke('video-output:list-displays'),
     identifyDisplays: ()       => ipcRenderer.invoke('video-output:identify-displays'),
     setDisplay:   (displayId)  => ipcRenderer.invoke('video-output:set-display', displayId),
+    setSignalFormat: (format)  => ipcRenderer.invoke('video-output:set-signal-format', format),
     setFraming:   (framing)    => ipcRenderer.invoke('video-output:set-framing', framing),
     setPictureOffset: (ms)     => ipcRenderer.invoke('video-output:set-picture-offset', ms),
     checkFrame: (request) => ipcRenderer.invoke('video-output:check-frame', request),

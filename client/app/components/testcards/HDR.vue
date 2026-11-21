@@ -72,7 +72,7 @@
 
     <div class="row last" style="height: 25%">
       <div v-if="config.showInfo" class="infoBox">
-        <div>{{ info.cardSize }} - {{info.displayFrequency}}Hz</div>
+        <div>{{ info.timingLabel }}</div>
         <div>{{config.name}}</div>
         <div>{{ info.network[info.networkIndex] }}</div>
         <div v-if="config.showClock">{{ info.time }}</div> 
