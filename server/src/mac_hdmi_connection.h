@@ -70,7 +70,7 @@ static NSDictionary *hdmiLink(CGDirectDisplayID displayID) {
     NSArray *timings = registryProperty(target, CFSTR("TimingElements"));
     IOObjectRelease(target);
     if (!timingID || ![timings isKindOfClass:NSArray.class]) return @{};
-    BOOL offersExact = NO;
+    NSMutableDictionary *progressive1080Rates = [NSMutableDictionary dictionary];
     NSDictionary *signal = nil;
     for (NSDictionary *timing in timings) {
         if ([timing[@"IsVirtual"] boolValue]) continue;
@@ -79,20 +79,21 @@ static NSDictionary *hdmiLink(CGDirectDisplayID displayID) {
         double hz = [v[@"PreciseSyncRate"] doubleValue] / 65536.0;
         BOOL interlaced = [timing[@"IsInterlaced"] boolValue];
         NSUInteger vic = [timing[@"CEAShortID"] unsignedIntegerValue];
-        BOOL exact = width == 1920 && height == 1080 && !interlaced && vic == 16 &&
-            [h[@"Total"] unsignedIntegerValue] == 2200 && [v[@"Total"] unsignedIntegerValue] == 1125 &&
-            fabs(hz - 60000./1001) <= 1./65536;
-        offersExact |= exact;
+        NSString *format = vic ? broadcastFormat(width, height, kDisplayModeTelevisionFlag | kDisplayModeValidFlag |
+            (interlaced ? kDisplayModeInterlacedFlag : 0), hz) : nil;
+        if ([format isEqual:@"1080p59.94"] || [format isEqual:@"1080p60.00"]) {
+            double rate = [format isEqual:@"1080p59.94"] ? 60000./1001 : 60;
+            if (vic == 16 && [h[@"Total"] unsignedIntegerValue] == 2200 && [v[@"Total"] unsignedIntegerValue] == 1125 &&
+                fabs(hz - rate) <= 1./65536) progressive1080Rates[format] = @(rate);
+            else format = nil;
+        }
         if ([timing[@"ID"] isEqual:timingID] && width && height && hz > 0) {
-            NSString *format = vic ? broadcastFormat(width, height, kDisplayModeTelevisionFlag | kDisplayModeValidFlag |
-                (interlaced ? kDisplayModeInterlacedFlag : 0), hz) : nil;
-            if ([format isEqual:@"1080p59.94"] && !exact) format = nil;
             signal = @{@"width": @(width), @"height": @(height), @"hz": @(hz),
                        @"format": format ? format : @"", @"interlaced": @(interlaced)};
         }
     }
     NSDictionary *mode = connectionDescription([display currentMode]);
-    return @{@"uuid": uuid, @"exact1080": @(offersExact),
+    return @{@"uuid": uuid, @"progressive1080Rates": progressive1080Rates,
              @"signal": signal ? signal : @{}, @"mode": mode ? mode : @{}};
 }
 
@@ -106,17 +107,19 @@ static id hdmiMode(id display, NSDictionary *description) {
     return found;
 }
 
-static NSDictionary *exact1080Connection(CGDirectDisplayID displayID, NSDictionary *link) {
+static NSDictionary *fixed1080Connection(CGDirectDisplayID displayID, NSDictionary *link, NSString *format) {
     NSDictionary *current = link[@"mode"];
-    if (![link[@"exact1080"] boolValue] || !current.count) return nil;
+    NSNumber *rate = link[@"progressive1080Rates"][format];
+    if (!rate || !current.count) return nil;
     id display = hdmiDisplay(displayID);
     if (![[[display UUID] description] isEqual:link[@"uuid"]]) return nil;
     NSDictionary *found = nil;
     for (id mode in [display availableModes]) {
         NSDictionary *desc = connectionDescription(mode);
         double hz = [desc[@"nominalHz"] doubleValue];
+        double expected = rate.doubleValue;
         if ([desc[@"width"] intValue] != 1920 || [desc[@"height"] intValue] != 1080 ||
-            fmin(fabs(hz - 59.94), fabs(hz - 60000./1001)) > 1./65536 ||
+            fmin(fabs(hz - expected), fabs(hz - round(expected * 100) / 100)) > 1./65536 ||
             ![desc[@"color"] isEqual:current[@"color"]] || ![desc[@"hdr"] isEqual:current[@"hdr"]]) continue;
         if (found) return nil;
         found = desc;

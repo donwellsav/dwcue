@@ -44,7 +44,7 @@ function createMacVideoSignal(binaryPath, onReport, launch = spawn) {
       if (error && owner === child) owner.kill();
     };
     if (close) {
-      retiring = { id: config.id };
+      retiring = { id: config.id, confirmed: false };
       owner.stdin.end(line, sent);
     } else {
       owner.stdin.write(line, sent);
@@ -71,7 +71,7 @@ function createMacVideoSignal(binaryPath, onReport, launch = spawn) {
       if (retiring) {
         if (retiring.id === config.id) {
           if (report.uuid) identity = report.uuid;
-          if (!config.enabled && report.restoreFailed) restoreUnconfirmed = true;
+          retiring.confirmed = report.restoreFailed === false;
         }
         return;
       }
@@ -102,8 +102,9 @@ function createMacVideoSignal(binaryPath, onReport, launch = spawn) {
       clearTimeout(deadline);
       lines.close();
       if (retiring) {
+        if (retiring.id === config.id && !config.enabled && !retiring.confirmed) restoreUnconfirmed = true;
         retiring = null;
-        state = emptyReport(config.id ? 'checking' : 'idle');
+        state = { ...emptyReport(config.id ? 'checking' : 'idle'), restoreFailed: restoreUnconfirmed };
         if (config.id) start();
         onReport();
         return;

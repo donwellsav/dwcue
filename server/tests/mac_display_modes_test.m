@@ -30,7 +30,7 @@ static Timing *makeTiming(int modeID, int height, BOOL interlaced, double hz) {
                     (interlaced ? kDisplayModeInterlacedFlag : 0))};
 }
 
-static BOOL simulateHDMI, wrongLink, timingUnavailable;
+static BOOL simulateHDMI, wrongLink, timingUnavailable, signalUnavailable;
 static NSNumber *hdmiRate;
 static unsigned linkWrites;
 
@@ -54,11 +54,13 @@ static NSDictionary *hdmiLink(CGDirectDisplayID idNumber) {
     if (!hdmiDisplay(idNumber)) return nil;
     NSString *format = [hdmiRate isEqual:@60] ? @"1080p60.00" :
         [hdmiRate isEqual:@(60000./1001)] ? @"1080p59.94" : @"";
-    return @{@"uuid": @"test-hdmi", @"mode": @{@"rate": hdmiRate}, @"signal": @{@"hz": hdmiRate, @"format": format}};
+    return @{@"uuid": @"test-hdmi", @"mode": @{@"rate": hdmiRate},
+        @"signal": signalUnavailable ? @{} : @{@"width": @1920, @"height": @1080, @"hz": hdmiRate, @"format": format}};
 }
 static id hdmiMode(id display, NSDictionary *description) { return display ? description[@"rate"] : nil; }
-static NSDictionary *exact1080Connection(CGDirectDisplayID idNumber, NSDictionary *link) {
-    return !timingUnavailable && hdmiDisplay(idNumber) && link ? @{@"rate": @(60000./1001)} : nil;
+static NSDictionary *fixed1080Connection(CGDirectDisplayID idNumber, NSDictionary *link, NSString *format) {
+    if (timingUnavailable || !hdmiDisplay(idNumber) || !link) return nil;
+    return @{@"rate": [format isEqual:@"1080p59.94"] ? @(60000./1001) : @60};
 }
 #define DWCUE_TEST_HDMI 1
 
@@ -189,6 +191,26 @@ int main(void) {
         CHECK(writes == before && activeTiming[@"id"].intValue == 150 && [hdmiRate isEqual:@60]);
         CHECK(![lastReport[@"restoreFailed"] boolValue]);
 
+        // The desktop and the HDMI clock can disagree even when Quartz
+        // advertises both rates. Applying the desktop's current mode is a no-op.
+        Timing *fractional = makeTiming(151, 1080, NO, 60000./1001);
+        activeTiming = sixty;
+        advertised = @[sixty, fractional];
+        hdmiRate = @(60000./1001);
+        unsigned beforeSignal = linkWrites;
+        signalUnavailable = YES;
+        request(@"1080p60.00", YES, NO);
+        CHECK(awaitingTiming() && ![lastReport[@"canPresent"] boolValue] && linkWrites == beforeSignal);
+        signalUnavailable = NO;
+        request(@"1080p60.00", YES, NO);
+        CHECK(activeTiming == sixty && [hdmiRate isEqual:@60] && [lastReport[@"phase"] isEqual:@"matched"]);
+        request(@"1080p59.94", NO, NO);
+        CHECK([hdmiRate isEqual:@(60000./1001)] && ![lastReport[@"restoreFailed"] boolValue]);
+
+        request(@"1080p60.00", YES, NO);
+        port = 0;
+        request(@"1080p60.00", NO, NO);
+        CHECK([lastReport[@"restoreFailed"] boolValue]);
     }
     return 0;
 }

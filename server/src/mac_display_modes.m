@@ -236,7 +236,9 @@ static void restoreOriginal(void) {
     if (!originalMode) return;
     CGDirectDisplayID displayID = findDisplay(targetUUID);
     NSDictionary *state = readSnapshot(displayID);
-    if ([state isEqual:ownedMode]) {
+    if (!state || (ownedConnectionMode && ![linkOf(state)[@"signal"][@"hz"] doubleValue])) {
+        restoreFailed = YES;
+    } else if ([state isEqual:ownedMode]) {
         restoreFailed = !restoreState(displayID, originalMode);
     } else if (ownsReading(state) && !sameConnection(state, originalMode)) {
         // WindowServer can change the desktop mode ID independently of the
@@ -282,10 +284,15 @@ static void inspect(BOOL allowChange) {
     }
     NSDictionary *link = hdmiLink(displayID);
     NSDictionary *state = snapshot(active, link);
-    NSDictionary *exactConnection = exact1080Connection(displayID, link);
+    NSDictionary *signal = link[@"signal"];
+    NSMutableDictionary *connectionModes = [NSMutableDictionary dictionary];
     NSMutableArray *formats = [NSMutableArray array];
     for (NSString *name in available) if (![name hasPrefix:@"native:"]) [formats addObject:name];
-    if (exactConnection && ![formats containsObject:@"1080p59.94"]) [formats addObject:@"1080p59.94"];
+    for (NSString *name in @[@"1080p59.94", @"1080p60.00"]) {
+        NSDictionary *candidate = fixed1080Connection(displayID, link, name);
+        if (candidate) connectionModes[name] = candidate;
+        if ((candidate || [signal[@"format"] isEqual:name]) && ![formats containsObject:name]) [formats addObject:name];
+    }
     [formats sortUsingSelector:@selector(localizedStandardCompare:)];
     BOOL native = [requested hasPrefix:@"native:"];
     if (!chosen || allowChange || attached) chosen = chooseFormat(requested, [formats arrayByAddingObjectsFromArray:otherModes.allKeys]);
@@ -295,25 +302,28 @@ static void inspect(BOOL allowChange) {
         approvedMode = state;
     } else if (enabled) {
         CGDisplayModeRef next = chosen ? (__bridge CGDisplayModeRef)available[chosen] : NULL;
-        BOOL exact = [chosen isEqual:@"1080p59.94"];
-        NSString *actual = native ? nativeKey(active, targetUUID) : link && exact ? link[@"signal"][@"format"] : formatOf(active);
-        BOOL hasMode = next || (exact && exactConnection);
+        NSString *actual = native ? nativeKey(active, targetUUID) : link ? signal[@"format"] : formatOf(active);
+        // Use the HDMI clock selector when only the refresh rate needs to change.
+        NSDictionary *candidate = chosen && (!next || ([signal[@"width"] intValue] == 1920 &&
+            [signal[@"height"] intValue] == 1080)) ? connectionModes[chosen] : nil;
+        BOOL hasMode = (native || !link || [signal[@"hz"] doubleValue] > 0) &&
+            (next || candidate || [chosen isEqual:actual]);
         if ((allowChange || attached) && state && hasMode && stillAssigned(displayID)) {
             NSDictionary *desiredDesktop = reportedMode(next);
-            NSDictionary *candidate = exact && !next ? exactConnection : nil;
             // With a connection override, applying the same desktop mode may
             // be a no-op. Re-select its original link before trying another mode.
             BOOL resetLink = !candidate && [state isEqual:ownedMode] && linkOf(originalMode) &&
                 ![linkOf(originalMode) isEqual:link] && [originalMode[@"desktop"] isEqual:state[@"desktop"]];
-            BOOL changed = [chosen isEqual:actual] && !resetLink;
+            BOOL alreadyMatched = [chosen isEqual:actual] && !resetLink;
+            BOOL changed = alreadyMatched;
             if (!changed && candidate) changed = setConnection(displayID, link, candidate);
             else if (!changed && !candidate) {
                 changed = (!resetLink || restoreState(displayID, originalMode)) &&
                     stillAssigned(displayID) && !setMode(displayID, next);
             }
             NSDictionary *verified = changed ? settled(displayID, ^BOOL(NSDictionary *observed) {
-                if ((candidate || (exact && link)) &&
-                    ![linkOf(observed)[@"signal"][@"format"] isEqual:@"1080p59.94"]) return NO;
+                if (link && !native && ![linkOf(observed)[@"signal"][@"format"] isEqual:chosen]) return NO;
+                if (alreadyMatched && link && !native) return YES;
                 return candidate ? [linkOf(observed)[@"mode"] isEqual:candidate] : [observed[@"desktop"] isEqual:desiredDesktop];
             }) : nil;
             if (verified) {

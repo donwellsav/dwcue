@@ -676,8 +676,15 @@ test('Close releases Quartz ownership after a replug before an output can reopen
   assert.equal(inspection.apply, false, 'the replacement only inspects the closed display');
   reply(inventory, inspection, '7', false);
   assert.equal(signal.state.restoreFailed, true, 'an unconfirmed explicit restore stays visible');
-  inventory.stdout.end();
-  inventory.stdin.end();
+  signal.configure(initial);
+  reply(inventory, inventory.commands.at(-1), '7', true);
+  signal.configure({ ...initial, enabled: false });
+  inventory.emit('close', 1);
+  const afterCrash = owners[3];
+  reply(afterCrash, afterCrash.commands[0], '7', false);
+  assert.equal(signal.state.restoreFailed, true, 'restarting the helper cannot confirm a lost restoration result');
+  afterCrash.stdout.end();
+  afterCrash.stdin.end();
 });
 
 test('the live format handler saves only a verified choice and resumes the saved choice after failure', async () => {
