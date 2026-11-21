@@ -1,10 +1,11 @@
-// The child owns app-scoped Quartz modes. Closing its stdin also releases them
-// if Electron exits unexpectedly. All display calls run off the show's UI process.
+// Closing the helper's stdin restores the HDMI link and releases Quartz modes.
+// All display calls run off the show's UI process.
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <ColorSync/ColorSync.h>
 #import <IOKit/graphics/IOGraphicsTypes.h>
 #include <math.h>
+#include <signal.h>
 #include <unistd.h>
 
 static NSString *displayUUID(CGDirectDisplayID display) {
@@ -62,6 +63,10 @@ static NSString *broadcastFormat(size_t w, size_t h, uint32_t flags, double hz) 
     }
     return nil;
 }
+
+#ifndef DWCUE_TEST_HDMI
+#import "mac_hdmi_connection.h"
+#endif
 
 static NSString *formatOf(CGDisplayModeRef mode) {
     if (!mode || CGDisplayModeGetPixelWidth(mode) != CGDisplayModeGetWidth(mode) ||
@@ -129,10 +134,39 @@ static NSArray *displayModes(CGDirectDisplayID displayID) {
     return modes ? modes : @[];
 }
 
+static BOOL stillAssigned(CGDirectDisplayID displayID) {
+    return eligible(displayID) && displayID == findDisplay(targetUUID);
+}
+
+static NSDictionary *snapshot(CGDisplayModeRef mode, NSDictionary *link) {
+    if (!mode) return nil;
+    return @{@"desktop": reportedMode(mode), @"link": link ? link : NSNull.null};
+}
+
+static NSDictionary *readSnapshot(CGDirectDisplayID displayID) {
+    if (!stillAssigned(displayID)) return nil;
+    CGDisplayModeRef mode = CGDisplayCopyDisplayMode(displayID);
+    NSDictionary *state = snapshot(mode, hdmiLink(displayID));
+    if (mode) CGDisplayModeRelease(mode);
+    return state;
+}
+
+static NSDictionary *linkOf(NSDictionary *state) {
+    id link = state[@"link"];
+    return link == NSNull.null ? nil : link;
+}
+
 static void report(CGDirectDisplayID displayID, NSString *phase, NSArray *formats, NSDictionary *otherModes,
-                   CGDisplayModeRef active, BOOL present) {
+                   NSDictionary *active, BOOL present) {
+    NSMutableDictionary *actual = [active[@"desktop"] mutableCopy];
+    if (!actual) actual = [NSMutableDictionary dictionary];
+    NSDictionary *link = linkOf(active);
+    if (link) {
+        NSDictionary *signal = link[@"signal"];
+        [actual addEntriesFromDictionary:signal.count ? signal : @{@"hz": @0, @"format": @""}];
+    }
     NSDictionary *state = @{@"revision": @(revision), @"id": displayID ? @(displayID).stringValue : [NSNull null],
-        @"phase": phase, @"restoreFailed": @(restoreFailed), @"formats": formats, @"nativeModes": otherModes, @"actual": reportedMode(active),
+        @"phase": phase, @"restoreFailed": @(restoreFailed), @"formats": formats, @"nativeModes": otherModes, @"actual": actual,
         @"chosen": chosen ? chosen : @"", @"uuid": targetUUID ? targetUUID : @"", @"canPresent": @(present)};
     if ([lastReport isEqual:state]) return;
     lastReport = state;
@@ -140,40 +174,59 @@ static void report(CGDirectDisplayID displayID, NSString *phase, NSArray *format
     if (data) { fwrite(data.bytes, 1, data.length, stdout); fputc('\n', stdout); fflush(stdout); }
 }
 
-static BOOL modeSettled(CGDirectDisplayID displayID, CGDisplayModeRef desired) {
-    NSDictionary *expected = reportedMode(desired);
-    for (int sample = 0, consecutive = 0; sample < 16; ++sample) {
-        if (!eligible(displayID) || ![targetUUID isEqual:displayUUID(displayID)]) return NO;
-        CGDisplayModeRef active = CGDisplayCopyDisplayMode(displayID);
-        BOOL match = active && [reportedMode(active) isEqual:expected];
-        CGDisplayModeRelease(active);
-        consecutive = match ? consecutive + 1 : 0;
-        if (consecutive == 2) return YES;
+static NSDictionary *settled(CGDirectDisplayID displayID, BOOL (^matches)(NSDictionary *)) {
+    NSDictionary *previous = nil;
+    for (int sample = 0; sample < 16; ++sample) {
+        NSDictionary *state = readSnapshot(displayID);
+        if (!state) return nil;
+        if (matches(state)) {
+            if ([state isEqual:previous]) return state;
+            previous = state;
+        } else {
+            previous = nil;
+        }
         usleep(50000);
     }
-    return NO;
+    return nil;
+}
+
+static BOOL setConnection(CGDirectDisplayID displayID, NSDictionary *link, NSDictionary *description) {
+    if (!stillAssigned(displayID) || !description.count) return NO;
+    id display = hdmiDisplay(displayID);
+    if (!display || ![[[display UUID] description] isEqual:link[@"uuid"]]) return NO;
+    id mode = hdmiMode(display, description);
+    if (!mode || !stillAssigned(displayID) || ![hdmiLink(displayID)[@"uuid"] isEqual:link[@"uuid"]]) return NO;
+    [display setCurrentMode:mode];
+    return YES;
+}
+
+static BOOL restoreState(CGDirectDisplayID displayID, NSDictionary *state) {
+    NSDictionary *now = readSnapshot(displayID);
+    if (!now) return NO;
+    NSDictionary *desktop = state[@"desktop"];
+    if (![now[@"desktop"] isEqual:desktop]) {
+        BOOL applied = NO;
+        for (id entry in displayModes(displayID)) {
+            CGDisplayModeRef mode = (__bridge CGDisplayModeRef)entry;
+            if (![reportedMode(mode) isEqual:desktop]) continue;
+            applied = stillAssigned(displayID) && !setMode(displayID, mode);
+            break;
+        }
+        if (!applied || !settled(displayID, ^BOOL(NSDictionary *observed) {
+            return [observed[@"desktop"] isEqual:desktop];
+        })) return NO;
+        now = readSnapshot(displayID);
+    }
+    NSDictionary *link = linkOf(state);
+    if (link && ![linkOf(now) isEqual:link] && !setConnection(displayID, link, link[@"mode"])) return NO;
+    return settled(displayID, ^BOOL(NSDictionary *observed) { return [observed isEqual:state]; }) != nil;
 }
 
 static void restoreOriginal(void) {
     if (!originalMode) return;
     CGDirectDisplayID displayID = findDisplay(targetUUID);
-    if (eligible(displayID)) {
-        CGDisplayModeRef active = CGDisplayCopyDisplayMode(displayID);
-        if ([ownedMode isEqual:reportedMode(active)]) {
-            restoreFailed = YES;
-            // A replug can replace display IDs and mode objects. Reacquire the
-            // original timing from the same display before attempting a write.
-            for (id entry in displayModes(displayID)) {
-                CGDisplayModeRef mode = (__bridge CGDisplayModeRef)entry;
-                if (![originalMode isEqual:reportedMode(mode)]) continue;
-                if (eligible(displayID) && displayID == findDisplay(targetUUID)) {
-                    restoreFailed = setMode(displayID, mode) || !modeSettled(displayID, mode);
-                }
-                break;
-            }
-        }
-        CGDisplayModeRelease(active);
-    }
+    NSDictionary *state = readSnapshot(displayID);
+    if ([state isEqual:ownedMode]) restoreFailed = !restoreState(displayID, originalMode);
     originalMode = nil;
     ownedMode = nil;
 }
@@ -208,49 +261,70 @@ static void inspect(BOOL allowChange) {
                 CGDisplayModeGetRefreshRate(mode), (unsigned)CGDisplayModeGetIODisplayModeID(mode)];
         }
     }
+    NSDictionary *link = hdmiLink(displayID);
+    NSDictionary *state = snapshot(active, link);
+    NSDictionary *exactConnection = exact1080Connection(displayID, link);
+    NSMutableArray *formats = [NSMutableArray array];
+    for (NSString *name in available) if (![name hasPrefix:@"native:"]) [formats addObject:name];
+    if (exactConnection && ![formats containsObject:@"1080p59.94"]) [formats addObject:@"1080p59.94"];
+    [formats sortUsingSelector:@selector(localizedStandardCompare:)];
     BOOL native = [requested hasPrefix:@"native:"];
-    NSString *actual = native ? nativeKey(active, targetUUID) : formatOf(active);
-    NSMutableArray *standardNames = [NSMutableArray array];
-    for (NSString *name in available) if (![name hasPrefix:@"native:"]) [standardNames addObject:name];
-    NSArray *formats = [standardNames sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
-    if (!chosen || allowChange || attached) chosen = chooseFormat(requested, available.allKeys);
+    if (!chosen || allowChange || attached) chosen = chooseFormat(requested, [formats arrayByAddingObjectsFromArray:otherModes.allKeys]);
     NSString *phase = restoreFailed ? @"restoreFailed" : @"idle";
-    BOOL present = NO;
     if (enabled && [requested isEqual:@"current"]) {
-        phase = active ? @"current" : @"unavailable";
-        present = active != NULL;
-        approvedMode = present ? reportedMode(active) : nil;
+        phase = state ? @"current" : @"unavailable";
+        approvedMode = state;
     } else if (enabled) {
         CGDisplayModeRef next = chosen ? (__bridge CGDisplayModeRef)available[chosen] : NULL;
-        BOOL checkMode = (allowChange || attached) && active && next;
-        if (checkMode && [chosen isEqual:actual]) {
-            applyFailed = !modeSettled(displayID, active);
-            if (applyFailed) approvedMode = nil;
-        } else if (checkMode && eligible(displayID) && displayID == findDisplay(targetUUID)) {
-            if (!setMode(displayID, next) && modeSettled(displayID, next)) {
-                if (!originalMode || (!attached && ![ownedMode isEqual:reportedMode(active)])) originalMode = reportedMode(active);
-                ownedMode = reportedMode(next);
+        BOOL exact = [chosen isEqual:@"1080p59.94"];
+        NSString *actual = native ? nativeKey(active, targetUUID) : link && exact ? link[@"signal"][@"format"] : formatOf(active);
+        BOOL hasMode = next || (exact && exactConnection);
+        if ((allowChange || attached) && state && hasMode && stillAssigned(displayID)) {
+            NSDictionary *desiredDesktop = reportedMode(next);
+            NSDictionary *candidate = exact && !next ? exactConnection : nil;
+            // With a connection override, applying the same desktop mode may
+            // be a no-op. Re-select its original link before trying another mode.
+            BOOL resetLink = !candidate && [state isEqual:ownedMode] && linkOf(originalMode) &&
+                ![linkOf(originalMode) isEqual:link] && [originalMode[@"desktop"] isEqual:state[@"desktop"]];
+            BOOL changed = [chosen isEqual:actual] && !resetLink;
+            if (!changed && candidate) changed = setConnection(displayID, link, candidate);
+            else if (!changed && !candidate) {
+                changed = (!resetLink || restoreState(displayID, originalMode)) &&
+                    stillAssigned(displayID) && !setMode(displayID, next);
+            }
+            NSDictionary *verified = changed ? settled(displayID, ^BOOL(NSDictionary *observed) {
+                if ((candidate || (exact && link)) &&
+                    ![linkOf(observed)[@"signal"][@"format"] isEqual:@"1080p59.94"]) return NO;
+                return candidate ? [linkOf(observed)[@"mode"] isEqual:candidate] : [observed[@"desktop"] isEqual:desiredDesktop];
+            }) : nil;
+            if (verified) {
+                if (![state isEqual:verified]) {
+                    if (!originalMode || (!attached && ![ownedMode isEqual:state])) originalMode = state;
+                    ownedMode = verified;
+                }
+                state = verified;
+                actual = chosen;
             } else {
                 applyFailed = YES;
-                if (!modeSettled(displayID, active) && eligible(displayID) && displayID == findDisplay(targetUUID)) {
-                    if (setMode(displayID, active) || !modeSettled(displayID, active)) approvedMode = nil;
+                NSDictionary *now = readSnapshot(displayID);
+                if (now && ![now isEqual:state] && !restoreState(displayID, state)) {
+                    if (!originalMode || (!attached && ![ownedMode isEqual:state])) originalMode = state;
+                    ownedMode = readSnapshot(displayID);
+                    approvedMode = nil;
                 }
+                state = readSnapshot(displayID);
             }
-            CGDisplayModeRelease(active);
-            active = CGDisplayCopyDisplayMode(displayID);
-            actual = native ? nativeKey(active, targetUUID) : formatOf(active);
         }
         if (!applyFailed && chosen && [chosen isEqual:actual]) {
             phase = @"matched";
-            approvedMode = reportedMode(active);
+            approvedMode = state;
         } else {
-            phase = applyFailed ? @"failed" : next ? @"mismatch" : @"unavailable";
+            phase = applyFailed ? @"failed" : hasMode ? @"mismatch" : @"unavailable";
         }
-        present = active && [approvedMode isEqual:reportedMode(active)];
     }
-    if (!eligible(displayID) || displayID != findDisplay(targetUUID)) present = NO;
-    report(displayID, phase, formats, otherModes, active, present);
-    CGDisplayModeRelease(active);
+    BOOL present = enabled && state && [approvedMode isEqual:state] && stillAssigned(displayID);
+    report(displayID, phase, formats, otherModes, state, present);
+    if (active) CGDisplayModeRelease(active);
 }
 
 static void configure(NSDictionary *command) {
@@ -313,6 +387,10 @@ int main(int argc, const char **argv) {
                 && !chooseFormat(@"auto", @[@"1080p60.00"]) && !chooseFormat(@"1080p59.94", @[@"1080i59.94"]));
         }
         if (CGDisplayRegisterReconfigurationCallback(changed, NULL)) return 1;
+        signal(SIGTERM, SIG_IGN);
+        __attribute__((objc_precise_lifetime)) dispatch_source_t terminate = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, SIGTERM, 0, dispatch_get_main_queue());
+        dispatch_source_set_event_handler(terminate, ^{ restoreOriginal(); exit(0); });
+        dispatch_activate(terminate);
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
             char *line = NULL;
             size_t capacity = 0;
