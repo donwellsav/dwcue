@@ -370,6 +370,7 @@
     "addGroup": "添加组",
     "noItems": "播放列表中无项目",
     "importHint": "使用导入按钮或将文件拖到此处 — 音频和视频均可",
+    "sampleOver": "此提示的电平在主限幅器之前超过了 0 dBFS。",
     "videoCue": "视频信号 — 画面在视频输出上播放"
   },
   "playlistSearch": {
@@ -924,6 +925,7 @@
     "settingUpNext": "正在设置“下一个”…",
     "noCueQueued": "没有排队的信号",
     "toggleVideoOutput": "切换视频输出",
+    "videoOutputFullscreen": "全屏视频输出",
     "captureVideoStandby": "捕获为待机图像",
     "captureDisplayStandby": "为信号捕获",
     "toggleDetachedQuickPlays": "分离的 QuickPlay",
@@ -955,6 +957,18 @@
     "paused": "已暂停",
     "upNext": "下一个",
     "previewing": "预听中"
+  },
+  "videoThumbnail": {
+    "hoverSize": "视频悬停预览大小",
+    "choose": "选择缩略图帧",
+    "time": "帧位置",
+    "first": "第一帧",
+    "middle": "中间",
+    "apply": "用作缩略图",
+    "saveCue": "保存为提示图像",
+    "saveStandby": "保存为待机图像",
+    "loading": "正在加载帧…",
+    "unavailable": "无法从此视频加载帧。"
   },
   "standbyCapture": {
     "panelTitle": "捕获图像",

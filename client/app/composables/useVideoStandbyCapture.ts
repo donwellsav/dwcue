@@ -87,10 +87,24 @@ export function useVideoStandbyCapture() {
     return message || t('standbyCapture.failed');
   };
 
-  /** Capture what is on the Video Output (or the chosen other screen) for `target`. */
-  async function captureStill(target: StillTarget, source: 'output' | 'display' = 'output') {
+  /** Capture what is on Video Output or the chosen display. */
+  function captureStill(target: StillTarget, source: 'output' | 'display' = 'output') {
     const api = window.electronAPI?.videoOutput;
-    if (!api?.captureStandby || standbyCapturePending.value) return;
+    if (!api?.captureStandby) return;
+    const cue = target === 'cue' ? captureCue.value : null;
+    return capturePicture(target, cue, async (identity, sessionId) => {
+      const { image } = await api.captureStandby(source, { identity, sessionId, itemUuid: cue?.uuid ?? null });
+      return image;
+    });
+  }
+
+  function saveStill(target: StillTarget, cue: AudioItem, image: string) {
+    return capturePicture(target, target === 'cue' ? cue : null, () => image);
+  }
+
+  async function capturePicture(target: StillTarget, cue: AudioItem | null,
+    readImage: (identity: NonNullable<typeof projectSyncIdentity.value>, sessionId: string) => string | Promise<string>) {
+    if (standbyCapturePending.value) return;
     const project = currentProject.value;
     const identity = projectSyncIdentity.value;
     const sessionId = server.projectSessionId;
@@ -98,7 +112,6 @@ export function useVideoStandbyCapture() {
       showHeaderWarning(t('standbyCapture.noShow'));
       return;
     }
-    const cue = target === 'cue' ? captureCue.value : null;
     if (target === 'cue' && !cue) {
       showHeaderWarning(t('standbyCapture.selectCue'));
       return;
@@ -107,7 +120,7 @@ export function useVideoStandbyCapture() {
       && projectSyncIdentity.value === identity;
     standbyCapturePending.value = true;
     try {
-      const { image } = await api.captureStandby(source, { identity, sessionId, itemUuid: cue?.uuid ?? null });
+      const image = await readImage(identity, sessionId);
       if (!isCurrent()) return;
       const label = cue ? cueLabel(cue) : '';
       const name = captureFileName(cue ? (cue.displayName || cue.mediaFileName || 'Cue') : 'Standby', new Date(), image);
@@ -172,7 +185,7 @@ export function useVideoStandbyCapture() {
   watch(() => server.projectSessionId, () => { lastCapture.value = null; });
 
   return {
-    captureStill, undoCapture, clearPicture, canUndo, standbyCapturePending, lastCapture,
+    captureStill, saveStill, undoCapture, clearPicture, canUndo, standbyCapturePending, lastCapture,
     captureCue, cueLabel, standbyPath, pictureUrl, openCapturePanel,
   };
 }

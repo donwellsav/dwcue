@@ -370,6 +370,7 @@
     "addGroup": "Lägg till grupp",
     "noItems": "Inga objekt i spellistan",
     "importHint": "Använd importknapparna eller dra filer hit — ljud och video fungerar båda",
+    "sampleOver": "Cuen överskred 0 dBFS på sin mätare före huvudlimitern.",
     "videoCue": "Videocue — bilden spelas på videoutgången"
   },
   "playlistSearch": {
@@ -924,6 +925,7 @@
     "settingUpNext": "Anger Nästa…",
     "noCueQueued": "Ingen cue i kö",
     "toggleVideoOutput": "Växla videoutgång",
+    "videoOutputFullscreen": "Videoutgång i helskärm",
     "captureVideoStandby": "Fånga som Standbybild",
     "captureDisplayStandby": "Fånga för Cue",
     "toggleDetachedQuickPlays": "Frikopplad QuickPlay",
@@ -955,6 +957,18 @@
     "paused": "Pausad",
     "upNext": "Nästa",
     "previewing": "Förhandsgranskning"
+  },
+  "videoThumbnail": {
+    "hoverSize": "Storlek på videoförhandsvisning vid hovring",
+    "choose": "Välj bildruta för miniatyr",
+    "time": "Bildrutans position",
+    "first": "Första bildrutan",
+    "middle": "Mitten",
+    "apply": "Använd som miniatyr",
+    "saveCue": "Spara som cue-bild",
+    "saveStandby": "Spara som väntbild",
+    "loading": "Läser in bildruta…",
+    "unavailable": "Det gick inte att läsa in en bildruta från videon."
   },
   "standbyCapture": {
     "panelTitle": "Fånga en bild",

@@ -52,7 +52,7 @@ const RUNNING: PlaybackKeyAction[] = [
 // The windows and panels next; set-up keys last, since they are the first to
 // go when the window is too narrow for everything.
 const LATER: PlaybackKeyAction[] = [
-  'toggle-video-output', 'toggle-quickplays', 'toggle-detached-quickplays',
+  'toggle-video-output', 'fullscreen-video-output', 'locate-live', 'locate-up-next', 'toggle-quickplays', 'toggle-detached-quickplays',
   'capture-video-standby', 'capture-display-standby', 'toggle-settings', 'toggle-properties',
 ];
 const byId = (id: PlaybackKeyAction) => PLAYBACK_ACTIONS.find(action => action.id === id)!;

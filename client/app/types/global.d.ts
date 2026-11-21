@@ -279,7 +279,7 @@ declare global {
         setTestCardConfig: (config: TestCardConfig) => Promise<VideoOutputStatus>;
         setTestCardConnection: (connection: { serverUrl: string; accessToken: string } | null) => Promise<VideoOutputStatus>;
         setFullscreen: (on: boolean) => Promise<VideoOutputStatus>;
-        toggleFullscreen: () => Promise<VideoOutputStatus>;
+        toggleFullscreen: (openIfClosed?: boolean) => Promise<VideoOutputStatus>;
         reportPlaybackError: (error: VideoPlaybackError | null) => Promise<VideoOutputStatus>;
         onStatus: (callback: (status: VideoOutputStatus) => void) => () => void;
         onShortcut: (callback: (shortcut: VideoOutputShortcut) => void) => () => void;

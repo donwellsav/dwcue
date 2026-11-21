@@ -370,6 +370,7 @@
     "addGroup": "グループを追加",
     "noItems": "プレイリストにアイテムがありません",
     "importHint": "インポートボタンを使うか、ここにファイルをドロップ — 音声も動画も対応",
+    "sampleOver": "このキューのメーターで、マスターリミッターの前に 0 dBFS を超えました。",
     "videoCue": "ビデオキュー — 映像は映像出力に表示されます"
   },
   "playlistSearch": {
@@ -924,6 +925,7 @@
     "settingUpNext": "「次へ」を設定中…",
     "noCueQueued": "待機中のキューなし",
     "toggleVideoOutput": "映像出力を切り替え",
+    "videoOutputFullscreen": "映像出力を全画面表示",
     "captureVideoStandby": "スタンバイ画像としてキャプチャ",
     "captureDisplayStandby": "キューにキャプチャ",
     "toggleDetachedQuickPlays": "QuickPlaysを切り離す",
@@ -955,6 +957,18 @@
     "paused": "一時停止中",
     "upNext": "次へ",
     "previewing": "プレビュー"
+  },
+  "videoThumbnail": {
+    "hoverSize": "ホバー時の映像プレビューサイズ",
+    "choose": "サムネイルのフレームを選択",
+    "time": "フレーム位置",
+    "first": "最初のフレーム",
+    "middle": "中央",
+    "apply": "サムネイルに設定",
+    "saveCue": "キュー画像として保存",
+    "saveStandby": "待機画像として保存",
+    "loading": "フレームを読み込み中…",
+    "unavailable": "この映像からフレームを読み込めませんでした。"
   },
   "standbyCapture": {
     "panelTitle": "画像をキャプチャ",

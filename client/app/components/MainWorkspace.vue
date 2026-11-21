@@ -84,7 +84,7 @@
 
         <div v-show="recoveryOpen || !quickPlayFullscreen || quickPlayDetached" class="playlist-section">
           <div class="playlist-panel">
-            <PlaylistView :read-only="recoveryOpen">
+            <PlaylistView ref="playlistView" :read-only="recoveryOpen">
               <template #header-leading>
                 <button
                   v-if="quickPlayClosed && !quickPlayDetached"
@@ -493,6 +493,12 @@ const quickPlayVisible = computed(() => !quickPlayClosed.value && !quickPlayDeta
 // MIDI runs while a show is open in this window, whether or not QuickPlays
 // are shown, attached or detached: GO from a controller must always work.
 const { mount: mountMidi, unmount: unmountMidi } = useMidiController();
+const playlistView = ref<{ locateLive: () => void; locateUpNext: () => void } | null>(null);
+function locateInPlaylist(action: 'locateLive' | 'locateUpNext') {
+  if (recoveryOpen) return;
+  quickPlayFullscreen.value = false;
+  void nextTick(() => playlistView.value?.[action]());
+}
 const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useQuickPlayHotkeys({
   'toggle-settings': () => { showProjectSettings.value = !showProjectSettings.value; },
   'toggle-properties': () => {
@@ -502,6 +508,8 @@ const { mount: mountHotkeys, unmount: unmountHotkeys, playbackMappings } = useQu
     else openItemProperties(item.uuid);
   },
   'toggle-quickplays': () => { if (!quickPlayDetached.value) toggleQuickPlays(); },
+  'locate-live': () => locateInPlaylist('locateLive'),
+  'locate-up-next': () => locateInPlaylist('locateUpNext'),
 });
 const { stopAllCues } = useAudioEngine();
 const outputConsoleMinDb = -60;

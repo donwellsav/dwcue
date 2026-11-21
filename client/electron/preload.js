@@ -312,7 +312,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setTestCardConfig: (config) => ipcRenderer.invoke('video-output:test-card-config', config),
     setTestCardConnection: (connection) => ipcRenderer.invoke('video-output:test-card-connection', connection),
     setFullscreen:    (on)     => ipcRenderer.invoke('video-output:set-fullscreen', on),
-    toggleFullscreen: ()       => ipcRenderer.invoke('video-output:toggle-fullscreen'),
+    toggleFullscreen: (openIfClosed) => ipcRenderer.invoke('video-output:toggle-fullscreen', openIfClosed === true),
     reportPlaybackError: (error) =>
       ipcRenderer.invoke('video-output:report-playback-error', error),
     onShortcut: (callback) => {

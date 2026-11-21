@@ -143,6 +143,8 @@
         </div>
 
         <div class="item-state">
+          <span v-if="sampleOver" class="sample-over" role="img"
+            :title="t('playlist.sampleOver')" :aria-label="t('playlist.sampleOver')">+dBFS</span>
           <span v-if="isPaused" class="status-pill paused">{{ t('status.paused') }}</span>
           <span v-else-if="isPlaying" class="status-pill playing">{{ t('status.playing') }}</span>
           <span v-if="isPreviewing" class="status-pill preview">{{ t('status.previewing') }}</span>
@@ -203,16 +205,14 @@
         </div>
 
         <span v-if="item.type === 'audio'" class="item-duration" :style="{ color: durationColor ?? undefined }">{{ durationDisplay }}</span>
-        <span
+        <VideoThumbnail
           v-if="item.type === 'audio' && item.hasVideo"
           class="video-badge-icon"
           :class="{ 'video-badge-icon--failed': videoCheckIssue }"
-          :title="videoCheckIssue ? t(`videoCheck.${videoCheckIssue}`) : t('playlist.videoCue')"
-          role="img"
-          :aria-label="videoCheckIssue ? t(`videoCheck.${videoCheckIssue}`) : t('playlist.videoCue')"
-          draggable="false"
-          @click.stop
-        >{{ videoCheckIssue ? 'VIDEO !' : 'VIDEO' }}</span>
+          :cue="item"
+          :label="videoCheckIssue ? t(`videoCheck.${videoCheckIssue}`) : t('playlist.videoCue')"
+          :warning="videoCheckIssue ? t(`videoCheck.${videoCheckIssue}`) : undefined"
+        />
         <ActionButton
           v-if="item.type === 'group' && !showMode"
           class="group-shuffle-action"
@@ -453,6 +453,8 @@ function toggleFileName(event: MouseEvent) {
 }
 
 const isSelected = computed(() => selectedItems.value.has(props.item.uuid));
+const sampleOver = computed(() => server.connected && !server.connectionLost
+  && activeCues.value.get(props.item.uuid)?.sampleOver === true);
 const isPlaying = computed(() => activeCues.value.has(props.item.uuid));
 const isPaused = computed(() =>
   props.item.type === 'audio' && activeCues.value.get(props.item.uuid)?.isPaused === true,
@@ -1463,11 +1465,13 @@ button.item-name {
   color: var(--color-text-primary);
 }
 
-/* Video cue badge: a compact text cell that stays legible at a glance. */
+/* Keep the thumbnail in the compact VIDEO badge slot. */
 .video-badge-icon {
   grid-area: video;
   justify-self: start;
   justify-content: center;
+  position: relative;
+  width: 4em;
   min-width: 38px;
   min-height: 26px;
   height: var(--cue-cell-height);
@@ -1487,6 +1491,13 @@ button.item-name {
   background: color-mix(in srgb, var(--color-danger) 20%, var(--color-control));
   border-color: var(--color-danger);
   color: var(--color-danger);
+}
+
+.sample-over {
+  color: var(--color-danger);
+  font-size: var(--cue-text-size);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .item-state {

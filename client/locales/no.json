@@ -370,6 +370,7 @@
     "addGroup": "Legg til gruppe",
     "noItems": "Ingen elementer i spillelisten",
     "importHint": "Bruk importknappene eller dra filer hit — lyd og video fungerer begge",
+    "sampleOver": "Denne cuen passerte 0 dBFS på cue-måleren før hovedbegrenseren.",
     "videoCue": "Videocue — bildet spilles av på videoutgangen"
   },
   "playlistSearch": {
@@ -924,6 +925,7 @@
     "settingUpNext": "Setter Neste…",
     "noCueQueued": "Ingen cue i kø",
     "toggleVideoOutput": "Slå videoutgang av/på",
+    "videoOutputFullscreen": "Videoutgang i fullskjerm",
     "captureVideoStandby": "Ta skjermbilde som Standby-bilde",
     "captureDisplayStandby": "Ta skjermbilde for Cue",
     "toggleDetachedQuickPlays": "Løsrevne QuickPlays",
@@ -955,6 +957,18 @@
     "paused": "Pauset",
     "upNext": "Neste",
     "previewing": "Forhåndsvisning"
+  },
+  "videoThumbnail": {
+    "hoverSize": "Størrelse på videoforhåndsvisning ved peking",
+    "choose": "Velg bilde til miniatyr",
+    "time": "Bildeposisjon",
+    "first": "Første bilde",
+    "middle": "Midten",
+    "apply": "Bruk som miniatyr",
+    "saveCue": "Lagre som cue-bilde",
+    "saveStandby": "Lagre som ventebilde",
+    "loading": "Laster bilde…",
+    "unavailable": "Kunne ikke laste et bilde fra denne videoen."
   },
   "standbyCapture": {
     "panelTitle": "Ta skjermbilde",

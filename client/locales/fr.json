@@ -370,6 +370,7 @@
     "addGroup": "Ajouter un Groupe",
     "noItems": "Aucun élément dans la liste de lecture",
     "importHint": "Utilisez les boutons d'import ou glissez des fichiers ici — audio et vidéo fonctionnent",
+    "sampleOver": "Ce cue a dépassé 0 dBFS sur son vumètre, avant le limiteur principal.",
     "videoCue": "Signal vidéo — l’image est lue sur la sortie vidéo"
   },
   "playlistSearch": {
@@ -924,6 +925,7 @@
     "settingUpNext": "Définition du suivant…",
     "noCueQueued": "Aucun signal en attente",
     "toggleVideoOutput": "Basculer la sortie vidéo",
+    "videoOutputFullscreen": "Sortie vidéo en plein écran",
     "captureVideoStandby": "Capturer comme Image de Veille",
     "captureDisplayStandby": "Capturer pour le Signal",
     "toggleDetachedQuickPlays": "QuickPlays détachés",
@@ -955,6 +957,18 @@
     "paused": "En pause",
     "upNext": "Suivant",
     "previewing": "Aperçu"
+  },
+  "videoThumbnail": {
+    "hoverSize": "Taille de l’aperçu vidéo au survol",
+    "choose": "Choisir l’image de la vignette",
+    "time": "Position de l’image",
+    "first": "Première image",
+    "middle": "Milieu",
+    "apply": "Utiliser comme vignette",
+    "saveCue": "Enregistrer comme image du cue",
+    "saveStandby": "Enregistrer comme image d’attente",
+    "loading": "Chargement de l’image…",
+    "unavailable": "Impossible de charger une image de cette vidéo."
   },
   "standbyCapture": {
     "panelTitle": "Capturer une image",

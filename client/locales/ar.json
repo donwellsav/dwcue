@@ -370,6 +370,7 @@
     "addGroup": "إضافة مجموعة",
     "noItems": "لا توجد عناصر في قائمة التشغيل",
     "importHint": "استخدم أزرار الاستيراد أو اسحب الملفات هنا — الصوت والفيديو يعملان",
+    "sampleOver": "تجاوزت هذه الإشارة 0 dBFS على مقياسها قبل المحدد الرئيسي.",
     "videoCue": "إشارة فيديو: تُعرض الصورة على إخراج الفيديو"
   },
   "playlistSearch": {
@@ -924,6 +925,7 @@
     "settingUpNext": "جارٍ تعيين التالي…",
     "noCueQueued": "لا توجد إشارة في الانتظار",
     "toggleVideoOutput": "تبديل إخراج الفيديو",
+    "videoOutputFullscreen": "إخراج الفيديو بملء الشاشة",
     "captureVideoStandby": "التقاط كصورة انتظار",
     "captureDisplayStandby": "التقاط للإشارة",
     "toggleDetachedQuickPlays": "QuickPlay المنفصل",
@@ -955,6 +957,18 @@
     "paused": "متوقف مؤقتًا",
     "upNext": "التالي",
     "previewing": "معاينة"
+  },
+  "videoThumbnail": {
+    "hoverSize": "حجم معاينة الفيديو عند التمرير",
+    "choose": "اختيار إطار الصورة المصغرة",
+    "time": "موضع الإطار",
+    "first": "الإطار الأول",
+    "middle": "المنتصف",
+    "apply": "استخدام كصورة مصغرة",
+    "saveCue": "حفظ كصورة للإشارة",
+    "saveStandby": "حفظ كصورة استعداد",
+    "loading": "جارٍ تحميل الإطار…",
+    "unavailable": "تعذر تحميل إطار من هذا الفيديو."
   },
   "standbyCapture": {
     "panelTitle": "التقاط صورة",

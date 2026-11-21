@@ -370,6 +370,7 @@
     "addGroup": "Add Group",
     "noItems": "No items in playlist",
     "importHint": "Use the import buttons or drag files here — audio and video both work",
+    "sampleOver": "This cue crossed 0 dBFS at the cue meter, before the master limiter.",
     "videoCue": "Video cue — picture plays on the Video Output"
   },
   "playlistSearch": {
@@ -924,6 +925,7 @@
     "settingUpNext": "Setting Up Next…",
     "noCueQueued": "No cue queued",
     "toggleVideoOutput": "Toggle Video Output",
+    "videoOutputFullscreen": "Video Output fullscreen",
     "captureVideoStandby": "Capture as Standby Picture",
     "captureDisplayStandby": "Capture for Cue",
     "toggleDetachedQuickPlays": "Detached QuickPlays",
@@ -955,6 +957,18 @@
     "paused": "Paused",
     "upNext": "Up Next",
     "previewing": "Preview"
+  },
+  "videoThumbnail": {
+    "hoverSize": "Video thumbnail hover size",
+    "choose": "Choose thumbnail frame",
+    "time": "Frame position",
+    "first": "First frame",
+    "middle": "Middle",
+    "apply": "Use as thumbnail",
+    "saveCue": "Save as cue image",
+    "saveStandby": "Save as standby image",
+    "loading": "Loading frame…",
+    "unavailable": "Could not load a frame from this video."
   },
   "standbyCapture": {
     "panelTitle": "Capture a picture",

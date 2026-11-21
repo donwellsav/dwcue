@@ -370,6 +370,7 @@
     "addGroup": "Gruppe hinzufügen",
     "noItems": "Keine Elemente in der Wiedergabeliste",
     "importHint": "Nutzen Sie die Import-Buttons oder ziehen Sie Dateien hierher — Audio und Video funktionieren beide",
+    "sampleOver": "Dieser Cue hat am Cue-Pegelmesser vor dem Master-Limiter 0 dBFS überschritten.",
     "videoCue": "Video-Cue – das Bild wird auf der Videoausgabe wiedergegeben"
   },
   "playlistSearch": {
@@ -924,6 +925,7 @@
     "settingUpNext": "„Als Nächstes“ wird gesetzt…",
     "noCueQueued": "Kein Cue vorgemerkt",
     "toggleVideoOutput": "Videoausgabe umschalten",
+    "videoOutputFullscreen": "Videoausgabe im Vollbild",
     "captureVideoStandby": "Als Standby-Bild Aufnehmen",
     "captureDisplayStandby": "Für Cue Aufnehmen",
     "toggleDetachedQuickPlays": "Ausgelagerte QuickPlays",
@@ -955,6 +957,18 @@
     "paused": "Pausiert",
     "upNext": "Als Nächstes",
     "previewing": "Vorschau"
+  },
+  "videoThumbnail": {
+    "hoverSize": "Größe der Videovorschau beim Überfahren",
+    "choose": "Vorschaubild wählen",
+    "time": "Bildposition",
+    "first": "Erstes Bild",
+    "middle": "Mitte",
+    "apply": "Als Vorschaubild verwenden",
+    "saveCue": "Als Cue-Bild speichern",
+    "saveStandby": "Als Standby-Bild speichern",
+    "loading": "Bild wird geladen…",
+    "unavailable": "Aus diesem Video konnte kein Bild geladen werden."
   },
   "standbyCapture": {
     "panelTitle": "Bild aufnehmen",

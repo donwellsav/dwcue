@@ -370,6 +370,7 @@
     "addGroup": "Adauga Grup",
     "noItems": "Nu exista elemente in lista de redare",
     "importHint": "Folosiți butoanele de import sau trageți fișiere aici — audio și video funcționează",
+    "sampleOver": "Acest cue a depășit 0 dBFS pe indicatorul său, înaintea limitatorului principal.",
     "videoCue": "Cue video — imaginea se redă pe ieșirea video"
   },
   "playlistSearch": {
@@ -924,6 +925,7 @@
     "settingUpNext": "Se setează Următorul…",
     "noCueQueued": "Niciun cue în așteptare",
     "toggleVideoOutput": "Comută ieșirea video",
+    "videoOutputFullscreen": "Ieșire video pe tot ecranul",
     "captureVideoStandby": "Capturează ca Imagine Standby",
     "captureDisplayStandby": "Capturează pentru Cue",
     "toggleDetachedQuickPlays": "QuickPlay separat",
@@ -955,6 +957,18 @@
     "paused": "În pauză",
     "upNext": "Următor",
     "previewing": "Previzualizare"
+  },
+  "videoThumbnail": {
+    "hoverSize": "Dimensiunea previzualizării video la trecerea cursorului",
+    "choose": "Alege cadrul miniaturii",
+    "time": "Poziția cadrului",
+    "first": "Primul cadru",
+    "middle": "Mijloc",
+    "apply": "Folosește ca miniatură",
+    "saveCue": "Salvează ca imagine pentru cue",
+    "saveStandby": "Salvează ca imagine de așteptare",
+    "loading": "Se încarcă cadrul…",
+    "unavailable": "Nu s-a putut încărca un cadru din acest videoclip."
   },
   "standbyCapture": {
     "panelTitle": "Capturează o imagine",

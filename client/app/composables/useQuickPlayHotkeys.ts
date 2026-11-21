@@ -22,7 +22,8 @@ const RESERVED_COMBOS: QuickPlaySlotKeyBinding[] = [
 export const bindingsMatch = (a: QuickPlaySlotKeyBinding, b: QuickPlaySlotKeyBinding): boolean =>
   a.key.toLowerCase() === b.key.toLowerCase()
   && a.ctrlKey  === b.ctrlKey
-  && a.shiftKey === b.shiftKey
+  // Some layouts produce '?' with Shift and others have a dedicated key.
+  && (a.key === '?' || a.shiftKey === b.shiftKey)
   && a.altKey   === b.altKey;
 
 export const isReservedCombo = (binding: QuickPlaySlotKeyBinding): boolean =>
@@ -31,7 +32,7 @@ export const isReservedCombo = (binding: QuickPlaySlotKeyBinding): boolean =>
 export const formatKeyLabel = (binding: QuickPlaySlotKeyBinding): string => {
   const parts: string[] = [];
   if (binding.ctrlKey)  parts.push('Ctrl');
-  if (binding.shiftKey) parts.push('Shift');
+  if (binding.shiftKey && binding.key !== '?') parts.push('Shift');
   if (binding.altKey)   parts.push('Alt');
   const keyLabel = binding.key === ' ' ? 'Space'
     : binding.key.length === 1 ? binding.key.toUpperCase()
@@ -63,6 +64,9 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'select-down',   labelKey: 'controls.selectDown'   },
   { id: 'set-up-next',   labelKey: 'controls.setUpNext'    },
   { id: 'toggle-video-output', labelKey: 'controls.toggleVideoOutput' },
+  { id: 'fullscreen-video-output', labelKey: 'controls.videoOutputFullscreen' },
+  { id: 'locate-live', labelKey: 'actions.locateLive' },
+  { id: 'locate-up-next', labelKey: 'actions.locateUpNext' },
   { id: 'capture-video-standby', labelKey: 'controls.captureVideoStandby' },
   { id: 'capture-display-standby', labelKey: 'controls.captureDisplayStandby' },
   { id: 'play-selected', labelKey: 'controls.playSelected' },
@@ -72,8 +76,10 @@ export const PLAYBACK_ACTIONS: { id: PlaybackKeyAction; labelKey: string }[] = [
   { id: 'toggle-detached-quickplays', labelKey: 'controls.toggleDetachedQuickPlays' },
 ];
 
-const isWorkspaceAction = (action: PlaybackKeyAction) =>
-  action === 'toggle-settings' || action === 'toggle-properties' || action === 'toggle-quickplays';
+const WORKSPACE_ACTIONS = ['toggle-settings', 'toggle-properties', 'toggle-quickplays', 'locate-live', 'locate-up-next'] as const;
+type WorkspaceAction = typeof WORKSPACE_ACTIONS[number];
+const isWorkspaceAction = (action: PlaybackKeyAction): action is WorkspaceAction =>
+  WORKSPACE_ACTIONS.some(candidate => action === candidate);
 
 export const resolveKeyboardBindings = (
   slots: readonly (AudioItem | null)[],
@@ -89,7 +95,7 @@ export const resolveKeyboardBindings = (
   const assigned = [...Object.values(keyMappings), ...Object.values(savedPlayback)];
   for (const action of [
     'set-up-next', 'play-selected', 'toggle-loop', 'jump-cue', 'cue-to-continue',
-    'toggle-video-output', 'capture-video-standby', 'capture-display-standby',
+    'toggle-video-output', 'fullscreen-video-output', 'locate-live', 'locate-up-next', 'capture-video-standby', 'capture-display-standby',
     'toggle-settings', 'toggle-properties', 'toggle-quickplays', 'toggle-detached-quickplays',
   ] as const) {
     const defaultKey = DEFAULT_PLAYBACK_KEYS[action];
@@ -122,14 +128,17 @@ let togglingVideoOutput = false;
 export const useVideoOutputToggle = () => {
   const { showHeaderWarning } = useHeaderWarnings();
   const { t } = useLocalization();
-  return async () => {
+  return async (fullscreen = false) => {
     const api = window.electronAPI?.videoOutput;
     if (!api || togglingVideoOutput) return false;
     togglingVideoOutput = true;
     try {
-      const status = await api.status();
-      if (status.enabled || status.open) await api.close();
-      else await api.open();
+      if (fullscreen) await api.toggleFullscreen(true);
+      else {
+        const status = await api.status();
+        if (status.enabled || status.open) await api.close();
+        else await api.open();
+      }
       return true;
     } catch {
       showHeaderWarning(t('headerWarnings.videoToggleFailed'), 'urgent');
@@ -140,7 +149,7 @@ export const useVideoOutputToggle = () => {
   };
 };
 
-export const useQuickPlayHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-properties' | 'toggle-quickplays', () => void>) => {
+export const useQuickPlayHotkeys = (workspace?: Record<WorkspaceAction, () => void>) => {
   const { currentProject, projectHydrationStatus, selectedItem, selectedItems, toggleCueLoop, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { quickPlayItems } = useQuickPlayItems();
   const { quickPlayPlaybackReady, playQuickPlay } = useQuickPlayPlayback();
@@ -274,6 +283,7 @@ export const useQuickPlayHotkeys = (workspace?: Record<'toggle-settings' | 'togg
 
     if (action === 'stop-all') return stopAllCues();
     if (action === 'toggle-video-output') return toggleVideoOutput();
+    if (action === 'fullscreen-video-output') return toggleVideoOutput(true);
     // Both capture the Video Output. The second action keeps the name it was
     // saved under in show files; it used to capture another screen.
     if (action === 'capture-video-standby') return captureStill('standby');
@@ -335,7 +345,7 @@ export const useQuickPlayHotkeys = (workspace?: Record<'toggle-settings' | 'togg
         forwardToOperator(e);
         return;
       }
-      if (playbackAction !== 'stop-all' && !closingDetached &&
+      if (playbackAction !== 'stop-all' && playbackAction !== 'fullscreen-video-output' && !closingDetached &&
           (!currentProject.value || projectHydrationStatus.value !== 'ready')) return;
       e.preventDefault();
       e.stopPropagation();

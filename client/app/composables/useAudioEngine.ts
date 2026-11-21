@@ -43,6 +43,7 @@ export interface ActiveCueView {
   currentTime: number;    // playhead relative to inPoint
   playheadSeconds?: number; // absolute playhead in the file (independent of inPoint)
   isPaused: boolean;
+  sampleOver?: boolean;
   color?: string;
   inPoint?: number;
   outPoint?: number;
@@ -170,6 +171,7 @@ export const useAudioEngine = () => {
     view.color       = item.color;
     view.inPoint     = item.inPoint;
     view.outPoint    = item.outPoint;
+    if (restarted || (cueId && existing?.serverCueId !== cueId)) view.sampleOver = false;
     if (cueId) view.serverCueId = cueId;
     view.currentTime = Math.max(0, Math.min(view.duration, playheadSeconds - inPoint));
     view.playheadSeconds = playheadSeconds;
@@ -423,13 +425,18 @@ export const useAudioEngine = () => {
   // Meter broadcast: master levels + per-cue playhead. Master level is
   // a derived L+R sum so the existing single-bar UI keeps working;
   // accurate per-channel meters use StereoMeter directly.
-  server.onMeters((m: any) => {
+  server.onMeters(m => {
     if (!m) return;
     if (Array.isArray(m.items)) {
       let moved = false;
       for (const meter of m.items) {
         for (const cue of activeCues.value.values()) {
           if (cue.serverCueId !== meter.cue_id) continue;
+          // Latch actual post-cue-gain samples for this pass. The true-peak
+          // limiter and the audience output are downstream of this meter.
+          if (!cue.sampleOver && meter.sources?.some(channel => channel.peak_max_db > 0)) {
+            cue.sampleOver = true;
+          }
           // The engine applies a trim edited while the cue plays at once:
           // keep its length, In and Out points with the item, or the
           // countdown and end warning run to the old Out point.

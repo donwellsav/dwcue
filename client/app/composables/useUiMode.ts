@@ -68,6 +68,7 @@ export const PLAYLIST_ROW_HEIGHTS = {
   folder: { min: 60, max: 96, default: 60 },
 } as const;
 
+export const VIDEO_HOVER_SCALE = { min: 2, max: 5, default: 3 } as const;
 export const WAVEFORM_OPACITY = { min: 0, max: 100, default: 10 } as const;
 // Percentages: 100 = the original interface text size. Defaults sit below
 // 100 — both were introduced as "smaller than before" preferences.
@@ -146,6 +147,7 @@ const UI_FONT_SCALE_KEY = 'liveplay-ui-font-scale';
 const QUICK_PLAY_FONT_SCALE_KEY = 'liveplay-quickplay-font-scale';
 const QUICK_PLAY_GRID_LAYOUTS_KEY = 'liveplay-quickplay-grid-layouts-v1';
 const HEADER_WARNING_TIMING_KEY = 'dwcue-header-warning-timing';
+const VIDEO_HOVER_SCALE_KEY = 'dwcue-video-hover-scale';
 const SHOW_TOOLTIPS_KEY = 'dwcue-show-tooltips';
 
 // These two preferences were saved under older keys before the feature was
@@ -199,6 +201,10 @@ export const useUiMode = () => {
   const headerWarningTiming = useState('headerWarningTiming', () => normalizeHeaderWarningTiming(null));
   const showTooltips = useState('useUiMode.showTooltips', () => true);
 
+  const videoHoverScale = useState<number>('videoHoverScale', () => VIDEO_HOVER_SCALE.default);
+  const normalizeVideoHoverScale = (value: unknown) =>
+    normalizeBoundedInteger(value, VIDEO_HOVER_SCALE.min, VIDEO_HOVER_SCALE.max, VIDEO_HOVER_SCALE.default);
+
   if (import.meta.client && !_hydrated) {
     _hydrated = true;
     try {
@@ -225,6 +231,7 @@ export const useUiMode = () => {
         readSavedOrLegacy(QUICK_PLAY_GRID_LAYOUTS_KEY, LEGACY_QUICK_PLAY_GRID_LAYOUTS_KEY),
       );
       headerWarningTiming.value = parseHeaderWarningTiming(localStorage.getItem(HEADER_WARNING_TIMING_KEY));
+      videoHoverScale.value = normalizeVideoHoverScale(localStorage.getItem(VIDEO_HOVER_SCALE_KEY));
       showTooltips.value = localStorage.getItem(SHOW_TOOLTIPS_KEY) !== 'false';
     } catch {
       // localStorage unavailable (e.g. private browsing) — fall back to 'edit'.
@@ -324,6 +331,13 @@ export const useUiMode = () => {
     }
   };
 
+  const setVideoHoverScale = (value: unknown) => {
+    videoHoverScale.value = normalizeVideoHoverScale(value);
+    if (import.meta.client) {
+      try { localStorage.setItem(VIDEO_HOVER_SCALE_KEY, String(videoHoverScale.value)); } catch {}
+    }
+  };
+
   const setShowTooltips = (enabled: boolean) => {
     showTooltips.value = enabled;
     if (import.meta.client) {
@@ -367,6 +381,8 @@ export const useUiMode = () => {
     quickPlayGridLayouts,
     headerWarningTiming,
     showTooltips,
+    videoHoverScale,
+    setVideoHoverScale,
     setUiMode,
     setRegularPlaylistRowHeight,
     setFolderPlaylistRowHeight,

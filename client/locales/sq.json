@@ -370,6 +370,7 @@
     "addGroup": "Shto Grup",
     "noItems": "Asnjë artikull në listën e luajtjes",
     "importHint": "Përdor butonat e importit ose tërhiq skedarët këtu — audio dhe video funksionojnë",
+    "sampleOver": "Ky sinjal kaloi 0 dBFS në matësin e vet, para kufizuesit kryesor.",
     "videoCue": "Video cue — figura luhet në Daljen e videos"
   },
   "playlistSearch": {
@@ -924,6 +925,7 @@
     "settingUpNext": "Po caktohet Tjetri…",
     "noCueQueued": "Asnjë cue në radhë",
     "toggleVideoOutput": "Ndërro daljen e videos",
+    "videoOutputFullscreen": "Dalja e videos në ekran të plotë",
     "captureVideoStandby": "Kap si Imazh Pritjeje",
     "captureDisplayStandby": "Kap për Cue",
     "toggleDetachedQuickPlays": "QuickPlays të shkëputur",
@@ -955,6 +957,18 @@
     "paused": "Në pauzë",
     "upNext": "Tjetri",
     "previewing": "Paraparim"
+  },
+  "videoThumbnail": {
+    "hoverSize": "Madhësia e parashikimit kur kalon kursori",
+    "choose": "Zgjidh kuadrin e miniaturës",
+    "time": "Pozicioni i kuadrit",
+    "first": "Kuadri i parë",
+    "middle": "Mesi",
+    "apply": "Përdore si miniaturë",
+    "saveCue": "Ruaje si figurë të sinjalit",
+    "saveStandby": "Ruaje si figurë pritjeje",
+    "loading": "Kuadri po ngarkohet…",
+    "unavailable": "Nuk u ngarkua dot një kuadër nga kjo video."
   },
   "standbyCapture": {
     "panelTitle": "Kap një imazh",

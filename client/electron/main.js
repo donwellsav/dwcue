@@ -3749,11 +3749,15 @@ function installVideoOutputWatchdog() {
 }
 
 
-ipcMain.handle('video-output:open', (event) => {
-  requireTrustedIpc(event);
+function openVideoOutputWindow() {
   videoOutputSessionEnabled = true;
   installVideoOutputWatchdog();
   createVideoOutputWindow();
+}
+
+ipcMain.handle('video-output:open', (event) => {
+  requireTrustedIpc(event);
+  openVideoOutputWindow();
   return broadcastVideoOutputStatus();
 });
 
@@ -4277,11 +4281,13 @@ ipcMain.handle('video-output:set-fullscreen', (event, on) => {
   return broadcastVideoOutputStatus();
 });
 
-ipcMain.handle('video-output:toggle-fullscreen', (event) => {
+ipcMain.handle('video-output:toggle-fullscreen', (event, openIfClosed) => {
   requireTrustedIpc(event);
+  const wasOpen = videoOutputWindow && !videoOutputWindow.isDestroyed();
+  if (!wasOpen && openIfClosed === true) openVideoOutputWindow();
   if (videoOutputWindow && !videoOutputWindow.isDestroyed()) {
     setOutputFullscreen(videoOutputWindow, process.platform,
-      !isOutputFullscreen(videoOutputWindow, process.platform));
+      !wasOpen || !isOutputFullscreen(videoOutputWindow, process.platform));
   }
   return broadcastVideoOutputStatus();
 });

@@ -370,6 +370,7 @@
     "addGroup": "Grup Ekle",
     "noItems": "Çalma listesinde öğe yok",
     "importHint": "İçe aktarma düğmelerini kullanın veya dosyaları buraya sürükleyin — ses ve video ikisi de çalışır",
+    "sampleOver": "Bu cue, ana sınırlayıcıdan önce kendi ölçerinde 0 dBFS’yi aştı.",
     "videoCue": "Video cue — görüntü Video Çıkışında oynar"
   },
   "playlistSearch": {
@@ -924,6 +925,7 @@
     "settingUpNext": "Sıradaki ayarlanıyor…",
     "noCueQueued": "Sırada cue yok",
     "toggleVideoOutput": "Video Çıkışını Aç/Kapat",
+    "videoOutputFullscreen": "Tam ekran video çıkışı",
     "captureVideoStandby": "Bekleme Görüntüsü Olarak Yakala",
     "captureDisplayStandby": "Cue İçin Yakala",
     "toggleDetachedQuickPlays": "Ayrılmış QuickPlay",
@@ -955,6 +957,18 @@
     "paused": "Duraklatıldı",
     "upNext": "Sıradaki",
     "previewing": "Ön İzleme"
+  },
+  "videoThumbnail": {
+    "hoverSize": "İşaretçi üzerindeyken video önizleme boyutu",
+    "choose": "Küçük resim karesini seç",
+    "time": "Kare konumu",
+    "first": "İlk kare",
+    "middle": "Orta",
+    "apply": "Küçük resim olarak kullan",
+    "saveCue": "Cue görüntüsü olarak kaydet",
+    "saveStandby": "Bekleme görüntüsü olarak kaydet",
+    "loading": "Kare yükleniyor…",
+    "unavailable": "Bu videodan kare yüklenemedi."
   },
   "standbyCapture": {
     "panelTitle": "Görüntü yakala",

@@ -290,11 +290,38 @@ test('no output fullscreen request in main reaches the window directly', () => {
     'the menu bar and Dock are handed back before the window goes');
   assert.match(handlerSource('video-output:set-fullscreen'), /setOutputFullscreen\(videoOutputWindow, process\.platform, on === true\)/);
   assert.match(handlerSource('video-output:toggle-fullscreen'),
-    /setOutputFullscreen\(videoOutputWindow, process\.platform,\s*!isOutputFullscreen\(videoOutputWindow, process\.platform\)\)/);
+    /setOutputFullscreen\(videoOutputWindow, process\.platform,\s*!wasOpen \|\| !isOutputFullscreen\(videoOutputWindow, process\.platform\)\)/);
 });
 
 // ---- Remembering the look-alikes: same size and name, a different screen -----
 const vm = require('node:vm');
+
+test('Video Output fullscreen opens when requested and toggles an existing window', () => {
+  let handler;
+  let opened = 0;
+  let fullscreen = false;
+  const context = {
+    ipcMain: { handle: (_channel, callback) => { handler = callback; } },
+    requireTrustedIpc: () => {},
+    process: { platform: 'darwin' },
+    videoOutputWindow: null,
+    openVideoOutputWindow: () => {
+      opened += 1;
+      context.videoOutputWindow = { isDestroyed: () => false };
+    },
+    isOutputFullscreen: () => fullscreen,
+    setOutputFullscreen: (_window, _platform, on) => { fullscreen = on; },
+    broadcastVideoOutputStatus: () => fullscreen,
+  };
+  vm.runInNewContext(handlerSource('video-output:toggle-fullscreen'), context);
+  assert.equal(handler({}, false), false);
+  assert.equal(opened, 0);
+  assert.equal(handler({}, true), true);
+  assert.equal(opened, 1);
+  assert.equal(handler({}, true), false);
+  assert.equal(handler({}, true), true);
+  assert.equal(opened, 1);
+});
 
 function displayResolver({ saved = [] } = {}) {
   const state = { displays: [], controlOn: laptop };

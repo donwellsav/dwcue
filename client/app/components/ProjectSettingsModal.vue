@@ -283,6 +283,14 @@
                 />
                 <output for="playlist-waveform-opacity">{{ waveformOpacity }}%</output>
               </section>
+              <section class="settings-field track-height-control">
+                <label for="playlist-video-hover-scale">{{ t('videoThumbnail.hoverSize') }}</label>
+                <input id="playlist-video-hover-scale" type="range"
+                  :min="VIDEO_HOVER_SCALE.min" :max="VIDEO_HOVER_SCALE.max"
+                  :value="videoHoverScale" :aria-valuetext="`${videoHoverScale}×`"
+                  @input="setVideoHoverScale(($event.target as HTMLInputElement).valueAsNumber)" />
+                <output for="playlist-video-hover-scale">{{ videoHoverScale }}×</output>
+              </section>
               <section class="settings-field">
                 <label class="settings-label settings-label--checkbox">
                   <input
@@ -667,6 +675,7 @@ import {
   QUICK_PLAY_GRID_PROFILES,
   PLAYLIST_ROW_HEIGHTS,
   WAVEFORM_OPACITY,
+  VIDEO_HOVER_SCALE,
   UI_FONT_SCALE,
   QUICK_PLAY_FONT_SCALE,
   type QuickPlayGridLayout,
@@ -730,6 +739,8 @@ const {
   quickPlayGridLayouts,
   headerWarningTiming,
   showTooltips,
+  videoHoverScale,
+  setVideoHoverScale,
   setRegularPlaylistRowHeight,
   setFolderPlaylistRowHeight,
   setWaveformOpacity,

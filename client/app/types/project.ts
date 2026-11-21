@@ -25,6 +25,7 @@ export interface AudioItem extends BaseItem {
   // a video container with a real video stream. Drives the Video Output
   // window; audio still plays through the engine exactly as before.
   hasVideo?: boolean;
+  videoThumbnailTime?: number | null; // Seconds into the source video.
   // Optional per-cue still image, project-relative like mediaPath, shown on
   // the video output while this audio-only cue plays.
   imagePath?: string;
@@ -171,6 +172,9 @@ export type PlaybackKeyAction =
   | 'select-down'
   | 'set-up-next'
   | 'toggle-video-output'
+  | 'fullscreen-video-output'
+  | 'locate-live'
+  | 'locate-up-next'
   | 'capture-video-standby'
   | 'capture-display-standby'
   | 'toggle-settings'
@@ -493,6 +497,9 @@ export const DEFAULT_PLAYBACK_KEYS: Partial<Record<PlaybackKeyAction, QuickPlayS
   'set-up-next':   { key: 'Enter',     ctrlKey: false, shiftKey: false, altKey: false },
   'play-selected': { key: 'Enter',     ctrlKey: false, shiftKey: true,  altKey: false },
   'toggle-video-output': { key: 'v',   ctrlKey: false, shiftKey: false, altKey: false },
+  'fullscreen-video-output': { key: 'f', ctrlKey: false, shiftKey: false, altKey: false },
+  'locate-live': { key: '/', ctrlKey: false, shiftKey: false, altKey: false },
+  'locate-up-next': { key: '?', ctrlKey: false, shiftKey: false, altKey: false },
   'capture-video-standby': { key: 'g', ctrlKey: false, shiftKey: false, altKey: false },
   'capture-display-standby': { key: 'g', ctrlKey: false, shiftKey: true, altKey: false },
   'toggle-settings': { key: 's', ctrlKey: false, shiftKey: false, altKey: false },

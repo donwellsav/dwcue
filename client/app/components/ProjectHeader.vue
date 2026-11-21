@@ -49,7 +49,7 @@
         :text="t('settings.tabVideoOutput')"
         symbol="video-output"
         :class="{ 'video-toggle--active': videoOutputOpen }"
-        @click="toggleVideoOutput"
+        @click="toggleVideoOutput()"
       />
       <!-- Level Check and Pre-show check open from Settings › Audio Routing. -->
 

@@ -329,7 +329,8 @@ assert.match(
 );
 assert.equal((playlistItem.match(/class="status-pill up-next"/g) ?? []).length, 0, 'the separate Up Next status pill must be removed');
 assert.equal((playlistItem.match(/v-if="item\.endBehavior\?\.action === 'next'"/g) ?? []).length, 0, 'the obsolete end-next icon must be removed');
-assert.match(playlistItem, /class="video-badge-icon"[\s\S]{0,600}>\{\{ videoCheckIssue \? 'VIDEO !' : 'VIDEO' \}\}<\/span>/, 'video cues must use a readable VIDEO text badge');
+assert.match(playlistItem, /<VideoThumbnail\s+v-if="item\.type === 'audio' && item\.hasVideo"\s+class="video-badge-icon"/,
+  'the video thumbnail must replace the VIDEO badge in the existing playlist column');
 assert.doesNotMatch(playlistItem, /class="material-symbols-rounded video-badge-icon"|>movie<\/span>/, 'video cues must not use the old movie glyph');
 assert.match(playlistItem, /class="set-next-action"[\s\S]{0,700}:label="t\('status\.upNext'\)"[\s\S]{0,700}:hover-label="[^"]+"/, 'the next control must combine its fixed Up Next label with the Play Next hover label');
 assert.match(
@@ -425,6 +426,11 @@ assert.doesNotMatch(
   /peak-warning-icon|exceedsTruePeakCeiling|>bomb<\/span>/,
   'file-analysis peak warnings must stay out of the playlist',
 );
+assert.match(playlistItem, /v-if="sampleOver" class="sample-over"/,
+  'only the active cue’s live sample-over state is shown in the playlist');
+assert.match(read('client/app/composables/useAudioEngine.ts'),
+  /meter\.sources\?\.some\(channel => channel\.peak_max_db > 0\)[\s\S]{0,100}cue\.sampleOver = true/,
+  'the per-cue maximum must cross 0 dBFS before the playlist warns');
 assert.doesNotMatch(playlistItem, /handleStop\(\)|icon="stop"|\.play-action\.is-stop/,
   'the playlist must never offer a Stop control beside the cue clock');
 assert.match(playlistItem,
@@ -501,6 +507,11 @@ assert.doesNotMatch(
   'the original video is never written to, and nothing shifts the copy\'s first picture away from zero',
 );
 const activeCueItem = read('client/app/components/ActiveCueItem.vue');
+assert.match(activeCueItem,
+  /class="cue-header"[\s\S]*class="cue-name-text"[\s\S]*class="cue-elapsed">\{\{ formatTime\(cue\.currentTime\) \}\}[\s\S]*class="cue-actions"/,
+  'the active cue’s elapsed time belongs on the title line');
+assert.doesNotMatch(activeCueItem, /formatTime\(secondsLeft|class="time-info"/,
+  'the active cue card must not show a duplicate remaining-time clock');
 assert.equal(
   /\.(?:panic-btn|stop-btn|preview-stop-btn)\s*\{[^}]*(?:#d71920|--color-danger|--state-playing)/.test(playbackControls + activeCueItem),
   false,
@@ -2584,7 +2595,7 @@ assert.match(
 const stillCapture = read('client/app/composables/useVideoStandbyCapture.ts');
 assert.match(
   stillCapture,
-  /async function captureStill\(target: StillTarget, source: 'output' \| 'display' = 'output'\)[\s\S]*await server\.uploadFile\(dataUrlToFile\(image, name\), name, sessionId\)[\s\S]*const previous = [\s\S]*lastCapture\.value = \{ target, itemUuid: cue\?\.uuid \?\? null, cueLabel: label, image, path, previous \};/,
+  /async function capturePicture\(target: StillTarget,[\s\S]*await server\.uploadFile\(dataUrlToFile\(image, name\), name, sessionId\)[\s\S]*const previous = [\s\S]*lastCapture\.value = \{ target, itemUuid: cue\?\.uuid \?\? null, cueLabel: label, image, path, previous \};/,
   'a capture says what it is for when it is taken, is saved into the show, and remembers what it replaced for Undo',
 );
 assert.match(

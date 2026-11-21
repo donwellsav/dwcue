@@ -323,9 +323,11 @@ function scrollItemIntoView(uuid: string, block: ScrollLogicalPosition = 'center
   }
 }
 
+defineExpose({ locateLive, locateUpNext });
+
 function locateUpNext() {
   const uuid = locatableNextUuid.value;
-  if (!uuid) return;
+  if (readOnly || !uuid) return;
   revealItems(selectedItemUuid.value, searchHitUuid.value, uuid);
   nextTick(() => {
     if (locatableNextUuid.value === uuid) scrollItemIntoView(uuid, 'end');
@@ -334,7 +336,7 @@ function locateUpNext() {
 
 function locateLive() {
   const uuid = locatableLiveUuid.value;
-  if (!uuid) return;
+  if (readOnly || !uuid) return;
   revealItems(selectedItemUuid.value, searchHitUuid.value, uuid);
   nextTick(() => {
     if (locatableLiveUuid.value === uuid) scrollItemIntoView(uuid, 'center');

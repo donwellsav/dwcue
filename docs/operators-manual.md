@@ -498,7 +498,7 @@ The playlist and **GO** remain available while either backup list is open. **Esc
 
 ### Active-cue controls
 
-Pause/Resume holds or resumes an active cue. Stop uses its configured stop behavior; a row’s Restart starts a fresh playback instance and cancels a pending one-pass action. **Stop All Cues** affects every active cue. Its default fade is 1 second; set and rehearse 0 seconds if immediate silence is required.
+The active-cue card shows elapsed time beside the cue name. Pause/Resume holds or resumes the cue, and Stop uses its configured stop behavior. The playing playlist row has a green **Loop** toggle. The row’s **Restart** returns to the cue’s In point. A **+dBFS** label means the live cue meter measured a sample above 0 dBFS before the master limiter. **Stop All Cues** affects every active cue. Its default fade is 1 second; set and rehearse 0 seconds if immediate silence is required.
 
 ### Finish a loop without changing the saved show
 
@@ -688,7 +688,7 @@ H.264, HEVC (H.265), VP8, VP9 and AV1 play as they are. A video whose picture th
 - The copy takes disk space beside the original, and a picture with a transparent background loses its transparency.
 - Conversion needs the files on this computer. When the audio engine runs on another computer, nothing is converted and the cue stays marked.
 
-Cues that still need attention are marked **VIDEO !** on the playlist or QuickPlay tile, and **Settings → Video Output** lists them with the reason. For a missing or unreadable clip, restore or replace the file. **Check Videos** checks every video again and tries the conversions again; **Cancel Check** ends a run, and so does playback or Stop All. One clip that times out is flagged and the check moves on. Two in a row end the run, because that points at storage that has stopped answering.
+Cues that still need attention have a **!** on the playlist video thumbnail or **VIDEO !** on the QuickPlay tile, and **Settings → Video Output** lists them with the reason. For a missing or unreadable clip, restore or replace the file. **Check Videos** checks every video again and tries the conversions again; **Cancel Check** ends a run, and so does playback or Stop All. One clip that times out is flagged and the check moves on. Two in a row end the run, because that points at storage that has stopped answering.
 
 The check is advisory and keeps the playlist and transport available. A pass covers the sampled pictures. Decode errors between those samples can still occur.
 
@@ -719,6 +719,10 @@ When the picture reaches the audience through a switcher, scaler, extender or pr
 To measure the delay, show the **AV Sync** test card and compare its flash on the audience screen with its tone at the sound desk, for example by filming both with a phone in slow motion. Start at 0 and raise the value until they line up; one frame at 30 fps is about 33 ms.
 
 ### Capture a picture
+
+Video cues show a thumbnail in the playlist. Hold the pointer over it for three seconds to see a larger picture, then move away to close it. Set the size under **Settings → User Interface → Playlist → Video thumbnail hover size**.
+
+In **Properties → Basic Info → Choose thumbnail frame**, the first preview is the middle of the trimmed cue. Choose **First frame**, **Middle**, or scrub to another position, then choose **Use as thumbnail**. Use **Save as cue image** or **Save as standby image** to save the displayed frame for Video Output.
 
 A capture takes a picture of what is on **Video Output** and saves it in the show's media folder. You say what it is for as you capture it:
 
@@ -1095,6 +1099,9 @@ These are source defaults, not a promise about a project's customized assignment
 | Shift+S | Toggle Properties for the selected cue in Edit Mode or while that cue is in Preview |
 | L | Toggle the target cue's saved End Behavior between Loop and Nothing |
 | V | Open or close the Video Output window |
+| F | Open Video Output fullscreen or toggle fullscreen where available |
+| / | Locate the playing playlist cue |
+| ? | Locate the playlist cue that is Up Next |
 | G | Capture Video Output as the standby picture |
 | Shift+G | Capture Video Output as the picture for the playing or selected cue |
 | F1 | Separate Play Selected audio action |

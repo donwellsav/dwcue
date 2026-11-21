@@ -119,6 +119,10 @@
               </button>
             </div>
           </div>
+          <VideoThumbnailPicker v-if="audioItem.hasVideo && selectedItems.size === 1 && uiMode === 'edit'"
+            :key="JSON.stringify([audioItem.uuid, audioItem.mediaPath, audioItem.mediaServerPath])"
+            :cue="audioItem" :disabled="_server.cueStartsBlocked || isReplacingMedia"
+            @apply="saveVideoThumbnailTime" />
           <div class="property-field">
             <label for="cue-property-cueImage">{{ t('properties.cueImage') }}</label>
             <div class="input-with-btn">
@@ -1031,6 +1035,15 @@ const persistPropertyChanges = async (): Promise<boolean> => {
   return saved;
 };
 
+async function saveVideoThumbnailTime(time: number) {
+  const item = audioItem.value;
+  const project = currentProject.value;
+  if (!project || !item?.hasVideo || _server.cueStartsBlocked || !Number.isFinite(time)) return;
+  item.videoThumbnailTime = time;
+  await endItemBatch();
+  if (currentProject.value === project) await persistPropertyChanges();
+}
+
 const retryPropertySave = () => {
   void persistPropertyChanges();
 };
@@ -1354,7 +1367,7 @@ const handleReplaceMedia = async (sourcePath: string) => {
     const snapshot = {
       mediaFileName: item.mediaFileName, mediaPath: item.mediaPath, mediaServerPath: item.mediaServerPath,
       waveform: item.waveform, duration: item.duration, inPoint: item.inPoint, outPoint: item.outPoint,
-      hasVideo: item.hasVideo, startNextTime: item.startNextTime,
+      hasVideo: item.hasVideo, videoThumbnailTime: item.videoThumbnailTime, startNextTime: item.startNextTime,
     };
     const usedWholeFile = snapshot.inPoint <= 0 && Math.abs(snapshot.outPoint - snapshot.duration) < 0.01;
 
@@ -1367,6 +1380,7 @@ const handleReplaceMedia = async (sourcePath: string) => {
     item.duration = duration;
     item.inPoint = usedWholeFile ? 0 : Math.min(snapshot.inPoint, Math.max(0, duration - 0.01));
     item.outPoint = usedWholeFile ? duration : Math.min(duration, Math.max(item.inPoint + Math.min(0.01, duration), Math.min(snapshot.outPoint, duration)));
+    item.videoThumbnailTime = null;
     // Re-probe: swapping media can add or remove the video stream.
     if (metadata?.has_video === true) item.hasVideo = true;
     else delete item.hasVideo;
@@ -1376,7 +1390,7 @@ const handleReplaceMedia = async (sourcePath: string) => {
 
     if (!await saveProject().catch(() => false)) {
       Object.assign(item, snapshot);
-      for (const key of ['mediaServerPath', 'waveform', 'hasVideo', 'startNextTime'] as const) {
+      for (const key of ['mediaServerPath', 'waveform', 'hasVideo', 'videoThumbnailTime', 'startNextTime'] as const) {
         if (snapshot[key] === undefined) delete item[key];
       }
       if (isCurrentShow()) await saveProject().catch(() => false);

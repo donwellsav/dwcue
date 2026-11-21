@@ -16,7 +16,7 @@ import {
 } from '../app/utils/quickPlays.ts';
 import { computed, ref } from 'vue';
 import { useQuickPlayPlayback } from '../app/composables/useQuickPlayPlayback.ts';
-import { resolveKeyboardBindings } from '../app/composables/useQuickPlayHotkeys.ts';
+import { bindingsMatch, resolveKeyboardBindings } from '../app/composables/useQuickPlayHotkeys.ts';
 import type { AudioItem } from '../app/types/project.ts';
 
 const audio = (uuid: string, order?: number) => ({
@@ -114,6 +114,11 @@ test('digits follow slot position and saved keyboard assignments take precedence
   assert.deepEqual(pauseAlternate, { key: ' ', ctrlKey: false, shiftKey: true, altKey: false });
   assert.equal(playbackMappings['play-next']?.key, ' ');
   assert.equal(playbackMappings['toggle-video-output']?.key, 'v');
+  assert.deepEqual(playbackMappings['fullscreen-video-output'], key('f'));
+  assert.deepEqual(playbackMappings['locate-live'], key('/'));
+  assert.ok(bindingsMatch(playbackMappings['locate-up-next']!, key('?')));
+  assert.ok(bindingsMatch(playbackMappings['locate-up-next']!, { ...key('?'), shiftKey: true }));
+  assert.equal(resolveKeyboardBindings(slots, { 'play-selected': key('f') }).playbackMappings['fullscreen-video-output'], undefined);
   assert.deepEqual(playbackMappings['toggle-settings'], { key: 's', ctrlKey: false, shiftKey: false, altKey: false });
   assert.deepEqual(playbackMappings['toggle-properties'], { key: 's', ctrlKey: false, shiftKey: true, altKey: false });
   assert.deepEqual(playbackMappings['toggle-quickplays'], key('q'));
