@@ -120,7 +120,7 @@ async function installUpdate() {
 }
 
 // Get app version
-const appVersion = ref('2.8.0');
+const appVersion = ref('2.8.1');
 onMounted(async () => {
   if (import.meta.client && window.electronAPI?.getAppVersion) {
     appVersion.value = await window.electronAPI.getAppVersion();
