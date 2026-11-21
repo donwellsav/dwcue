@@ -366,6 +366,7 @@ declare global {
     testCardError: string | null;
     testCardInfo: { displayFrequency: number; network: string[] };
     fullscreen: boolean;
+    canToggleFullscreen: boolean;
   }
 
   interface MacVideoSignalStatus {

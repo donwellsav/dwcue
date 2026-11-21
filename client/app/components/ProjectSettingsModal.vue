@@ -519,6 +519,13 @@
               </section>
               <h3 class="settings-section-title">{{ t('settings.videoFraming.title') }}</h3>
               <section class="settings-field video-framing">
+                <div v-if="voStatus?.open && (voStatus.canToggleFullscreen || voStatus.targetId)" class="video-framing-row">
+                  <span class="settings-label">{{ t('settings.videoFraming.outputWindow') }}</span>
+                  <button v-if="voStatus.canToggleFullscreen" type="button" class="modal-btn" @click="toggleOutputFullscreen">
+                    {{ t(voStatus.fullscreen ? 'menu.videoOutputExitFullscreen' : 'menu.videoOutputEnterFullscreen') }}
+                  </button>
+                  <span v-else>{{ t('settings.videoFraming.assignedFullscreen') }}</span>
+                </div>
                 <div class="video-framing-row">
                   <span class="settings-label">{{ t('settings.videoFraming.preset') }}</span>
                   <InlineChoicePicker id="video-frame-preset" :label="t('settings.videoFraming.preset')"
@@ -553,7 +560,7 @@
                       @click="applyVideoFraming">{{ t('settings.videoFraming.apply') }}</button>
                   </div>
                 </div>
-                <p class="settings-help">{{ t('settings.videoFraming.help') }}</p>
+                <p class="settings-help">{{ t(voFraming.scaling === 'fill' ? 'settings.videoFraming.fillHelp' : 'settings.videoFraming.fitHelp') }}</p>
               </section>
               <h3 class="settings-section-title">{{ t('settings.videoPictureOffset.title') }}</h3>
               <section class="settings-field video-framing">
@@ -932,7 +939,8 @@ const voFramingPending = ref(false);
 const voFramingDirty = computed(() => {
   const saved = voStatus.value?.framing ?? DEFAULT_VIDEO_FRAMING;
   const draft = voFraming.value;
-  return saved.width !== draft.width || saved.height !== draft.height || saved.scale !== draft.scale || saved.scaling !== draft.scaling;
+  return saved.width !== draft.width || saved.height !== draft.height || saved.scale !== draft.scale ||
+    saved.scaling !== draft.scaling || Boolean(saved.matchOutput) !== Boolean(draft.matchOutput);
 });
 const voDiagnosticsCopied = ref(false);
 // Picture sync: milliseconds the picture runs ahead of the sound (0-500).
@@ -950,14 +958,16 @@ const voDisplayOptions = computed(() => [
   })),
 ]);
 const voFramePresetOptions = computed(() => [
+  { value: 'output', label: t('settings.videoFraming.matchOutput') },
   ...VIDEO_FRAME_PRESETS.map(preset => ({
     value: preset.id, label: `${t(`settings.videoFraming.${preset.id}`)} · ${preset.width}×${preset.height}`,
   })),
   { value: 'custom', label: t('settings.videoFraming.custom') },
 ]);
 const voFramingScalingOptions = computed(() => [
-  { value: 'fit', label: t('settings.videoFraming.fit') },
-  { value: 'limit', label: t('settings.videoFraming.limit') },
+  { value: 'fit' as const, label: t('settings.videoFraming.fitPicture') },
+  { value: 'fill' as const, label: t('settings.videoFraming.fillCanvas') },
+  ...(voFraming.value.matchOutput ? [] : [{ value: 'limit' as const, label: t('settings.videoFraming.fitAtCanvasSize') }]),
 ] as const);
 
 const voTargetDisplay = computed(() =>
@@ -968,7 +978,7 @@ const voStatusText = computed(() => {
   if (!s || !s.enabled) return t('settings.videoOutputStatusOff');
   const d = voTargetDisplay.value;
   if (!s.open) return t('settings.videoOutputStatusOff');
-  if (!d) return t('settings.videoOutputStatusPreview');
+  if (!d) return t(s.fullscreen ? 'settings.videoOutputStatusFullscreenPreview' : 'settings.videoOutputStatusPreview');
   return t('settings.videoOutputStatusOn', { label: d.label, size: `${d.width}×${d.height}` });
 });
 
@@ -999,8 +1009,8 @@ function receiveVideoOutputStatus(status: VideoOutputStatus, forceConfig = false
   const incoming = status.framing ?? DEFAULT_VIDEO_FRAMING;
   if (forceConfig || (!voFramingDirty.value && JSON.stringify(saved) !== JSON.stringify(incoming))) {
     voFraming.value = { ...incoming };
-    voFramePreset.value = VIDEO_FRAME_PRESETS.find(preset => preset.width === voFraming.value.width
-      && preset.height === voFraming.value.height)?.id ?? 'custom';
+    voFramePreset.value = incoming.matchOutput ? 'output' :
+      VIDEO_FRAME_PRESETS.find(preset => preset.width === incoming.width && preset.height === incoming.height)?.id ?? 'custom';
   }
   if (!voPictureOffsetPending.value && (forceConfig || voPictureOffset.value === (voStatus.value?.pictureOffsetMs ?? 0)))
     voPictureOffset.value = status.pictureOffsetMs ?? 0;
@@ -1012,8 +1022,18 @@ function receiveVideoOutputStatus(status: VideoOutputStatus, forceConfig = false
   }
 }
 
+async function toggleOutputFullscreen(): Promise<void> {
+  const api = window.electronAPI?.videoOutput;
+  if (!api?.setFullscreen || !voStatus.value?.canToggleFullscreen) return;
+  settingsError.value = '';
+  try { receiveVideoOutputStatus(await api.setFullscreen(!voStatus.value.fullscreen)); }
+  catch (error) { settingsError.value = describeSettingsError(error); }
+}
+
 function selectVideoFramePreset(value: string): void {
   voFramePreset.value = value;
+  voFraming.value.matchOutput = value === 'output' ? true : undefined;
+  if (voFraming.value.matchOutput && voFraming.value.scaling === 'limit') voFraming.value.scaling = 'fit';
   const preset = VIDEO_FRAME_PRESETS.find(entry => entry.id === value);
   if (preset) {
     voFraming.value.width = preset.width;

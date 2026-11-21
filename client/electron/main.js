@@ -3062,6 +3062,7 @@ function videoOutputStatus() {
   const cfg = readVideoOutputConfig();
   const displays = videoOutputDisplays(true);
   const target = resolveVideoOutputDisplay(cfg);
+  const outputOpen = videoOutputWindow !== null && !videoOutputWindow.isDestroyed();
   let warning = null;
   if (videoOutputSessionEnabled) {
     if (macVideoSignal && cfg.displayId && !['matched', 'current'].includes(macVideoSignal.state.phase)) {
@@ -3082,7 +3083,7 @@ function videoOutputStatus() {
   }
   return {
     enabled: videoOutputSessionEnabled,
-    open: videoOutputWindow !== null && !videoOutputWindow.isDestroyed(),
+    open: outputOpen,
     displayId: cfg.displayId ? (macVideoSignal?.state.id ?? cfg.displayId) : null,
     signal: macVideoSignal ? { ...macVideoSignal.state, requested: cfg.signalFormat, presets: broadcastFormats } : null,
     captureDisplayId: cfg.captureDisplayId,
@@ -3109,9 +3110,8 @@ function videoOutputStatus() {
         .filter(entry => entry && entry.family === 'IPv4' && !entry.internal)
         .map(entry => entry.address))],
     },
-    fullscreen: videoOutputWindow !== null &&
-                !videoOutputWindow.isDestroyed() &&
-                isOutputFullscreen(videoOutputWindow, process.platform),
+    fullscreen: outputOpen && isOutputFullscreen(videoOutputWindow, process.platform),
+    canToggleFullscreen: outputOpen && canToggleOutputFullscreen(videoOutputWindow, process.platform),
   };
 }
 

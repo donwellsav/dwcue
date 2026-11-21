@@ -12,7 +12,7 @@ const {
 } = require('../electron/video-output-shortcuts');
 const { buildVideoOutputContextTemplate } = require('../electron/video-output-context-menu');
 const outputWindowRules = require('../electron/video-output-window');
-const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameCaptureRect } = require('../electron/video-output-framing.mjs');
+const { DEFAULT_VIDEO_FRAMING, readVideoFraming, videoFrameLayout, videoFrameCaptureRect } = require('../electron/video-output-framing.mjs');
 const { createQuickPlayMutationBroker } = require('../electron/quickplay-mutation-broker');
 const { createAppLifecycleActions, createWillQuitHandler } = require('../electron/terminal-action');
 const mainSource = readFileSync(require.resolve('../electron/main.js'), 'utf8');
@@ -34,8 +34,7 @@ test('mounted audience view reports DOM readiness without waiting for an animati
     onMounted: callback => { mounted = callback; },
     window: { electronAPI: { videoOutput: api }, addEventListener() {} },
     offStatus: null, healthTimer: null, viewportTimer: null,
-    refreshStatus: async () => {}, syncConnection() {}, onKeydown() {}, onDblClick() {}, updatePixelScale() {},
-    reportViewport() {},
+    refreshStatus: async () => {}, syncConnection() {}, onKeydown() {}, onDblClick() {}, updateViewport() {},
     nextTick: async () => { committed = true; },
     requestAnimationFrame() {}, // A minimized/covered renderer may never receive it.
     setInterval: () => 1,
@@ -54,6 +53,15 @@ test('output framing fits the selected canvas without forcing an HDMI mode', () 
   assert.deepEqual(videoFrameCaptureRect(1920, 1080, portrait, 1), { x: 656, y: 0, width: 608, height: 1080 });
   const limited = { ...DEFAULT_VIDEO_FRAMING, scale: 50, scaling: 'limit' };
   assert.deepEqual(videoFrameCaptureRect(1920, 1080, limited, 2), { x: 720, y: 405, width: 480, height: 270 });
+  const fill = { ...DEFAULT_VIDEO_FRAMING, matchOutput: true, scaling: 'fill' };
+  assert.deepEqual(readVideoFraming(fill), fill);
+  assert.equal(readVideoFraming({ ...fill, scaling: 'limit' }), null);
+  assert.deepEqual(videoFrameLayout(1280, 1024, fill, 2), { width: 1280, height: 1024, objectFit: 'cover' });
+  assert.deepEqual(videoFrameLayout(960, 540, { ...fill, scaling: 'fit' }, 1),
+    { width: 960, height: 540, objectFit: 'contain' });
+  assert.deepEqual(videoFrameCaptureRect(1280, 1024, { ...fill, scale: 75 }, 2),
+    { x: 160, y: 128, width: 960, height: 768 });
+
 });
 
 test('a capture follows the saved frame or selected screen, hands back the picture and rejects stale captures', async () => {

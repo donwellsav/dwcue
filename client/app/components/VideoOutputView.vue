@@ -13,6 +13,7 @@
       <KardsTestCard
         v-if="testCard"
         class="layer"
+        :style="testCardStyle"
         :config="config"
         :display-timing="testCardTiming"
         :network="status?.testCardInfo.network ?? []"
@@ -67,16 +68,21 @@ const testCardTiming = computed(() => {
   }
   return s?.testCardInfo.displayFrequency ? `${s.testCardInfo.displayFrequency} Hz` : '';
 });
-const pixelScale = ref(1);
-const frameStyle = computed(() => {
-  const { aspect, fraction, maxWidth } = videoFrameLayout(status.value?.framing ?? DEFAULT_VIDEO_FRAMING, pixelScale.value);
-  return {
-    aspectRatio: String(aspect),
-    width: `min(${100 * fraction}vw, ${100 * fraction * aspect}vh)`,
-    maxWidth: Number.isFinite(maxWidth) ? `${maxWidth * fraction}px` : undefined,
-  };
+const viewport = shallowRef({ width: 0, height: 0, pixelScale: 1 });
+const frame = computed(() => {
+  const { width, height, pixelScale } = viewport.value;
+  return videoFrameLayout(width, height, status.value?.framing ?? DEFAULT_VIDEO_FRAMING, pixelScale);
 });
+const frameStyle = computed(() => ({
+  width: `${frame.value.width}px`, height: `${frame.value.height}px`, '--picture-fit': frame.value.objectFit,
+}));
 const config = computed(() => status.value?.testCardConfig ?? createTestCardConfig());
+const testCardStyle = computed(() => {
+  if (!config.value.windowed) return;
+  const box = videoFrameLayout(frame.value.width, frame.value.height,
+    { ...config.value.window, scale: 100, scaling: 'limit' }, viewport.value.pixelScale);
+  return { width: `${box.width}px`, height: `${box.height}px`, margin: 'auto' };
+});
 const testCard = computed(() => status.value?.testCard === true);
 const showAudioSyncCard = computed(() => testCard.value && config.value.cardType === 'audioSync');
 const diagnosticSource = computed(() => showAudioSyncCard.value ? status.value?.testCardPlayback ?? null : null);
@@ -131,23 +137,25 @@ function onDblClick() {
 }
 // Tell main what this page really covers. Only the page can see whether the
 // window fills the screen it is on; main corrects a short window on Windows.
-function reportViewport() {
+function updateViewport() {
+  const width = Math.round(window.innerWidth);
+  const height = Math.round(window.innerHeight);
+  const pixelScale = window.devicePixelRatio || 1;
+  if (width !== viewport.value.width || height !== viewport.value.height || pixelScale !== viewport.value.pixelScale) {
+    viewport.value = { width, height, pixelScale };
+  }
   void window.electronAPI?.videoOutput?.reportViewport?.({
-    innerWidth: Math.round(window.innerWidth),
-    innerHeight: Math.round(window.innerHeight),
+    innerWidth: width,
+    innerHeight: height,
     screenWidth: Math.round(window.screen.width),
     screenHeight: Math.round(window.screen.height),
-    pixelScale: window.devicePixelRatio || 1,
+    pixelScale,
   }).catch(() => { /* A closing output has no main-side window to report to. */ });
-}
-function updatePixelScale() {
-  pixelScale.value = window.devicePixelRatio || 1;
-  reportViewport();
 }
 
 onMounted(async () => {
-  updatePixelScale();
-  window.addEventListener('resize', updatePixelScale);
+  updateViewport();
+  window.addEventListener('resize', updateViewport);
   const api = window.electronAPI?.videoOutput;
   if (!api) return;
   offStatus = api.onStatus((next) => { statusRevision += 1; status.value = next; });
@@ -161,14 +169,14 @@ onMounted(async () => {
   healthTimer = setInterval(() => { void api.reportPictureHealth(getPictureHealth()).catch(() => {}); }, 1000);
   // A display can change size or scaling under a window without resizing
   // it, so both are re-read rather than trusted from the last resize event.
-  viewportTimer = setInterval(updatePixelScale, 2000);
+  viewportTimer = setInterval(updateViewport, 2000);
 });
 onBeforeUnmount(() => {
   clearInterval(infoTimer);
   clearInterval(healthTimer);
   clearInterval(viewportTimer);
   offStatus?.();
-  window.removeEventListener('resize', updatePixelScale);
+  window.removeEventListener('resize', updateViewport);
   window.removeEventListener('keydown', onKeydown);
   window.removeEventListener('dblclick', onDblClick);
   void window.electronAPI?.videoOutput?.setTestCardConnection(null).catch(() => {
@@ -194,8 +202,8 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 .layer { position: absolute; inset: 0; }
-.layer-media { width: 100%; height: 100%; }
-.layer-media, video { object-fit: contain; }
+video { object-fit: contain; }
+.layer-media { width: 100%; height: 100%; object-fit: var(--picture-fit, contain); }
 .layer-opaque { background: #000; }
 /* The spare decodes its first frame but is never seen until it is live. */
 .layer-spare { opacity: 0; pointer-events: none; }

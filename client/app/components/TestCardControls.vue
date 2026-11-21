@@ -196,11 +196,11 @@
     </fieldset>
 
     <fieldset class="test-card-fieldset" :disabled="disabled">
-      <legend>{{ t('testCard.outputOptions') }}</legend>
+      <legend>{{ t('testCard.cardLayout') }}</legend>
       <div class="test-card-checks">
-        <CheckControl :label="t('testCard.windowed')" :checked="config.windowed" @change="setWindowed" />
+        <CheckControl :label="t('testCard.fixedCardSize')" :checked="config.windowed" @change="setWindowed" />
         <CheckControl
-          :label="t('testCard.fillOutput')"
+          :label="t('testCard.fillCanvas')"
           :checked="config.fullsize"
           :disabled="config.windowed || config.cardType === 'led'"
           @change="update({ fullsize: $event })"
@@ -214,8 +214,8 @@
       </div>
 
       <div v-if="config.windowed" class="test-card-grid test-card-grid--two">
-        <NumberControl :label="t('testCard.windowWidth')" :value="config.window.width" :min="48" :max="16384" :step="5" @change="updateWindow({ width: $event })" />
-        <NumberControl :label="t('testCard.windowHeight')" :value="config.window.height" :min="39" :max="16384" :step="5" @change="updateWindow({ height: $event })" />
+        <NumberControl :label="t('testCard.cardWidth')" :value="config.window.width" :min="48" :max="16384" :step="5" @change="updateWindow({ width: $event })" />
+        <NumberControl :label="t('testCard.cardHeight')" :value="config.window.height" :min="39" :max="16384" :step="5" @change="updateWindow({ height: $event })" />
       </div>
 
       <template v-if="!config.fullsize">

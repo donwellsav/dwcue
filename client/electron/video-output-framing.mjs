@@ -14,27 +14,30 @@ export const VIDEO_FRAME_LIMITS = { minDimension: 64, maxDimension: 16384, minSc
 export const DEFAULT_VIDEO_FRAMING = { width: 1920, height: 1080, scale: 100, scaling: 'fit' };
 
 export function readVideoFraming(value) {
-  const { width, height, scale, scaling } = value ?? {};
+  const { width, height, scale, scaling, matchOutput } = value ?? {};
   const { minDimension, maxDimension, minScale, maxScale } = VIDEO_FRAME_LIMITS;
   if (![width, height].every(size => Number.isInteger(size) && size >= minDimension && size <= maxDimension)
       || !Number.isInteger(scale) || scale < minScale || scale > maxScale
-      || (scaling !== 'fit' && scaling !== 'limit')) return null;
-  return { width, height, scale, scaling };
+      || !['fit', 'fill', 'limit'].includes(scaling)
+      || (matchOutput !== undefined && typeof matchOutput !== 'boolean')
+      || (matchOutput && scaling === 'limit')) return null;
+  return { width, height, scale, scaling, ...(matchOutput ? { matchOutput } : {}) };
 }
 
-export function videoFrameLayout(framing, pixelScale) {
-  return {
-    aspect: framing.width / framing.height,
-    fraction: framing.scale / 100,
-    maxWidth: framing.scaling === 'limit' ? framing.width / pixelScale : Infinity,
-  };
+export function videoFrameLayout(width, height, framing, pixelScale) {
+  const fraction = framing.scale / 100;
+  const objectFit = framing.scaling === 'fill' ? 'cover' : 'contain';
+  if (framing.matchOutput) return { width: width * fraction, height: height * fraction, objectFit };
+  const aspect = framing.width / framing.height;
+  const maxWidth = framing.scaling === 'limit' ? framing.width / pixelScale : Infinity;
+  const frameWidth = Math.min(width, height * aspect, maxWidth) * fraction;
+  return { width: frameWidth, height: frameWidth / aspect, objectFit };
 }
 
 export function videoFrameCaptureRect(width, height, framing, pixelScale) {
-  const { aspect, fraction, maxWidth } = videoFrameLayout(framing, pixelScale);
-  const frameWidth = Math.min(width, height * aspect, maxWidth) * fraction;
+  const frame = videoFrameLayout(width, height, framing, pixelScale);
   // Round outward so fractional display pixels cannot cut off the picture edge.
-  const x = Math.floor(Math.max(0, (width - frameWidth) / 2));
-  const y = Math.floor(Math.max(0, (height - frameWidth / aspect) / 2));
+  const x = Math.floor(Math.max(0, (width - frame.width) / 2));
+  const y = Math.floor(Math.max(0, (height - frame.height) / 2));
   return { x, y, width: width - 2 * x, height: height - 2 * y };
 }

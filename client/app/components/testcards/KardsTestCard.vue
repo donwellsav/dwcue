@@ -190,7 +190,7 @@ const showStationaryInfoCircle = computed(() => {
 
 const cardStyle = computed(() => {
   const style = {}
-  if (!props.config.fullsize && props.config.screen !== 0) {
+  if (!props.config.fullsize) {
     style.height = `${props.config.notFilledCard.height}px`
     style.width = `${props.config.notFilledCard.width}px`
     style.top = `${props.config.notFilledCard.top}px`
@@ -199,7 +199,7 @@ const cardStyle = computed(() => {
 
   style.border = props.config.raster && !props.config.windowed ? '1px solid white' : 'none'
 
-  switch (props.config.notFilledCard.rotate) {
+  switch (props.config.fullsize ? 0 : props.config.notFilledCard.rotate) {
     case 90:
       style.transform = 'rotate(90deg) translateY(-100%)'
       style.transformOrigin = 'top left'
