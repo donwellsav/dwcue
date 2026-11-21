@@ -16,7 +16,7 @@ test('every countdown rounds the same way: up, reaching 0:00 only at the end', (
   assert.equal(secondsLeft(0.4), 1);
   assert.equal(secondsLeft(0), 0);
   assert.equal(secondsLeft(-2), 0);
-  for (const file of ['../app/components/PlaylistItem.vue', '../app/components/ActiveCueItem.vue',
+  for (const file of ['../app/components/PlaylistItem.vue',
     '../app/components/QuickPlayTile.vue', '../app/components/ProjectHeader.vue']) {
     assert.match(source(file), /secondsLeft\(/, `${file} uses the shared countdown`);
   }

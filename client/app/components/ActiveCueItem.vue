@@ -20,6 +20,7 @@
           ></span>
           <span class="cue-name-text">{{ cue.displayName }}</span>
         </span>
+        <span class="cue-elapsed">{{ formatTime(cue.currentTime) }}</span>
         <div class="cue-actions">
           <button 
             v-if="!cue.isPaused" 
@@ -75,21 +76,15 @@
       </div>
       
       <div class="cue-progress">
-        <div class="time-info">
-          <span>{{ formatTime(cue.currentTime) }}</span>
-          <!-- Segue countdown: time until the Start Next marker fires -->
-          <span
-            v-if="segueCountdown !== null"
-            class="segue-countdown"
-            :class="{ 'segue-countdown--imminent': segueCountdown <= 5 }"
-            :title="t('playback.startNextCountdown')"
-          >
-            <span class="material-symbols-rounded" aria-hidden="true">skip_next</span>
-            {{ segueCountdown.toFixed(1) }}s
-          </span>
-          <span>-{{ formatTime(secondsLeft(cue.duration - cue.currentTime)) }}</span>
-        </div>
-
+        <span
+          v-if="segueCountdown !== null"
+          class="segue-countdown"
+          :class="{ 'segue-countdown--imminent': segueCountdown <= 5 }"
+          :title="t('playback.startNextCountdown')"
+        >
+          <span class="material-symbols-rounded" aria-hidden="true">skip_next</span>
+          {{ segueCountdown.toFixed(1) }}s
+        </span>
         <div class="progress-bar">
           <div class="progress-fill" :style="{ width: `${progress}%` }"></div>
           <!-- Start Next marker tick on the progress bar -->
@@ -135,7 +130,6 @@
 </template>
 
 <script setup lang="ts">
-import { secondsLeft } from '~/utils/countdown';
 import type { AudioItem } from '~/types/project';
 
 // Projection of the server's view of an active cue. Owned by useAudioEngine
@@ -425,40 +419,29 @@ const formatTime = (seconds: number): string => {
   gap: 6px;
 }
 
-.time-info {
-  display: grid;
-  grid-template-columns: minmax(4.5em, 1fr) auto minmax(4.5em, 1fr);
-  align-items: center;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-secondary);
-}
-
-.time-info > :first-child {
-  grid-column: 1;
-}
-
-.time-info > :last-child {
-  grid-column: 3;
-  text-align: end;
+.cue-elapsed {
+  flex: 0 0 auto;
+  margin-inline-start: var(--spacing-sm);
   color: var(--color-text-primary);
-  font-weight: 600;
-}
-
-.time-info > .segue-countdown {
-  grid-column: 2;
+  font-family: var(--font-mono);
+  font-size: 22px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  white-space: nowrap;
 }
 
 .segue-countdown {
   display: inline-flex;
+  align-self: center;
   align-items: center;
+  font: 600 11px var(--font-mono);
+  font-variant-numeric: tabular-nums;
   gap: 2px;
   padding: 1px 4px;
   border: 1px solid color-mix(in srgb, var(--state-up-next) 58%, transparent);
   border-radius: var(--border-radius-sm);
   color: var(--state-up-next);
-  font-weight: 600;
 }
 
 .segue-countdown .material-symbols-rounded {
