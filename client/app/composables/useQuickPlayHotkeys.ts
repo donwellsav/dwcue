@@ -141,7 +141,7 @@ export const useVideoOutputToggle = () => {
 };
 
 export const useQuickPlayHotkeys = (workspace?: Record<'toggle-settings' | 'toggle-properties' | 'toggle-quickplays', () => void>) => {
-  const { currentProject, projectHydrationStatus, selectedItem, selectedItems, saveProject, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
+  const { currentProject, projectHydrationStatus, selectedItem, selectedItems, toggleCueLoop, getAllItemsFlat, toggleItemSelection, findItemByUuid } = useProject();
   const { quickPlayItems } = useQuickPlayItems();
   const { quickPlayPlaybackReady, playQuickPlay } = useQuickPlayPlayback();
   const toggleVideoOutput = useVideoOutputToggle();
@@ -256,12 +256,7 @@ export const useQuickPlayHotkeys = (workspace?: Record<'toggle-settings' | 'togg
     if (action === 'toggle-loop') {
       const item = getTargetItem();
       if (!item) return;
-      if (item.endBehavior?.action === 'loop') {
-        item.endBehavior = { action: 'nothing' };
-      } else {
-        item.endBehavior = { action: 'loop' };
-      }
-      saveProject();
+      toggleCueLoop(item);
       return;
     }
 

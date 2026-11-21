@@ -115,7 +115,7 @@ const preferredDevice = computed(() => config.value.preferredDevice ?? null);
 
 export const useMidiController = () => {
   const { playCue, playNext, pauseCue, resumeCue, stopAllCues, activeCues, adjustMasterGain, queueLoopContinuation, jumpCue } = useAudioEngine();
-  const { selectedItem, selectedItems, saveProject, currentProject, projectHydrationStatus, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem } = useProject();
+  const { selectedItem, selectedItems, toggleCueLoop, currentProject, projectHydrationStatus, getAllItemsFlat, toggleItemSelection, findItemByUuid: findProjectItem } = useProject();
   const { sessionLost } = useConnectionGuard();
   const { quickPlayItems } = useQuickPlayItems();
   const { playQuickPlay } = useQuickPlayPlayback();
@@ -201,12 +201,7 @@ export const useMidiController = () => {
         targetItem = selectedItem.value as AudioItem;
       }
       if (!targetItem) return;
-      if (targetItem.endBehavior?.action === 'loop') {
-        targetItem.endBehavior = { action: 'nothing' };
-      } else {
-        targetItem.endBehavior = { action: 'loop' };
-      }
-      saveProject();
+      toggleCueLoop(targetItem);
       return;
     }
 

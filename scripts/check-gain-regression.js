@@ -215,11 +215,6 @@ assert.match(applyLoudness, /loudnessMatchedVolume\(/,
   'the volume mutation must use measured loudness gain');
 assert.match(applyLoudness, /item\.volume\s*=\s*volume/,
   'manual normalization must apply the measured gain');
-assert.match(
-  audioUtils,
-  /export function exceedsTruePeakCeiling[\s\S]*item\.inPoint > 0\.001[\s\S]*outPoint < duration - 0\.001[\s\S]*return false/,
-  'whole-file true peak must not produce false warnings for trimmed cues',
-);
 
 const properties = byFile.get('client/app/components/PropertiesPanel.vue');
 const explicitNormalize = range(

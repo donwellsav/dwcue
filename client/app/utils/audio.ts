@@ -265,28 +265,3 @@ export function applyTruePeakCeiling(
   item.volume = volume;
   return true;
 }
-
-export function exceedsTruePeakCeiling(
-  item: Pick<ProcessableItem, 'duration' | 'inPoint' | 'outPoint' | 'volume'> &
-    { waveform?: MeasuredLoudness & { duration?: number } },
-  limiterCeilingDb: number,
-): boolean {
-  // Whole-file analysis cannot truthfully warn about a trimmed cue: the peak
-  // may be outside the played range. Ranged analysis is fetched on demand by
-  // Normalize; suppress this conservative row warning until we persist range
-  // provenance with the waveform.
-  const duration = item.duration || item.waveform?.duration || 0;
-  const outPoint = item.outPoint > 0 ? item.outPoint : duration;
-  if (duration > 0 && (item.inPoint > 0.001 || outPoint < duration - 0.001)) {
-    return false;
-  }
-
-  const truePeak = item.waveform?.analysis_version === 2
-    ? item.waveform.true_peak_dbtp
-    : null;
-  if (!Number.isFinite(truePeak) || !Number.isFinite(item.volume) ||
-      item.volume <= 0 || !Number.isFinite(limiterCeilingDb)) {
-    return false;
-  }
-  return (truePeak as number) + 20 * Math.log10(item.volume) > limiterCeilingDb + 0.000001;
-}

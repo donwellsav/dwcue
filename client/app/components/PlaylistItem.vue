@@ -140,15 +140,6 @@
             @dblclick.stop="startNote"
           >{{ visibleTitle }}<span v-if="item.note" class="item-note">{{ item.note }}</span></button>
           <span v-else class="item-name" :title="[item.displayName, item.note, showMode ? '' : t('playlist.noteHint')].filter(Boolean).join('\n')" @dblclick.stop="startNote">{{ item.displayName }}<span v-if="item.note" class="item-note">{{ item.note }}</span></span>
-          <span
-            v-if="isPeaking"
-            class="material-symbols-rounded peak-warning-icon"
-            :title="t('properties.peakCeilingWarning')"
-            role="img"
-            :aria-label="t('properties.peakCeilingWarning')"
-            draggable="false"
-            @click.stop
-          >bomb</span>
         </div>
 
         <div class="item-state">
@@ -201,7 +192,7 @@
               :title="t('behaviors.endGotoIndex')"
             >arrow_forward</span>
             <span
-              v-else-if="item.endBehavior?.action === 'loop'"
+              v-else-if="!isPlaying && item.endBehavior?.action === 'loop'"
               class="material-symbols-rounded behavior-icon"
               :title="t('behaviors.endLoop')"
             >replay</span>
@@ -263,13 +254,27 @@
             :aria-label="t('actions.restartCue', { name: item.displayName })"
           />
           <ActionButton
-            class="play-action"
-            :class="{ 'is-stop': isPlaying }"
-            :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :highlight-color="isPlaying ? 'var(--stop-edge)' : (item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-ready)')"
+            v-if="isPlaying && item.type === 'audio'"
+            class="loop-action"
+            icon="replay"
+            highlight-color="var(--state-up-next)"
+            active-text-color="var(--state-up-next-text)"
             context="Playlist"
-            @click.stop="isPlaying ? handleStop() : handlePlay()"
-            :title="isPlaying ? t('actions.stop') : t('actions.play')"
+            :is-active="item.endBehavior?.action === 'loop'"
+            :aria-pressed="item.endBehavior?.action === 'loop'"
+            :aria-label="t('controls.toggleLoop')"
+            :title="t('controls.toggleLoop')"
+            :disabled="server.cueStartsBlocked"
+            @click.stop="toggleCueLoop(item)"
+          />
+          <ActionButton
+            v-else
+            class="play-action"
+            icon="play_arrow"
+            :highlight-color="item.type === 'group' ? 'var(--folder-play-action)' : 'var(--state-ready)'"
+            context="Playlist"
+            @click.stop="handlePlay"
+            :title="t('actions.play')"
           />
         </div>
 
@@ -318,8 +323,7 @@ import { secondsLeft } from '~/utils/countdown';
 import { countdownColorForSeconds, countdownInk, type AudioItem, type GroupItem, type BaseItem } from '~/types/project';
 import ActionButton from './ActionButton.vue';
 import ItemLevel from './ItemLevel.vue';
-import { useOutputTarget, METER_COLORS } from '~/composables/useOutputTarget';
-import { exceedsTruePeakCeiling } from '~/utils/audio';
+import { METER_COLORS } from '~/composables/useOutputTarget';
 import { cloneAsPlaylistItem } from '~/utils/quickPlays';
 
 const props = defineProps<{
@@ -338,6 +342,7 @@ const {
   currentProject,
   projectHydrationStatus,
   saveProject,
+  toggleCueLoop,
   updateIndices,
   waveformUpdateKey,
   triggerWaveformUpdate,
@@ -354,8 +359,7 @@ const formatMarkerTime = (seconds: number): string => {
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
-const { levels: outputTargetLevels } = useOutputTarget();
-const { playCue, stopCue, seekCue, activeCues, activeGroups, triggerGroup, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem } = useAudioEngine();
+const { playCue, seekCue, activeCues, activeGroups, triggerGroup, nextItemOverrideUuid, autoNextItemUuid, setNextItemPending, setNextItem } = useAudioEngine();
 const { t } = useLocalization();
 const server = useLiveplayServer();
 const { showHeaderWarning } = useHeaderWarnings();
@@ -464,15 +468,6 @@ const isGroupPlaying = computed(() => props.item.type === 'group' && activeGroup
 
 const indexDisplay = computed(() => {
   return formatItemIndex(props.item.index);
-});
-
-// True when measured true peak plus item gain exceeds the active ceiling.
-const isPeaking = computed(() => {
-  if (props.item.type !== 'audio') return false;
-  return exceedsTruePeakCeiling(
-    props.item as AudioItem,
-    outputTargetLevels.value.limiterCeilingDb,
-  );
 });
 
 const durationDisplay = computed(() => {
@@ -739,10 +734,6 @@ const handlePlay = () => {
   }
   if (props.item.type === 'group') return triggerGroup(props.item);
   return false;
-};
-
-const handleStop = () => {
-  return stopCue(props.item.uuid);
 };
 
 const handleEdit = () => {
@@ -1129,13 +1120,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
   z-index: 1;
 }
 
-/* Stop on the live row: the striped edge of Stop All, never the live red. */
-.playlist-item .item-transport .play-action.is-stop.is-stop {
-  border: var(--stop-button-border);
-  background: var(--stop-button-background);
-  color: var(--stop-edge);
-}
-
 /* The cue number becomes a solid chip: red on air, green for what is next. */
 .playlist-item.is-playing:not(.is-paused) > .item-content .item-index {
   border-color: var(--state-playing);
@@ -1329,7 +1313,7 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-identity {
   grid-area: identity;
   display: grid;
-  grid-template-columns: var(--cue-number-width, 36px) minmax(0, 1fr) max-content;
+  grid-template-columns: var(--cue-number-width, 36px) minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -1382,7 +1366,6 @@ const findItemByIndex = (index: number[]): AudioItem | GroupItem | null => {
 .item-icon,
 .item-name,
 .item-duration,
-.peak-warning-icon,
 .video-badge-icon,
 .behavior-icon {
   box-sizing: border-box;
@@ -1435,7 +1418,6 @@ button.item-name {
   padding: 2px 6px;
 }
 
-.peak-warning-icon,
 .video-badge-icon,
 .behavior-icon {
   display: inline-flex;
@@ -1470,10 +1452,6 @@ button.item-name {
   background-color: var(--color-control);
 }
 
-.playlist-item.is-audio .peak-warning-icon {
-  grid-column: 3;
-}
-
 .playlist-item.is-playing > .item-content .item-name {
   justify-self: start;
   max-width: 100%;
@@ -1483,15 +1461,6 @@ button.item-name {
 
 .playlist-item.is-paused > .item-content .item-name {
   color: var(--color-text-primary);
-}
-
-.peak-warning-icon {
-  grid-column: 3;
-  font-size: 18px;
-  color: var(--color-danger);
-  flex-shrink: 0;
-  cursor: default;
-  line-height: 1;
 }
 
 /* Video cue badge: a compact text cell that stays legible at a glance. */
@@ -1667,6 +1636,7 @@ button.item-name {
 }
 
 .play-action,
+.loop-action,
 .group-music-toggle { flex-shrink: 0; }
 /* Delete sits away from Play, with Edit between them, and is offered only on
    a selected row: the row a stray click lands on is rarely the selected one. */

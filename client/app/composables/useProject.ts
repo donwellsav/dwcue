@@ -1209,6 +1209,11 @@ export const useProject = () => {
     return !opts?.signal?.aborted && resultIsCurrent && savedLatestRevision && result.ok;
   };
 
+  const toggleCueLoop = (item: AudioItem) => {
+    item.endBehavior = { action: item.endBehavior?.action === 'loop' ? 'nothing' : 'loop' };
+    void saveProject();
+  };
+
   // Toggle autosave on/off. The preference lives in project settings (so it
   // persists across reopens) and is force-saved to disk immediately: turning
   // it OFF would otherwise never write `autoSave: false` to the file, and
@@ -2275,6 +2280,7 @@ export const useProject = () => {
     tryRejoinExistingProject,
     resumeProjectOnServer,
     saveProject,
+    toggleCueLoop,
     projectHydrationStatus,
     projectHydrationError,
     retryProjectHydration,

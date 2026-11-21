@@ -422,20 +422,14 @@ assert.match(
 );
 assert.doesNotMatch(
   playlistItem,
-  /item-name[^\n]*is-peaking|\.item-name[\s\S]{0,300}&\.is-peaking/,
-  'a true-peak warning must not turn an idle cue title red',
+  /peak-warning-icon|exceedsTruePeakCeiling|>bomb<\/span>/,
+  'file-analysis peak warnings must stay out of the playlist',
 );
-assert.equal(
-  playlistItem.includes(':is-active="isPlaying"'),
-  false,
-  'the playlist stop button must keep the standard unfilled control appearance',
-);
-assert.equal(
-  playlistItem.includes(":highlight-color=\"isPlaying ? 'var(--stop-edge)' :")
-    && /\.play-action\.is-stop\.is-stop\s*\{[^}]*background:\s*var\(--stop-button-background\)/.test(playlistItem),
-  true,
-  'Stop wears the yellow-and-black stripes and never the live red',
-);
+assert.doesNotMatch(playlistItem, /handleStop\(\)|icon="stop"|\.play-action\.is-stop/,
+  'the playlist must never offer a Stop control beside the cue clock');
+assert.match(playlistItem,
+  /v-if="isPlaying && item\.type === 'audio'"\s+class="loop-action"[\s\S]*?highlight-color="var\(--state-up-next\)"[\s\S]*?@click\.stop="toggleCueLoop\(item\)"[\s\S]*?v-else\s+class="play-action"/,
+  'the playing cue must offer a green Loop toggle in the playback slot');
 assert.equal(
   playlistItem.includes('width: fit-content;') && playlistItem.includes('justify-self: start;'),
   true,
@@ -1107,17 +1101,8 @@ const {
   applyTruePeakCeiling,
   dbToConsolePosition,
   consolePositionToDb,
-  exceedsTruePeakCeiling,
 } = audioRuntime.exports;
 const peakAnalysis = { analysis_version: 2, true_peak_dbtp: 0.9 };
-assert.equal(exceedsTruePeakCeiling(
-  { duration: 60, inPoint: 0, outPoint: 60, volume: 1, waveform: { ...peakAnalysis, duration: 60 } },
-  -0.1,
-), true);
-assert.equal(exceedsTruePeakCeiling(
-  { duration: 60, inPoint: 0, outPoint: 60, volume: 0.5, waveform: { ...peakAnalysis, duration: 60 } },
-  -0.1,
-), false);
 const reducedPeakItem = { volume: 1 };
 assert.equal(applyTruePeakCeiling(reducedPeakItem, peakAnalysis, -1), true);
 assert.ok(Math.abs(peakAnalysis.true_peak_dbtp
