@@ -3745,6 +3745,10 @@ function installVideoOutputWatchdog() {
       const cfg = readVideoOutputConfig();
       if (macVideoSignal && cfg.displayId) {
         syncMacVideoSignal(cfg);
+        // Electron can see a replug after the native helper last saw no display.
+        // Recheck the assigned UUID before showing the recovered output.
+        if (videoOutputSessionEnabled && macVideoSignal.state.phase === 'missing' &&
+            screen.getAllDisplays().some(isMacAudienceDisplay)) macVideoSignal.recheck();
         reconcileMacVideoSignal();
         return;
       }

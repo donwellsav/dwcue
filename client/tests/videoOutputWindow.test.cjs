@@ -410,17 +410,21 @@ test('every window is kept out of fullscreen Spaces, and the control window fill
 // Fullscreen changes the display's metrics (on a Mac the menu bar and Dock go),
 // which wakes the display watchdog. Only a physical output whose own display
 // has gone may be closed by it; the preview window has no display to lose.
-function displayWatchdog({ outputWindow, displays = [laptop], target = null, platform = 'darwin' }) {
+function displayWatchdog({ outputWindow, displays = [laptop], target = null, platform = 'darwin', signalPhase, enabled = true }) {
   const listeners = {};
   const timers = [];
   const closes = [];
   const actions = [];
   const context = {
     videoOutputWatchdogInstalled: false,
-    macVideoSignal: null,
+    macVideoSignal: signalPhase ? { state: { phase: signalPhase }, recheck: () => actions.push('recheck') } : null,
     videoOutputWatchdogTimer: null,
-    videoOutputSessionEnabled: true,
+    videoOutputSessionEnabled: enabled,
     videoOutputWindow: outputWindow,
+    syncMacVideoSignal() {},
+    reconcileMacVideoSignal() {},
+    isMacAudienceDisplay: (display) => display !== laptop,
+    powerMonitor: { on() {} },
     // A screen chosen earlier; connected only when `target` is given.
     readVideoOutputConfig: () => ({ displayId: '99' }),
     resolveVideoOutputDisplay: () => target,
@@ -453,6 +457,20 @@ test('on a Mac a physical output whose display has gone is hidden and kept, not 
   rig.metricsChange();
   assert.equal(hidden, true, 'it cannot sit on the control screen');
   assert.deepEqual(rig.closes, [], 'kept, so it comes back live when the display returns');
+});
+
+test('a returning external display is rechecked when the native HDMI helper still reports it missing', () => {
+  const returned = displayWatchdog({ displays: [laptop, audienceProjector], signalPhase: 'missing' });
+  returned.displayAdded();
+  assert.deepEqual(returned.actions, ['recheck']);
+
+  const onlyLaptop = displayWatchdog({ signalPhase: 'missing' });
+  onlyLaptop.metricsChange();
+  assert.deepEqual(onlyLaptop.actions, []);
+
+  const closed = displayWatchdog({ displays: [laptop, audienceProjector], signalPhase: 'missing', enabled: false });
+  closed.displayAdded();
+  assert.deepEqual(closed.actions, []);
 });
 
 test('elsewhere a physical output still closes when its own display has gone', () => {
