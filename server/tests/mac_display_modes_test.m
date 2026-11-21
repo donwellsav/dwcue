@@ -30,7 +30,7 @@ static Timing *makeTiming(int modeID, int height, BOOL interlaced, double hz) {
                     (interlaced ? kDisplayModeInterlacedFlag : 0))};
 }
 
-static BOOL simulateHDMI, wrongLink;
+static BOOL simulateHDMI, wrongLink, timingUnavailable;
 static NSNumber *hdmiRate;
 static unsigned linkWrites;
 
@@ -58,7 +58,7 @@ static NSDictionary *hdmiLink(CGDirectDisplayID idNumber) {
 }
 static id hdmiMode(id display, NSDictionary *description) { return display ? description[@"rate"] : nil; }
 static NSDictionary *exact1080Connection(CGDirectDisplayID idNumber, NSDictionary *link) {
-    return hdmiDisplay(idNumber) && link ? @{@"rate": @(60000./1001)} : nil;
+    return !timingUnavailable && hdmiDisplay(idNumber) && link ? @{@"rate": @(60000./1001)} : nil;
 }
 #define DWCUE_TEST_HDMI 1
 
@@ -171,6 +171,23 @@ int main(void) {
         CHECK([hdmiRate isEqual:@(60000./1001)] && [lastReport[@"canPresent"] boolValue]);
         request(@"1080p59.94", NO, NO);
         CHECK(writes == before && linkWrites == 5 && [hdmiRate isEqual:@60] && ![lastReport[@"restoreFailed"] boolValue]);
+
+        // macOS can connect the screen before the 59.94 connection mode is ready.
+        timingUnavailable = YES;
+        request(@"1080p59.94", YES, NO);
+        CHECK(awaitingTiming() && [hdmiRate isEqual:@60]);
+        timingUnavailable = NO;
+        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:2];
+        [[NSRunLoop mainRunLoop] addPort:[NSPort port] forMode:NSDefaultRunLoopMode];
+        while (awaitingTiming() && [deadline timeIntervalSinceNow] > 0)
+            [[NSRunLoop mainRunLoop] runMode:NSDefaultRunLoopMode beforeDate:deadline];
+        CHECK(!awaitingTiming() && [lastReport[@"canPresent"] boolValue]);
+
+        // A desktop mode ID change cannot erase ownership of the HDMI link.
+        activeTiming = makeTiming(150, 1080, NO, 50);
+        request(@"1080p59.94", NO, NO);
+        CHECK(writes == before && activeTiming[@"id"].intValue == 150 && [hdmiRate isEqual:@60]);
+        CHECK(![lastReport[@"restoreFailed"] boolValue]);
 
     }
     return 0;

@@ -122,6 +122,7 @@ static CGDirectDisplayID controlID, lastDisplay;
 static BOOL enabled, applyFailed, restoreFailed;
 static NSInteger revision;
 static NSDictionary *originalMode, *ownedMode, *approvedMode, *lastReport;
+static BOOL ownedConnectionMode;
 
 static BOOL eligible(CGDirectDisplayID displayID) {
     return displayID && controlID && displayID != controlID && CGDisplayIsActive(displayID) && !CGDisplayIsBuiltin(displayID)
@@ -154,6 +155,15 @@ static NSDictionary *readSnapshot(CGDirectDisplayID displayID) {
 static NSDictionary *linkOf(NSDictionary *state) {
     id link = state[@"link"];
     return link == NSNull.null ? nil : link;
+}
+
+static BOOL sameConnection(NSDictionary *first, NSDictionary *second) {
+    NSDictionary *a = linkOf(first), *b = linkOf(second);
+    return [a[@"uuid"] isEqual:b[@"uuid"]] && [a[@"signal"] isEqual:b[@"signal"]] && [a[@"mode"] isEqual:b[@"mode"]];
+}
+
+static BOOL ownsReading(NSDictionary *state) {
+    return [state isEqual:ownedMode] || (ownedConnectionMode && sameConnection(ownedMode, state));
 }
 
 static void report(CGDirectDisplayID displayID, NSString *phase, NSArray *formats, NSDictionary *otherModes,
@@ -226,9 +236,18 @@ static void restoreOriginal(void) {
     if (!originalMode) return;
     CGDirectDisplayID displayID = findDisplay(targetUUID);
     NSDictionary *state = readSnapshot(displayID);
-    if ([state isEqual:ownedMode]) restoreFailed = !restoreState(displayID, originalMode);
+    if ([state isEqual:ownedMode]) {
+        restoreFailed = !restoreState(displayID, originalMode);
+    } else if (ownsReading(state) && !sameConnection(state, originalMode)) {
+        // WindowServer can change the desktop mode ID independently of the
+        // HDMI link. Undo Cue's connection change without touching that mode.
+        NSDictionary *link = linkOf(originalMode);
+        restoreFailed = !setConnection(displayID, link, link[@"mode"]) ||
+            !settled(displayID, ^BOOL(NSDictionary *observed) { return sameConnection(observed, originalMode); });
+    }
     originalMode = nil;
     ownedMode = nil;
+    ownedConnectionMode = NO;
 }
 
 static void inspect(BOOL allowChange) {
@@ -299,8 +318,9 @@ static void inspect(BOOL allowChange) {
             }) : nil;
             if (verified) {
                 if (![state isEqual:verified]) {
-                    if (!originalMode || (!attached && ![ownedMode isEqual:state])) originalMode = state;
+                    if (!originalMode || (!attached && !ownsReading(state))) originalMode = state;
                     ownedMode = verified;
+                    ownedConnectionMode = candidate != nil;
                 }
                 state = verified;
                 actual = chosen;
@@ -308,8 +328,9 @@ static void inspect(BOOL allowChange) {
                 applyFailed = YES;
                 NSDictionary *now = readSnapshot(displayID);
                 if (now && ![now isEqual:state] && !restoreState(displayID, state)) {
-                    if (!originalMode || (!attached && ![ownedMode isEqual:state])) originalMode = state;
+                    if (!originalMode || (!attached && !ownsReading(state))) originalMode = state;
                     ownedMode = readSnapshot(displayID);
+                    ownedConnectionMode = candidate != nil;
                     approvedMode = nil;
                 }
                 state = readSnapshot(displayID);
@@ -325,6 +346,23 @@ static void inspect(BOOL allowChange) {
     BOOL present = enabled && state && [approvedMode isEqual:state] && stillAssigned(displayID);
     report(displayID, phase, formats, otherModes, state, present);
     if (active) CGDisplayModeRelease(active);
+}
+
+static unsigned timingRetryGeneration;
+
+static BOOL awaitingTiming(void) {
+    NSString *phase = lastReport[@"phase"];
+    return enabled && ![requested isEqual:@"current"] &&
+        ([phase isEqual:@"missing"] || [phase isEqual:@"unavailable"] || [phase isEqual:@"mismatch"]);
+}
+
+static void recheckTiming(unsigned generation, unsigned attempts) {
+    if (!attempts || !awaitingTiming()) return;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 500 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+        if (generation != timingRetryGeneration || !awaitingTiming()) return;
+        inspect(YES);
+        recheckTiming(generation, attempts - 1);
+    });
 }
 
 static void configure(NSDictionary *command) {
@@ -349,6 +387,8 @@ static void configure(NSDictionary *command) {
     enabled = nextEnabled;
     revision = [command[@"revision"] integerValue];
     inspect([command[@"apply"] boolValue]);
+    // EDID and connection modes can arrive after the initial display event.
+    recheckTiming(++timingRetryGeneration, 12);
 }
 
 static void changed(CGDirectDisplayID display, CGDisplayChangeSummaryFlags flags, void *context) {
@@ -362,7 +402,10 @@ static void changed(CGDirectDisplayID display, CGDisplayChangeSummaryFlags flags
         static unsigned generation;
         unsigned event = ++generation;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 180 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-            if (event == generation && revision) inspect(NO);
+            if (event == generation && revision) {
+                inspect(NO);
+                if (awaitingTiming()) recheckTiming(++timingRetryGeneration, 12);
+            }
         });
     });
 }
