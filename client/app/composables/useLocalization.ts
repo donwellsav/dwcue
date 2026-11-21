@@ -1,3 +1,5 @@
+import english from '../../locales/en.json';
+
 // Dynamically loaded locales from main process
 const locales = ref<Record<string, any>>({});
 const availableLocalesData = ref<Array<{ code: string; name: string; direction: string }>>([]);
@@ -62,7 +64,7 @@ export const useLocalization = () => {
     // ahead of its translations should still read as English everywhere,
     // not as "connectionLost.locked".
     const translated = lookup(locales.value[currentLocale.value], keys)
-                    ?? lookup(locales.value.en, keys);
+                    ?? lookup(english, keys);
 
     let result = translated ?? key;
     if (params) {
