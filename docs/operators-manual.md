@@ -651,9 +651,11 @@ With no audience display assigned, Video Output opens a preview. A separate audi
 
 ### Match a Mac HDMI output to a switcher
 
-Choose the audience display in **Settings → Video Output**. The default is **1080p59.94**. If the display offers only older 59.94 formats, Settings shows a button to apply a compatible one by name. **Automatic NTSC** checks for 1080p59.94, 1080i59.94, 720p59.94, 480i59.94, then 480p59.94. A 60.00 Hz mode requires an explicit selection.
+Choose the audience display in **Settings → Video Output**. On a Mac, the list excludes the built-in screen and the screen showing Cue's controls. The default is **1080p59.94**. If the display offers only older 59.94 formats, Settings shows a button to apply a compatible one by name. **Automatic NTSC** checks for 1080p59.94, 1080i59.94, 720p59.94, 480i59.94, then 480p59.94. A 60.00 Hz mode requires an explicit selection.
 
 If the switcher uses a fixed show standard, open **Advanced signal settings**, select its exact format and choose **Apply signal format**. For example, 1080i59.94 carries 59.94 fields per second, whereas 1080p59.94 carries 59.94 complete frames per second. Cue saves the preference on this Mac and applies it only to the assigned audience output. Changing a live HDMI format can briefly blank the input while it locks. GO and clip changes leave the selected format alone.
+
+Cue saves a live format change after macOS confirms the selected timing. A failed change keeps the previous saved format. Closing Video Output ends Cue's temporary display configuration so macOS can restore the previous HDMI timing.
 
 **Other Mac display timings** lists additional fixed modes reported by the driver for that display. **Keep current Mac display mode** uses the existing timing. **Mac reports** shows the operating system's active mode. For an independent signal measurement, read the switcher's input before any internal conversion. Some switchers advertise several timings while accepting only the current production standard.
 

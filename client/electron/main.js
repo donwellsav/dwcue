@@ -3001,16 +3001,21 @@ function orderedVideoOutputDisplays() {
     a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y || a.id - b.id);
 }
 
-function videoOutputDisplays() {
+function isMacAudienceDisplay(display) {
+  const control = mainWindow && !mainWindow.isDestroyed() ? screen.getDisplayMatching(mainWindow.getBounds()) : null;
+  return !display.internal && display.id !== control?.id;
+}
+
+function videoOutputDisplays(audienceOnly = false) {
   const primaryId = screen.getPrimaryDisplay().id;
-  return orderedVideoOutputDisplays().map((d, position) => ({
+  return orderedVideoOutputDisplays().flatMap((d, position) => audienceOnly && macVideoSignal && !isMacAudienceDisplay(d) ? [] : [{
     id: String(d.id),
     index: position + 1,
     label: d.label || `Display ${d.id}`,
     width: d.size.width,
     height: d.size.height,
     primary: d.id === primaryId,
-  }));
+  }]);
 }
 
 // Screens of the same size and name as the assigned display, seen connected
@@ -3055,7 +3060,7 @@ function resolveVideoOutputDisplay(cfg) {
 
 function videoOutputStatus() {
   const cfg = readVideoOutputConfig();
-  const displays = videoOutputDisplays();
+  const displays = videoOutputDisplays(true);
   const target = resolveVideoOutputDisplay(cfg);
   let warning = null;
   if (videoOutputSessionEnabled) {
@@ -3064,7 +3069,7 @@ function videoOutputStatus() {
     } else if (!target) {
       // One logical display can also mean the OS is mirroring — either way the
       // projector is not independently addressable right now.
-      warning = displays.length < 2 ? 'single-display' : 'display-missing';
+      warning = screen.getAllDisplays().length < 2 ? 'single-display' : 'display-missing';
     } else if (mainWindow && !mainWindow.isDestroyed() &&
                screen.getDisplayMatching(mainWindow.getBounds()).id === target.id) {
       // Output and control on the same screen = mirrored displays or a
@@ -3120,11 +3125,11 @@ function broadcastVideoOutputStatus() {
   return status;
 }
 
-function syncMacVideoSignal(cfg = readVideoOutputConfig(), force = false) {
+function syncMacVideoSignal(cfg = readVideoOutputConfig()) {
   if (!macVideoSignal) return;
   const control = mainWindow && !mainWindow.isDestroyed() ? screen.getDisplayMatching(mainWindow.getBounds()) : null;
   macVideoSignal.configure({ id: cfg.displayId, control: control ? String(control.id) : null,
-    enabled: videoOutputSessionEnabled, format: cfg.signalFormat }, force);
+    enabled: videoOutputSessionEnabled, format: cfg.signalFormat });
 }
 
 function reconcileMacVideoSignal() {
@@ -4304,6 +4309,9 @@ ipcMain.handle('video-output:set-display', (event, displayId) => {
     ? screen.getAllDisplays().find((d) => String(d.id) === checked)
     : null;
   if (checked && !target) throw new Error('The selected display is no longer connected.');
+  if (macVideoSignal && target && !isMacAudienceDisplay(target)) {
+    throw new Error('Choose an independent external display for the audience.');
+  }
   cfg.displayFingerprint = target ? videoOutputFingerprint(target) : null;
   // A new assignment starts a clean record of its look-alikes.
   cfg.displayLookalikes = target ? videoOutputLookalikeIds(screen.getAllDisplays(), target) : [];
@@ -4319,13 +4327,19 @@ ipcMain.handle('video-output:set-display', (event, displayId) => {
   return broadcastVideoOutputStatus();
 });
 
-ipcMain.handle('video-output:set-signal-format', (event, format) => {
+ipcMain.handle('video-output:set-signal-format', async (event, format) => {
   requireVideoCheckOwner(event);
   if (!macVideoSignal || !isSignalFormat(format)) throw new Error('Unknown Mac video signal format.');
   const cfg = readVideoOutputConfig();
-  cfg.signalFormat = format;
-  if (!writeVideoOutputConfig(cfg)) throw new Error('Could not save the video signal format.');
-  syncMacVideoSignal(cfg, true);
+  if (videoOutputSessionEnabled && cfg.displayId) {
+    syncMacVideoSignal(cfg);
+    await macVideoSignal.applyFormat(format, confirmed =>
+      writeVideoOutputConfig({ ...readVideoOutputConfig(), signalFormat: confirmed }));
+  } else {
+    cfg.signalFormat = format;
+    if (!writeVideoOutputConfig(cfg)) throw new Error('Could not save the video signal format.');
+    syncMacVideoSignal(cfg);
+  }
   return broadcastVideoOutputStatus();
 });
 

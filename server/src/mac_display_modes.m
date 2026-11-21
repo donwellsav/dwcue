@@ -76,6 +76,8 @@ static NSDictionary *reportedMode(CGDisplayModeRef mode) {
     NSString *format = formatOf(mode);
     return @{@"modeId": @(CGDisplayModeGetIODisplayModeID(mode)),
              @"width": @(CGDisplayModeGetPixelWidth(mode)), @"height": @(CGDisplayModeGetPixelHeight(mode)),
+             @"logicalWidth": @(CGDisplayModeGetWidth(mode)), @"logicalHeight": @(CGDisplayModeGetHeight(mode)),
+             @"flags": @(CGDisplayModeGetIOFlags(mode)),
              @"interlaced": @((CGDisplayModeGetIOFlags(mode) & kDisplayModeInterlacedFlag) != 0),
              @"hz": @(isfinite(hz) ? hz : 0), @"format": format ? format : @""};
 }
@@ -111,22 +113,20 @@ static CGError setMode(CGDirectDisplayID displayID, CGDisplayModeRef mode) {
 }
 
 static NSString *targetUUID, *requested, *chosen;
-static CGDirectDisplayID controlID, lastDisplay, originalDisplay;
+static CGDirectDisplayID controlID, lastDisplay;
 static BOOL enabled, applyFailed, restoreFailed;
 static NSInteger revision;
-static CGDisplayModeRef originalMode;
-static NSDictionary *ownedMode, *approvedMode, *lastReport;
+static NSDictionary *originalMode, *ownedMode, *approvedMode, *lastReport;
 
 static BOOL eligible(CGDirectDisplayID displayID) {
     return displayID && controlID && displayID != controlID && CGDisplayIsActive(displayID) && !CGDisplayIsBuiltin(displayID)
         && !CGDisplayIsInMirrorSet(displayID) && !CGDisplayIsInHWMirrorSet(displayID);
 }
 
-static void forgetOriginal(void) {
-    CGDisplayModeRelease(originalMode);
-    originalMode = NULL;
-    originalDisplay = 0;
-    ownedMode = nil;
+static NSArray *displayModes(CGDirectDisplayID displayID) {
+    NSDictionary *options = @{ (__bridge NSString *)kCGDisplayShowDuplicateLowResolutionModes: @YES };
+    NSArray *modes = CFBridgingRelease(CGDisplayCopyAllDisplayModes(displayID, (__bridge CFDictionaryRef)options));
+    return modes ? modes : @[];
 }
 
 static void report(CGDirectDisplayID displayID, NSString *phase, NSArray *formats, NSDictionary *otherModes,
@@ -157,19 +157,29 @@ static BOOL modeSettled(CGDirectDisplayID displayID, CGDisplayModeRef desired) {
 static void restoreOriginal(void) {
     if (!originalMode) return;
     CGDirectDisplayID displayID = findDisplay(targetUUID);
-    if (displayID == originalDisplay && eligible(displayID)) {
+    if (eligible(displayID)) {
         CGDisplayModeRef active = CGDisplayCopyDisplayMode(displayID);
         if ([ownedMode isEqual:reportedMode(active)]) {
-            restoreFailed = setMode(displayID, originalMode) || !modeSettled(displayID, originalMode);
+            restoreFailed = YES;
+            // A replug can replace display IDs and mode objects. Reacquire the
+            // original timing from the same display before attempting a write.
+            for (id entry in displayModes(displayID)) {
+                CGDisplayModeRef mode = (__bridge CGDisplayModeRef)entry;
+                if (![originalMode isEqual:reportedMode(mode)]) continue;
+                if (eligible(displayID) && displayID == findDisplay(targetUUID)) {
+                    restoreFailed = setMode(displayID, mode) || !modeSettled(displayID, mode);
+                }
+                break;
+            }
         }
         CGDisplayModeRelease(active);
     }
-    forgetOriginal();
+    originalMode = nil;
+    ownedMode = nil;
 }
 
 static void inspect(BOOL allowChange) {
     CGDirectDisplayID displayID = findDisplay(targetUUID);
-    if (originalDisplay && originalDisplay != displayID) forgetOriginal();
     if (!eligible(displayID)) {
         approvedMode = nil;
         chosen = nil;
@@ -182,9 +192,7 @@ static void inspect(BOOL allowChange) {
     if (allowChange || attached) applyFailed = NO;
     lastDisplay = displayID;
     CGDisplayModeRef active = CGDisplayCopyDisplayMode(displayID);
-    NSDictionary *options = @{ (__bridge NSString *)kCGDisplayShowDuplicateLowResolutionModes: @YES };
-    NSArray *modes = CFBridgingRelease(CGDisplayCopyAllDisplayModes(displayID, (__bridge CFDictionaryRef)options));
-    if (!modes) modes = @[];
+    NSArray *modes = displayModes(displayID);
     if (active) modes = [modes arrayByAddingObject:(__bridge id)active];
     NSMutableDictionary *available = [NSMutableDictionary dictionary];
     NSMutableDictionary *otherModes = [NSMutableDictionary dictionary];
@@ -220,11 +228,7 @@ static void inspect(BOOL allowChange) {
             if (applyFailed) approvedMode = nil;
         } else if (checkMode && eligible(displayID) && displayID == findDisplay(targetUUID)) {
             if (!setMode(displayID, next) && modeSettled(displayID, next)) {
-                if (!originalMode || ![ownedMode isEqual:reportedMode(active)]) {
-                    forgetOriginal();
-                    originalMode = CGDisplayModeRetain(active);
-                    originalDisplay = displayID;
-                }
+                if (!originalMode || (!attached && ![ownedMode isEqual:reportedMode(active)])) originalMode = reportedMode(active);
                 ownedMode = reportedMode(next);
             } else {
                 applyFailed = YES;
@@ -263,6 +267,10 @@ static void configure(NSDictionary *command) {
     }
     BOOL nextEnabled = [command[@"enabled"] boolValue];
     if (enabled && !nextEnabled) { restoreOriginal(); approvedMode = nil; chosen = nil; }
+    if (![requested isEqual:command[@"format"]]) {
+        chosen = nil;
+        applyFailed = NO;
+    }
     requested = command[@"format"];
     enabled = nextEnabled;
     revision = [command[@"revision"] integerValue];
@@ -276,7 +284,6 @@ static void changed(CGDirectDisplayID display, CGDisplayChangeSummaryFlags flags
             lastDisplay = 0;
             approvedMode = nil;
             chosen = nil;
-            forgetOriginal();
         }
         static unsigned generation;
         unsigned event = ++generation;

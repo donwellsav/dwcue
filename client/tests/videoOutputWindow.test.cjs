@@ -570,19 +570,29 @@ test('existing shows default to exact 1080p59.94 and signal preferences survive 
   }
 });
 
-test('only the latest native readback can arm the output after Apply, a replug or Close', () => {
-  const worker = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough() });
-  const commands = [];
-  worker.stdin.on('data', line => commands.push(JSON.parse(line)));
-  const signal = createMacVideoSignal(() => '/test/dwcue-display-modes', () => {}, () => worker);
+function macSignalHarness() {
+  const owners = [];
+  const signal = createMacVideoSignal(() => '/test/dwcue-display-modes', () => {}, () => {
+    const worker = Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), commands: [] });
+    worker.stdin.on('data', line => worker.commands.push(JSON.parse(line)));
+    owners.push(worker);
+    return worker;
+  });
+  function reply(worker, command, id, canPresent, phase = canPresent ? 'matched' : 'idle', restoreFailed = false) {
+    worker.stdout.write(JSON.stringify({ revision: command.revision, uuid: 'assigned-display', id, phase, canPresent, restoreFailed }) + '\n');
+  }
+  return { signal, owners, reply };
+}
+
+test('only the latest native readback can arm the output after Apply or a replug', () => {
+  const { signal, owners, reply } = macSignalHarness();
   const initial = { id: '2', control: '1', enabled: true, format: 'auto' };
-  const reply = (command, id, canPresent) => worker.stdout.write(JSON.stringify({
-    revision: command.revision, uuid: 'assigned-display', id, phase: canPresent ? 'matched' : 'idle', canPresent,
-  }) + '\n');
   signal.configure(initial);
+  const [worker] = owners;
+  const { commands } = worker;
   signal.configure(initial);
   assert.equal(commands.length, 1, 'ordinary status updates do not set a mode again');
-  reply(commands[0], '2', true);
+  reply(worker, commands[0], '2', true);
   signal.configure({ ...initial, format: '1080i59.94' });
   const apply = commands.at(-1);
   assert.equal(apply.assign, false);
@@ -594,21 +604,123 @@ test('only the latest native readback can arm the output after Apply, a replug o
   const recheck = commands.at(-1);
   assert.equal(recheck.assign, false);
   assert.equal(recheck.apply, false);
-  reply(apply, '2', true);
+  reply(worker, apply, '2', true);
   assert.equal(signal.state.canPresent, false, 'stale confirmation from before disconnect');
-  reply(recheck, '7', true);
+  reply(worker, recheck, '7', true);
   assert.equal(signal.state.id, '7', 'the native owner found the same UUID under a new ID');
   signal.recheck(true);
   const wake = commands.at(-1);
   assert.ok(wake.apply && !wake.assign, 'wake reacquires the requested mode on the original physical output');
   assert.equal(signal.state.canPresent, false);
-  reply(wake, '7', true);
-  signal.configure({ ...initial, enabled: false, format: '1080i59.94' });
-  reply(wake, '7', true);
-  assert.equal(signal.state.canPresent, false, 'a late reply cannot re-open a closed feed');
-  reply(commands.at(-1), '7', false);
+  reply(worker, wake, '7', true);
   worker.stdout.end();
   worker.stdin.end();
+});
+
+test('Close releases Quartz ownership after a replug before an output can reopen', async () => {
+  const { signal, owners, reply } = macSignalHarness();
+  const initial = { id: '2', control: '1', enabled: true, format: '1080i59.94' };
+  signal.configure(initial);
+  const [worker] = owners;
+  const { commands } = worker;
+  reply(worker, commands.at(-1), '2', true);
+  signal.displayRemoved(2);
+  reply(worker, commands.at(-1), '7', true);
+  const interrupted = assert.rejects(signal.applyFormat('1080p60.00', () => assert.fail('saved during Close')),
+    /changed before confirming/);
+  const live = commands.at(-1);
+  signal.configure({ ...initial, enabled: false, format: '1080i59.94' });
+  const close = commands.at(-1);
+  assert.equal(close.enabled, false, 'the helper gets a chance to restore its original mode');
+  assert.equal(close.format, initial.format, 'Close restores the last confirmed preference');
+  assert.equal(worker.stdin.writableEnded, true, 'EOF releases the app-scoped mode even if its old reference was lost');
+  reply(worker, live, '7', true);
+  reply(worker, close, '7', false);
+  assert.equal(signal.state.canPresent, false, 'a late reply cannot re-open a closed feed');
+  signal.configure(initial);
+  assert.equal(owners.length, 1, 'rapid reopen waits for the old Quartz owner to exit');
+  assert.equal(commands.at(-1), close, 'no new configuration is sent to the retiring process');
+  worker.emit('close', 0);
+  const replacement = owners[1];
+  const reopen = replacement.commands[0];
+  assert.equal(reopen.uuid, 'assigned-display');
+  assert.equal(reopen.enabled, true);
+  reply(replacement, reopen, '7', true);
+  assert.equal(signal.state.id, '7');
+  await interrupted;
+
+  signal.configure({ ...initial, enabled: false });
+  reply(replacement, replacement.commands.at(-1), '7', false, 'restoreFailed', true);
+  replacement.emit('close', 0);
+  const inventory = owners[2];
+  const inspection = inventory.commands[0];
+  assert.equal(inspection.enabled, false);
+  assert.equal(inspection.apply, false, 'the replacement only inspects the closed display');
+  reply(inventory, inspection, '7', false);
+  assert.equal(signal.state.restoreFailed, true, 'an unconfirmed explicit restore stays visible');
+  inventory.stdout.end();
+  inventory.stdin.end();
+});
+
+test('the live format handler saves only a verified choice and resumes the saved choice after failure', async () => {
+  const { signal, owners, reply } = macSignalHarness();
+  const selected = { id: '2', control: '1', enabled: true, format: '1080p59.94' };
+  const saves = [];
+  const cfg = { displayId: '2', signalFormat: selected.format };
+  const ctx = {
+    ipcMain: { handle: (_name, handler) => { ctx.handle = handler; } },
+    macVideoSignal: signal, isSignalFormat, videoOutputSessionEnabled: true, requireVideoCheckOwner() {},
+    readVideoOutputConfig: () => ({ ...cfg }),
+    writeVideoOutputConfig: (next) => { saves.push(next.signalFormat); Object.assign(cfg, next); return true; },
+    syncMacVideoSignal: current => signal.configure({ ...selected, format: current.signalFormat }),
+    broadcastVideoOutputStatus: () => signal.state,
+  };
+  vm.runInNewContext(handlerSource('video-output:set-signal-format'), ctx);
+  signal.configure(selected);
+  const [worker] = owners;
+  const { commands } = worker;
+  reply(worker, commands[0], '2', true);
+
+  const failed = assert.rejects(ctx.handle({}, '1080p60.00'), /keeping the previous format setting/);
+  assert.equal(commands.at(-1).format, '1080p60.00');
+  assert.deepEqual(saves, []);
+  reply(worker, commands.at(-1), '2', true, 'failed');
+  await failed;
+  assert.equal(cfg.signalFormat, '1080p59.94');
+  assert.equal(commands.at(-1).format, '1080p59.94');
+  assert.equal(commands.at(-1).apply, false, 'a confirmed rollback does not request another HDMI switch');
+  reply(worker, commands.at(-1), '2', true);
+
+  const succeeds = ctx.handle({}, '1080i59.94');
+  reply(worker, commands.at(-1), '2', true);
+  await succeeds;
+  assert.deepEqual(saves, ['1080i59.94']);
+  signal.displayRemoved(2);
+  assert.equal(commands.at(-1).format, '1080i59.94', 'reconnect uses the verified preference');
+  reply(worker, commands.at(-1), '7', true);
+
+  const interrupted = assert.rejects(ctx.handle({}, '1080p60.00'), /display changed/);
+  signal.displayRemoved(7);
+  await interrupted;
+  assert.equal(commands.at(-1).format, '1080i59.94');
+  assert.deepEqual(saves, ['1080i59.94']);
+  reply(worker, commands.at(-1), '7', true);
+  worker.stdout.end();
+  worker.stdin.end();
+});
+
+test('the Mac output picker excludes the built-in and control screens while capture can still see them', () => {
+  const internal = { ...laptop, internal: true };
+  const ctx = {
+    mainWindow: { getBounds: () => ({}), isDestroyed: () => false },
+    screen: { getDisplayMatching: () => stageMonitor, getPrimaryDisplay: () => internal },
+    macVideoSignal: {},
+    orderedVideoOutputDisplays: () => [internal, audienceProjector, stageMonitor],
+  };
+  vm.runInNewContext(['isMacAudienceDisplay', 'videoOutputDisplays'].map(functionSource).join('\n'), ctx);
+  assert.deepEqual(Array.from(ctx.videoOutputDisplays(true), d => d.id), ['2']);
+  assert.deepEqual(Array.from(ctx.videoOutputDisplays(), d => d.id), ['1', '2', '3']);
+  assert.equal(ctx.videoOutputDisplays(true)[0].index, 2, 'the picker still matches the Identify Displays numbers');
 });
 
 test('Mac audience pictures follow confirmed native identity and keep a previously verified feed on a failed Apply', () => {

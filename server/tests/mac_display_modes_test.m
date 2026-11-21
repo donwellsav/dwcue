@@ -38,7 +38,6 @@ static Timing *makeTiming(int modeID, int height, BOOL interlaced, double hz) {
 #define CGDisplayIsInHWMirrorSet(d) false
 #define CGDisplayCopyAllDisplayModes(d, opts) ((void)(opts), (CFArrayRef)CFBridgingRetain(advertised))
 #define CGDisplayCopyDisplayMode(d) ((CGDisplayModeRef)CFBridgingRetain(activeTiming))
-#define CGDisplayModeRetain(m) ((CGDisplayModeRef)CFRetain(m))
 #define CGDisplayModeRelease(m) do { if (m) CFRelease(m); } while (0)
 #define CGDisplayModeGetPixelWidth(m) timing(m)[@"w"].unsignedLongValue
 #define CGDisplayModeGetPixelHeight(m) timing(m)[@"h"].unsignedLongValue
@@ -82,6 +81,9 @@ int main(void) {
         unsigned before = writes;
         inspect(NO);
         CHECK(writes == before && [lastReport[@"phase"] isEqual:@"failed"]);
+        configure(@{@"format": driverMode, @"id": @2, @"control": @1, @"assign": @NO,
+                    @"apply": @NO, @"enabled": @YES, @"revision": @(revision + 1)});
+        CHECK(writes == before && [lastReport[@"phase"] isEqual:@"matched"] && [lastReport[@"canPresent"] boolValue]);
         request(@"auto", NO, NO);
         CHECK(activeTiming == sixty && ![lastReport[@"restoreFailed"] boolValue]);
         request(@"current", YES, NO);
@@ -99,6 +101,22 @@ int main(void) {
         CHECK([lastReport[@"id"] isEqual:@"7"] && [lastReport[@"phase"] isEqual:@"unavailable"] && ![lastReport[@"canPresent"] boolValue]);
         request(@"1080p60.00", YES, NO);
         CHECK([lastReport[@"phase"] isEqual:@"matched"] && [lastReport[@"canPresent"] boolValue]);
+        advertised = @[sixty, legacy];
+        request(@"auto", YES, NO);
+        CHECK(activeTiming == legacy);
+        port = 0;
+        inspect(NO);
+        port = 9;
+        inspect(NO);
+        CHECK(activeTiming == legacy && [lastReport[@"id"] isEqual:@"9"]);
+        request(@"auto", NO, NO);
+        CHECK(activeTiming == sixty && ![lastReport[@"restoreFailed"] boolValue]);
+        request(@"auto", YES, NO);
+        CHECK(activeTiming == legacy);
+        advertised = @[legacy];
+        before = writes;
+        request(@"auto", NO, NO);
+        CHECK(writes == before && [lastReport[@"restoreFailed"] boolValue]);
     }
     return 0;
 }
